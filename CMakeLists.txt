@@ -595,6 +595,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_building.cpp
     src/pipeline/wowee_collision.cpp
     src/pipeline/wowee_light.cpp
+    src/pipeline/wowee_weather.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1410,6 +1411,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_building.cpp
     src/pipeline/wowee_collision.cpp
     src/pipeline/wowee_light.cpp
+    src/pipeline/wowee_weather.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

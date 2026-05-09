@@ -791,6 +791,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Emit a single-keyframe .wol with warm torchlit ambient + medium fog (dungeon / crypt interior)\n");
     std::printf("  --gen-light-night <wol-base> [zoneName]\n");
     std::printf("                         Emit a single-keyframe .wol with moonlit directional + far fog (always-night zone / shadow realm)\n");
+    std::printf("  --info-wow <wow-base> [--json]\n");
+    std::printf("                         Print WOW weather entries (zone + per-state type / intensity / weight / duration) and exit\n");
+    std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
+    std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
+    std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
+    std::printf("                         Emit .wow weather schedule: snow-dominant + blizzard + fog (tundra / glacier)\n");
+    std::printf("  --gen-weather-desert <wow-base> [zoneName]\n");
+    std::printf("                         Emit .wow weather schedule: clear-dominant + sandstorm (dunes / wasteland)\n");
+    std::printf("  --gen-weather-stormy <wow-base> [zoneName]\n");
+    std::printf("                         Emit .wow weather schedule: heavy rain + storm + occasional clear (coastal / monsoon)\n");
     std::printf("  --info-wot <wot-base> [--json]\n");
     std::printf("                         Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-extract <dir> [--json]\n");

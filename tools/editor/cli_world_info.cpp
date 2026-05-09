@@ -4,6 +4,7 @@
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wowee_collision.hpp"
 #include "pipeline/wowee_light.hpp"
+#include "pipeline/wowee_weather.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include "pipeline/adt_loader.hpp"
 #include <glm/glm.hpp>
@@ -581,6 +582,117 @@ int handleGenLightNight(int& i, int argc, char** argv) {
         "moonlit directional + far fog");
 }
 
+int handleInfoWow(int& i, int argc, char** argv) {
+    // Inspect a Wowee Open Weather (.wow) file: zone name +
+    // per-entry weather type + intensity bounds + selection
+    // weight + duration bounds.
+    std::string base = argv[++i];
+    bool jsonOut = (i + 1 < argc &&
+                    std::strcmp(argv[i + 1], "--json") == 0);
+    if (jsonOut) ++i;
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wow")
+        base = base.substr(0, base.size() - 4);
+    if (!wowee::pipeline::WoweeWeatherLoader::exists(base)) {
+        std::fprintf(stderr, "WOW not found: %s.wow\n", base.c_str());
+        return 1;
+    }
+    auto wow = wowee::pipeline::WoweeWeatherLoader::load(base);
+    if (!wow.isValid()) {
+        std::fprintf(stderr, "WOW parse failed: %s.wow\n", base.c_str());
+        return 1;
+    }
+    if (jsonOut) {
+        nlohmann::json j;
+        j["wow"] = base + ".wow";
+        j["name"] = wow.name;
+        j["entryCount"] = wow.entries.size();
+        j["totalWeight"] = wow.totalWeight();
+        nlohmann::json es = nlohmann::json::array();
+        for (const auto& e : wow.entries) {
+            es.push_back({
+                {"type", wowee::pipeline::WoweeWeather::typeName(
+                            e.weatherTypeId)},
+                {"typeId", e.weatherTypeId},
+                {"minIntensity", e.minIntensity},
+                {"maxIntensity", e.maxIntensity},
+                {"weight", e.weight},
+                {"minDurationSec", e.minDurationSec},
+                {"maxDurationSec", e.maxDurationSec},
+            });
+        }
+        j["entries"] = es;
+        std::printf("%s\n", j.dump(2).c_str());
+        return 0;
+    }
+    std::printf("WOW: %s.wow\n", base.c_str());
+    std::printf("  zone       : %s\n", wow.name.c_str());
+    std::printf("  entries    : %zu (totalWeight=%.2f)\n",
+                wow.entries.size(), wow.totalWeight());
+    for (std::size_t k = 0; k < wow.entries.size(); ++k) {
+        const auto& e = wow.entries[k];
+        std::printf("  [%zu] %-9s  intensity %.2f..%.2f  weight %.2f  "
+                    "duration %u..%u s\n",
+                    k,
+                    wowee::pipeline::WoweeWeather::typeName(e.weatherTypeId),
+                    e.minIntensity, e.maxIntensity, e.weight,
+                    e.minDurationSec, e.maxDurationSec);
+    }
+    return 0;
+}
+
+int emitWeatherPreset(const std::string& cmdName,
+                      int& i, int argc, char** argv,
+                      wowee::pipeline::WoweeWeather (*maker)(const std::string&),
+                      const char* presetDescription) {
+    std::string base = argv[++i];
+    std::string zoneName = "Default";
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        zoneName = argv[++i];
+    }
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wow") {
+        base = base.substr(0, base.size() - 4);
+    }
+    auto wow = maker(zoneName);
+    if (!wowee::pipeline::WoweeWeatherLoader::save(wow, base)) {
+        std::fprintf(stderr, "%s: failed to save %s.wow\n",
+                     cmdName.c_str(), base.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wow\n", base.c_str());
+    std::printf("  zone       : %s\n", zoneName.c_str());
+    std::printf("  preset     : %s (%zu entries)\n",
+                presetDescription, wow.entries.size());
+    return 0;
+}
+
+int handleGenWeatherTemperate(int& i, int argc, char** argv) {
+    return emitWeatherPreset(
+        "gen-weather-temperate", i, argc, argv,
+        wowee::pipeline::WoweeWeatherLoader::makeTemperate,
+        "clear-dominant + occasional rain + fog");
+}
+
+int handleGenWeatherArctic(int& i, int argc, char** argv) {
+    return emitWeatherPreset(
+        "gen-weather-arctic", i, argc, argv,
+        wowee::pipeline::WoweeWeatherLoader::makeArctic,
+        "snow-dominant + blizzard + fog");
+}
+
+int handleGenWeatherDesert(int& i, int argc, char** argv) {
+    return emitWeatherPreset(
+        "gen-weather-desert", i, argc, argv,
+        wowee::pipeline::WoweeWeatherLoader::makeDesert,
+        "clear-dominant + sandstorm");
+}
+
+int handleGenWeatherStormy(int& i, int argc, char** argv) {
+    return emitWeatherPreset(
+        "gen-weather-stormy", i, argc, argv,
+        wowee::pipeline::WoweeWeatherLoader::makeStormy,
+        "heavy rain + storm + occasional clear");
+}
+
 }  // namespace
 
 bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
@@ -616,6 +728,21 @@ bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-light-night") == 0 && i + 1 < argc) {
         outRc = handleGenLightNight(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--info-wow") == 0 && i + 1 < argc) {
+        outRc = handleInfoWow(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-weather-temperate") == 0 && i + 1 < argc) {
+        outRc = handleGenWeatherTemperate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-weather-arctic") == 0 && i + 1 < argc) {
+        outRc = handleGenWeatherArctic(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-weather-desert") == 0 && i + 1 < argc) {
+        outRc = handleGenWeatherDesert(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-weather-stormy") == 0 && i + 1 < argc) {
+        outRc = handleGenWeatherStormy(i, argc, argv); return true;
     }
     return false;
 }
