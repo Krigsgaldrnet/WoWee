@@ -1303,6 +1303,7 @@ add_executable(wowee_editor
     tools/editor/cli_audits.cpp
     tools/editor/cli_readmes.cpp
     tools/editor/cli_zone_inventory.cpp
+    tools/editor/cli_project_inventory.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
