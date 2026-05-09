@@ -7192,6 +7192,117 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleFirepit(int& i, int argc, char** argv) {
+    // Camp firepit: a ring of N stone cubes around two crossed log
+    // boxes (one along X, one along Z, slightly raised). Pairs
+    // naturally with --gen-mesh-tent for outdoor camp set dressing.
+    // The 54th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float ringR = 0.5f;
+    int   stones = 8;
+    float stoneSize = 0.10f;
+    float logLen = 0.45f;
+    float logThick = 0.05f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { ringR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stones = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stoneSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { logLen = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { logThick = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (ringR <= 0 || stoneSize <= 0 || logLen <= 0 || logThick <= 0 ||
+        stones < 3 || stones > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-firepit: dims > 0; stones must be 3..64\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        const Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},   // +Y
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},   // -Y
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},   // +X
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},   // -X
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},   // +Z
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},   // -Z
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base+1, base+2, base, base+2, base+3});
+        }
+    };
+    // Ring of stones — N axis-aligned cube stones evenly placed
+    // around the firepit center. Slight Y offset puts them sitting
+    // on the ground rather than sunk into it.
+    const float pi = 3.14159265358979f;
+    for (int s = 0; s < stones; ++s) {
+        float ang = (2.0f * pi * s) / stones;
+        float cx = ringR * std::cos(ang);
+        float cz = ringR * std::sin(ang);
+        addBox(cx, stoneSize, cz, stoneSize, stoneSize, stoneSize);
+    }
+    // Two crossed logs at center, raised so they sit on the ash
+    // bed. The two-log cross is the unmistakable visual cue that
+    // separates a firepit from a generic stone ring.
+    float logCY = logThick;
+    addBox(0, logCY, 0, logLen * 0.5f, logThick * 0.5f, logThick * 0.5f);
+    addBox(0, logCY + logThick, 0, logThick * 0.5f, logThick * 0.5f,
+           logLen * 0.5f);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxR = std::max(ringR + stoneSize, logLen * 0.5f);
+    float maxY = std::max(stoneSize * 2.0f, logCY + logThick * 1.5f);
+    wom.boundMin = glm::vec3(-maxR, 0, -maxR);
+    wom.boundMax = glm::vec3( maxR, maxY, maxR);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-firepit: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  ring       : R=%.3f, %d stones (%.3f cubes)\n",
+                ringR, stones, stoneSize);
+    std::printf("  logs       : 2 crossed (len %.3f, thick %.3f)\n",
+                logLen, logThick);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 namespace {
@@ -7245,6 +7356,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-coffin",         1, handleCoffin},
     {"--gen-mesh-bookshelf",      1, handleBookshelf},
     {"--gen-mesh-tent",           1, handleTent},
+    {"--gen-mesh-firepit",        1, handleFirepit},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
