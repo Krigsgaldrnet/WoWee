@@ -1089,6 +1089,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCHC classes (id / power / hp scaling) + races (faction / starting zone) + outfit item lists\n");
     std::printf("  --validate-wchc <wchc-base> [--json]\n");
     std::printf("                         Static checks: class+race ids unique, baseHealth>0, faction availability set, outfit refs resolve\n");
+    std::printf("  --export-wchc-json <wchc-base> [out.json]\n");
+    std::printf("                         Export binary .wchc to a human-editable JSON sidecar (defaults to <base>.wchc.json)\n");
+    std::printf("  --import-wchc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wchc.json sidecar back into binary .wchc (accepts power/faction/gender int OR name forms)\n");
     std::printf("  --gen-tokens <wtkn-base> [name]\n");
     std::printf("                         Emit .wtkn starter: 3 tokens (Honor / Marks / Stormwind Guard) covering Pvp + Reputation categories\n");
     std::printf("  --gen-tokens-pvp <wtkn-base> [name]\n");

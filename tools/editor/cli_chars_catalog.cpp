@@ -191,6 +191,233 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Three top-level arrays (classes / races /
+    // outfits) mirroring the binary layout. Enum-typed fields
+    // (powerType, factionId) emit dual int + name forms.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWchcExt(base);
+    if (outPath.empty()) outPath = base + ".wchc.json";
+    if (!wowee::pipeline::WoweeCharsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wchc-json: WCHC not found: %s.wchc\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCharsLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json ca = nlohmann::json::array();
+    for (const auto& cls : c.classes) {
+        ca.push_back({
+            {"classId", cls.classId},
+            {"name", cls.name},
+            {"iconPath", cls.iconPath},
+            {"powerType", cls.powerType},
+            {"powerTypeName", wowee::pipeline::WoweeChars::powerTypeName(cls.powerType)},
+            {"displayPower", cls.displayPower},
+            {"baseHealth", cls.baseHealth},
+            {"baseHealthPerLevel", cls.baseHealthPerLevel},
+            {"basePower", cls.basePower},
+            {"basePowerPerLevel", cls.basePowerPerLevel},
+            {"factionAvailability", cls.factionAvailability},
+        });
+    }
+    j["classes"] = ca;
+    nlohmann::json ra = nlohmann::json::array();
+    for (const auto& r : c.races) {
+        ra.push_back({
+            {"raceId", r.raceId},
+            {"name", r.name},
+            {"iconPath", r.iconPath},
+            {"factionId", r.factionId},
+            {"factionName", wowee::pipeline::WoweeChars::raceFactionName(r.factionId)},
+            {"maleDisplayId", r.maleDisplayId},
+            {"femaleDisplayId", r.femaleDisplayId},
+            {"baseStrength", r.baseStrength},
+            {"baseAgility", r.baseAgility},
+            {"baseStamina", r.baseStamina},
+            {"baseIntellect", r.baseIntellect},
+            {"baseSpirit", r.baseSpirit},
+            {"startingMapId", r.startingMapId},
+            {"startingZoneAreaId", r.startingZoneAreaId},
+            {"defaultLanguageSpellId", r.defaultLanguageSpellId},
+            {"mountSpellId", r.mountSpellId},
+        });
+    }
+    j["races"] = ra;
+    nlohmann::json oa = nlohmann::json::array();
+    for (const auto& o : c.outfits) {
+        nlohmann::json items = nlohmann::json::array();
+        for (const auto& it : o.items) {
+            items.push_back({
+                {"itemId", it.itemId},
+                {"displaySlot", it.displaySlot},
+            });
+        }
+        oa.push_back({
+            {"classId", o.classId},
+            {"raceId", o.raceId},
+            {"gender", o.gender},
+            {"genderName",
+             o.gender == wowee::pipeline::WoweeChars::Female ? "female" : "male"},
+            {"items", items},
+        });
+    }
+    j["outfits"] = oa;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wchc-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source  : %s.wchc\n", base.c_str());
+    std::printf("  classes : %zu  races : %zu  outfits : %zu\n",
+                c.classes.size(), c.races.size(), c.outfits.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wchc.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWchcExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wchc-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wchc-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto powerFromName = [](const std::string& s) -> uint8_t {
+        if (s == "mana")        return wowee::pipeline::WoweeChars::Mana;
+        if (s == "rage")        return wowee::pipeline::WoweeChars::Rage;
+        if (s == "focus")       return wowee::pipeline::WoweeChars::Focus;
+        if (s == "energy")      return wowee::pipeline::WoweeChars::Energy;
+        if (s == "runic-power") return wowee::pipeline::WoweeChars::RunicPower;
+        if (s == "runes")       return wowee::pipeline::WoweeChars::Runes;
+        return wowee::pipeline::WoweeChars::Mana;
+    };
+    auto factionFromName = [](const std::string& s) -> uint8_t {
+        if (s == "alliance") return wowee::pipeline::WoweeChars::Alliance;
+        if (s == "horde")    return wowee::pipeline::WoweeChars::Horde;
+        if (s == "neutral")  return wowee::pipeline::WoweeChars::Neutral;
+        return wowee::pipeline::WoweeChars::Alliance;
+    };
+    auto genderFromName = [](const std::string& s) -> uint8_t {
+        if (s == "female") return wowee::pipeline::WoweeChars::Female;
+        return wowee::pipeline::WoweeChars::Male;
+    };
+    wowee::pipeline::WoweeChars c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("classes") && j["classes"].is_array()) {
+        for (const auto& jc : j["classes"]) {
+            wowee::pipeline::WoweeChars::Class cls;
+            cls.classId = jc.value("classId", 0u);
+            cls.name = jc.value("name", std::string{});
+            cls.iconPath = jc.value("iconPath", std::string{});
+            if (jc.contains("powerType") && jc["powerType"].is_number_integer()) {
+                cls.powerType = static_cast<uint8_t>(jc["powerType"].get<int>());
+            } else if (jc.contains("powerTypeName") && jc["powerTypeName"].is_string()) {
+                cls.powerType = powerFromName(jc["powerTypeName"].get<std::string>());
+            }
+            cls.displayPower = static_cast<uint8_t>(
+                jc.value("displayPower", static_cast<int>(cls.powerType)));
+            cls.baseHealth = jc.value("baseHealth", 50u);
+            cls.baseHealthPerLevel = static_cast<uint16_t>(
+                jc.value("baseHealthPerLevel", 12));
+            cls.basePower = jc.value("basePower", 100u);
+            cls.basePowerPerLevel = static_cast<uint16_t>(
+                jc.value("basePowerPerLevel", 5));
+            cls.factionAvailability = static_cast<uint8_t>(
+                jc.value("factionAvailability",
+                          wowee::pipeline::WoweeChars::AvailableAlliance |
+                          wowee::pipeline::WoweeChars::AvailableHorde));
+            c.classes.push_back(cls);
+        }
+    }
+    if (j.contains("races") && j["races"].is_array()) {
+        for (const auto& jr : j["races"]) {
+            wowee::pipeline::WoweeChars::Race r;
+            r.raceId = jr.value("raceId", 0u);
+            r.name = jr.value("name", std::string{});
+            r.iconPath = jr.value("iconPath", std::string{});
+            if (jr.contains("factionId") && jr["factionId"].is_number_integer()) {
+                r.factionId = static_cast<uint8_t>(jr["factionId"].get<int>());
+            } else if (jr.contains("factionName") && jr["factionName"].is_string()) {
+                r.factionId = factionFromName(jr["factionName"].get<std::string>());
+            }
+            r.maleDisplayId = jr.value("maleDisplayId", 0u);
+            r.femaleDisplayId = jr.value("femaleDisplayId", 0u);
+            r.baseStrength = static_cast<uint16_t>(jr.value("baseStrength", 20));
+            r.baseAgility = static_cast<uint16_t>(jr.value("baseAgility", 20));
+            r.baseStamina = static_cast<uint16_t>(jr.value("baseStamina", 20));
+            r.baseIntellect = static_cast<uint16_t>(jr.value("baseIntellect", 20));
+            r.baseSpirit = static_cast<uint16_t>(jr.value("baseSpirit", 20));
+            r.startingMapId = jr.value("startingMapId", 0u);
+            r.startingZoneAreaId = jr.value("startingZoneAreaId", 0u);
+            r.defaultLanguageSpellId = jr.value("defaultLanguageSpellId", 0u);
+            r.mountSpellId = jr.value("mountSpellId", 0u);
+            c.races.push_back(r);
+        }
+    }
+    if (j.contains("outfits") && j["outfits"].is_array()) {
+        for (const auto& jo : j["outfits"]) {
+            wowee::pipeline::WoweeChars::Outfit o;
+            o.classId = jo.value("classId", 0u);
+            o.raceId = jo.value("raceId", 0u);
+            if (jo.contains("gender") && jo["gender"].is_number_integer()) {
+                o.gender = static_cast<uint8_t>(jo["gender"].get<int>());
+            } else if (jo.contains("genderName") && jo["genderName"].is_string()) {
+                o.gender = genderFromName(jo["genderName"].get<std::string>());
+            }
+            if (jo.contains("items") && jo["items"].is_array()) {
+                for (const auto& ji : jo["items"]) {
+                    wowee::pipeline::WoweeChars::OutfitItem it;
+                    it.itemId = ji.value("itemId", 0u);
+                    it.displaySlot = static_cast<uint8_t>(
+                        ji.value("displaySlot", 0));
+                    o.items.push_back(it);
+                }
+            }
+            c.outfits.push_back(std::move(o));
+        }
+    }
+    if (!wowee::pipeline::WoweeCharsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wchc-json: failed to save %s.wchc\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wchc\n", outBase.c_str());
+    std::printf("  source  : %s\n", jsonPath.c_str());
+    std::printf("  classes : %zu  races : %zu  outfits : %zu\n",
+                c.classes.size(), c.races.size(), c.outfits.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -324,6 +551,12 @@ bool handleCharsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wchc") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wchc-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wchc-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

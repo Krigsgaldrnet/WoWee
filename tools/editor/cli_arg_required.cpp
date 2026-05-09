@@ -79,6 +79,7 @@ const char* const kArgRequired[] = {
     "--export-wms-json", "--import-wms-json",
     "--gen-chars", "--gen-chars-alliance", "--gen-chars-allraces",
     "--info-wchc", "--validate-wchc",
+    "--export-wchc-json", "--import-wchc-json",
     "--gen-tokens", "--gen-tokens-pvp", "--gen-tokens-seasonal",
     "--info-wtkn", "--validate-wtkn",
     "--gen-weather-temperate", "--gen-weather-arctic",
