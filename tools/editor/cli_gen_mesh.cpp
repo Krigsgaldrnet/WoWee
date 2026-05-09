@@ -5161,6 +5161,55 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCandle(int& i, int argc, char** argv) {
+    // Wax pillar candle: thin tall wax cylinder optionally
+    // standing on a wider shallow saucer base (the drip catcher).
+    // Both pieces use addClosedCylinderY — same pattern as
+    // --gen-mesh-bird-bath but with a much skinnier upper
+    // cylinder. The 80th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float waxR  = 0.04f;
+    float waxH  = 0.30f;
+    float saucerR = 0.08f;       // 0 → no saucer
+    float saucerH = 0.015f;
+    int   sides = 14;
+    parseOptFloat(i, argc, argv, waxR);
+    parseOptFloat(i, argc, argv, waxH);
+    parseOptFloat(i, argc, argv, saucerR);
+    parseOptFloat(i, argc, argv, saucerH);
+    parseOptInt(i, argc, argv, sides);
+    if (waxR <= 0 || waxH <= 0 || saucerR < 0 ||
+        (saucerR > 0 && saucerR <= waxR) ||
+        (saucerR > 0 && saucerH <= 0) ||
+        sides < 6 || sides > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-candle: dims > 0; saucerR > waxR (or 0); sides 6..64\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    float yBase = 0.0f;
+    if (saucerR > 0.0f) {
+        addClosedCylinderY(wom, saucerR, 0.0f, saucerH, sides);
+        yBase = saucerH;
+    }
+    addClosedCylinderY(wom, waxR, yBase, yBase + waxH, sides);
+    finalizeAsSingleBatch(wom);
+    float maxR = std::max(waxR, saucerR);
+    setCenteredBoundsXZ(wom, maxR, maxR, yBase + waxH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-candle")) return 1;
+    printWomWrote(womBase);
+    std::printf("  wax        : R=%.3f x %.3f tall\n", waxR, waxH);
+    if (saucerR > 0.0f)
+        std::printf("  saucer     : R=%.3f x %.3f thick\n", saucerR, saucerH);
+    else
+        std::printf("  saucer     : (none)\n");
+    std::printf("  sides      : %d\n", sides);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleUrn(int& i, int argc, char** argv) {
     // Multi-tier vertical urn: foot (wide short cylinder) →
     // body (tall main cylinder) → neck (narrow constriction) →
@@ -7264,6 +7313,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-bird-bath",      1, handleBirdBath},
     {"--gen-mesh-planter-box",    1, handlePlanterBox},
     {"--gen-mesh-urn",            1, handleUrn},
+    {"--gen-mesh-candle",         1, handleCandle},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
