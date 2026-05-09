@@ -7515,6 +7515,26 @@ int handleGenGraveyardPack(int& i, int /*argc*/, char** argv) {
     });
 }
 
+int handleGenKitchenPack(int& i, int /*argc*/, char** argv) {
+    // Tavern kitchen / cookhouse scene: stove (the cookfire),
+    // cauldron (large hanging pot), table (prep surface), stool
+    // (the cook's seat), barrel (water / ale / flour storage),
+    // mug (drink ready for the inn customer), mortar-pestle
+    // (herb / spice grinding). The 11th themed pack — pairs
+    // with --gen-tavern-pack as the back-of-house complement
+    // to that pack's front-of-house common-room props.
+    std::string outDir = argv[++i];
+    return emitMeshPack(outDir, "kitchen pack", {
+        {"--gen-mesh-stove",          handleStove,         "stove"},
+        {"--gen-mesh-cauldron",       handleCauldron,      "cauldron"},
+        {"--gen-mesh-table",          handleTable,         "prep-table"},
+        {"--gen-mesh-stool",          handleStool,         "stool"},
+        {"--gen-mesh-barrel",         handleBarrel,        "barrel"},
+        {"--gen-mesh-mug",            handleMug,           "mug"},
+        {"--gen-mesh-mortar-pestle",  handleMortarPestle,  "mortar"},
+    });
+}
+
 int handleGenTemplePack(int& i, int /*argc*/, char** argv) {
     // Temple / shrine scene: altar (the focal point), shrine
     // (auxiliary devotional), brazier (lit on either side of the
@@ -7650,6 +7670,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-tavern-pack",         1, handleGenTavernPack},
     {"--gen-mining-pack",         1, handleGenMiningPack},
     {"--gen-arena-pack",          1, handleGenArenaPack},
+    {"--gen-kitchen-pack",        1, handleGenKitchenPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
