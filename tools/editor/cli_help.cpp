@@ -1021,6 +1021,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtrn to a human-editable JSON sidecar (defaults to <base>.wtrn.json)\n");
     std::printf("  --import-wtrn-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtrn.json sidecar back into binary .wtrn (accepts kindMask int OR kindList string array)\n");
+    std::printf("  --gen-gossip <wgsp-base> [name]\n");
+    std::printf("                         Emit .wgsp starter: 1 menu with greeting + 3 options (vendor / trainer / close)\n");
+    std::printf("  --gen-gossip-innkeeper <wgsp-base> [name]\n");
+    std::printf("                         Emit .wgsp 2-menu innkeeper tree (menuId=4001 closes WCRT.gossipId gap; submenu 4002 area lore)\n");
+    std::printf("  --gen-gossip-questgiver <wgsp-base> [name]\n");
+    std::printf("                         Emit .wgsp questgiver menu: 2 quest options + bank + paid respec (Coinpouch flag, 10g)\n");
+    std::printf("  --info-wgsp <wgsp-base> [--json]\n");
+    std::printf("                         Print WGSP entries (menuId / title / per-option kind / target / cost / flags)\n");
+    std::printf("  --validate-wgsp <wgsp-base> [--json]\n");
+    std::printf("                         Static checks: menuId>0+unique, options non-empty, Submenu actionTarget exists, Coinpouch needs cost, faction conflict\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

@@ -65,6 +65,8 @@ const char* const kArgRequired[] = {
     "--gen-trainers", "--gen-trainers-mage", "--gen-trainers-weapons",
     "--info-wtrn", "--validate-wtrn",
     "--export-wtrn-json", "--import-wtrn-json",
+    "--gen-gossip", "--gen-gossip-innkeeper", "--gen-gossip-questgiver",
+    "--info-wgsp", "--validate-wgsp",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
