@@ -5212,6 +5212,75 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleWatchpost(int& i, int argc, char** argv) {
+    // Sentry watchpost: tall central pole topped by a wider square
+    // platform, with optional corner railing posts. Distinct from
+    // --gen-mesh-tower (round castle tower with battlements) — a
+    // watchpost is the rough scout/lookout variant. Pairs with
+    // --gen-mesh-tent / --gen-mesh-firepit for outdoor camps and
+    // forward outposts. The 64th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float postH       = 3.0f;
+    float postW       = 0.18f;
+    float platformSize = 0.8f;
+    float platformT   = 0.10f;
+    float railingH    = 0.45f;        // 0 → no railing
+    float railingW    = 0.06f;
+    parseOptFloat(i, argc, argv, postH);
+    parseOptFloat(i, argc, argv, postW);
+    parseOptFloat(i, argc, argv, platformSize);
+    parseOptFloat(i, argc, argv, platformT);
+    parseOptFloat(i, argc, argv, railingH);
+    parseOptFloat(i, argc, argv, railingW);
+    if (postH <= 0 || postW <= 0 ||
+        platformSize <= 0 || platformT <= 0 ||
+        railingH < 0 || railingW <= 0 ||
+        postW * 2 >= platformSize) {
+        std::fprintf(stderr,
+            "gen-mesh-watchpost: dims > 0; postW*2 < platformSize\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    // Central pole: square box from y=0 to y=postH.
+    addFlatBox(wom, 0.0f, postH * 0.5f, 0.0f,
+               postW * 0.5f, postH * 0.5f, postW * 0.5f);
+    // Platform slab on top of the pole.
+    const float platformY = postH + platformT * 0.5f;
+    const float halfPlat = platformSize * 0.5f;
+    addFlatBox(wom, 0.0f, platformY, 0.0f,
+               halfPlat, platformT * 0.5f, halfPlat);
+    // Optional 4 corner railing posts above the platform.
+    if (railingH > 0.0f) {
+        const float railCY = postH + platformT + railingH * 0.5f;
+        const float halfRail = railingW * 0.5f;
+        const float railX = halfPlat - halfRail;
+        addFlatBox(wom, +railX, railCY, +railX,
+                   halfRail, railingH * 0.5f, halfRail);
+        addFlatBox(wom, -railX, railCY, +railX,
+                   halfRail, railingH * 0.5f, halfRail);
+        addFlatBox(wom, +railX, railCY, -railX,
+                   halfRail, railingH * 0.5f, halfRail);
+        addFlatBox(wom, -railX, railCY, -railX,
+                   halfRail, railingH * 0.5f, halfRail);
+    }
+    finalizeAsSingleBatch(wom);
+    float topY = postH + platformT + (railingH > 0 ? railingH : 0.0f);
+    wom.boundMin = glm::vec3(-halfPlat, 0, -halfPlat);
+    wom.boundMax = glm::vec3(+halfPlat, topY, +halfPlat);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-watchpost")) return 1;
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  post       : %.3f tall, %.3f square\n", postH, postW);
+    std::printf("  platform   : %.3f square, %.3f thick\n",
+                platformSize, platformT);
+    std::printf("  railing    : %s\n",
+                railingH > 0 ? std::to_string(railingH).c_str() : "(none)");
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleCrateStack(int& i, int argc, char** argv) {
     // Multi-crate stack: an N×M×K arrangement of cube crates with
     // a small gap between each so they read as discrete shipping
@@ -6134,6 +6203,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-bedroll",        1, handleBedroll},
     {"--gen-mesh-workbench",      1, handleWorkbench},
     {"--gen-mesh-crate-stack",    1, handleCrateStack},
+    {"--gen-mesh-watchpost",      1, handleWatchpost},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
