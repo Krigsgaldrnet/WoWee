@@ -1,4 +1,5 @@
 #include "cli_mesh_info.hpp"
+#include "cli_weld.hpp"
 
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
@@ -11,10 +12,8 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
-#include <map>
 #include <string>
 #include <system_error>
-#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -382,34 +381,15 @@ int handleInfoMeshStats(int& i, int argc, char** argv) {
     // when keying edges, so adjacent triangles whose corner
     // vertices happen to share a position (per-face shading
     // emitting duplicates) get unified.
-    std::vector<uint32_t> canon(wom.vertices.size());
+    std::vector<uint32_t> canon;
     std::size_t uniquePositions = 0;
     if (useWeld) {
-        // Use the quantized (qx, qy, qz) tuple as the equality key —
-        // a hash key would risk false-positive collisions that
-        // incorrectly merge distinct corners (e.g. a cube's 8 corners
-        // collapsing to 2). std::map gives exact-match equality at
-        // O(log n) per op which is fast enough for any real mesh.
-        const float invEps = 1.0f / std::max(weldEps, 1e-9f);
-        using QKey = std::tuple<int64_t, int64_t, int64_t>;
-        std::map<QKey, uint32_t> bucket;
-        auto qkey = [&](const glm::vec3& p) -> QKey {
-            return {static_cast<int64_t>(std::lround(p.x * invEps)),
-                    static_cast<int64_t>(std::lround(p.y * invEps)),
-                    static_cast<int64_t>(std::lround(p.z * invEps))};
-        };
-        for (std::size_t v = 0; v < wom.vertices.size(); ++v) {
-            QKey k = qkey(wom.vertices[v].position);
-            auto it = bucket.find(k);
-            if (it == bucket.end()) {
-                bucket.emplace(k, static_cast<uint32_t>(v));
-                canon[v] = static_cast<uint32_t>(v);
-            } else {
-                canon[v] = it->second;
-            }
-        }
-        uniquePositions = bucket.size();
+        std::vector<glm::vec3> positions;
+        positions.reserve(wom.vertices.size());
+        for (const auto& v : wom.vertices) positions.push_back(v.position);
+        canon = buildWeldMap(positions, weldEps, uniquePositions);
     } else {
+        canon.resize(wom.vertices.size());
         for (std::size_t v = 0; v < wom.vertices.size(); ++v) {
             canon[v] = static_cast<uint32_t>(v);
         }

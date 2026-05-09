@@ -1,4 +1,5 @@
 #include "cli_bake.hpp"
+#include "cli_weld.hpp"
 
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
@@ -9,7 +10,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
-#include <tuple>
 
 #include <algorithm>
 #include <chrono>
@@ -19,6 +19,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -952,31 +953,29 @@ int handleBakeWomCollision(int& i, int argc, char** argv) {
     std::vector<glm::vec3> positions;
     std::vector<uint32_t> indices;
     if (useWeld) {
-        // Build the canon[] map first, then re-emit positions/indices
-        // using only the canonical (lowest-index) vertex of each
-        // welded equivalence class. This produces a properly indexed
-        // mesh so collision raycasts can share edges between faces.
-        const float invEps = 1.0f / std::max(weldEps, 1e-9f);
-        using QKey = std::tuple<int64_t, int64_t, int64_t>;
-        std::map<QKey, uint32_t> bucket;
-        std::vector<uint32_t> canon(wom.vertices.size());
+        // Run cli_weld to map vertex i → canonical (lowest-index)
+        // representative of its equivalence class, then compact
+        // positions to one entry per unique class and renumber
+        // indices accordingly. The collision mesh ends up properly
+        // indexed so raycasts can share edges between faces.
+        std::vector<glm::vec3> srcPositions;
+        srcPositions.reserve(wom.vertices.size());
+        for (const auto& vert : wom.vertices) srcPositions.push_back(vert.position);
+        std::size_t uniq = 0;
+        std::vector<uint32_t> canon = buildWeldMap(srcPositions, weldEps, uniq);
+        // Build canon→compactedIndex remap as we walk vertices in order.
+        std::vector<uint32_t> remap(wom.vertices.size(),
+                                     std::numeric_limits<uint32_t>::max());
+        positions.reserve(uniq);
         for (std::size_t v = 0; v < wom.vertices.size(); ++v) {
-            const auto& p = wom.vertices[v].position;
-            QKey k{static_cast<int64_t>(std::lround(p.x * invEps)),
-                   static_cast<int64_t>(std::lround(p.y * invEps)),
-                   static_cast<int64_t>(std::lround(p.z * invEps))};
-            auto it = bucket.find(k);
-            if (it == bucket.end()) {
-                uint32_t newIdx = static_cast<uint32_t>(positions.size());
-                bucket.emplace(k, newIdx);
-                positions.push_back(p);
-                canon[v] = newIdx;
-            } else {
-                canon[v] = it->second;
+            uint32_t c = canon[v];
+            if (remap[c] == std::numeric_limits<uint32_t>::max()) {
+                remap[c] = static_cast<uint32_t>(positions.size());
+                positions.push_back(srcPositions[c]);
             }
         }
         indices.reserve(wom.indices.size());
-        for (uint32_t orig : wom.indices) indices.push_back(canon[orig]);
+        for (uint32_t orig : wom.indices) indices.push_back(remap[canon[orig]]);
     } else {
         positions.reserve(wom.vertices.size());
         for (const auto& vert : wom.vertices) positions.push_back(vert.position);

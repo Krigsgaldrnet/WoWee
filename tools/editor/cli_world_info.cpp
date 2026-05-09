@@ -1,4 +1,5 @@
 #include "cli_world_info.hpp"
+#include "cli_weld.hpp"
 
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wowee_collision.hpp"
@@ -12,9 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <map>
 #include <string>
-#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -126,33 +125,16 @@ int handleInfoWobStats(int& i, int argc, char** argv) {
             return 1;
         }
         gs.tris = g.indices.size() / 3;
-        // Build canon[] for this group, optionally welding.
-        std::vector<uint32_t> canon(g.vertices.size());
+        // Build canon[] for this group, optionally welding via the
+        // shared cli_weld utility.
+        std::vector<uint32_t> canon;
         if (useWeld) {
-            // Tuple key (qx,qy,qz) gives exact equality matching;
-            // a hash key would risk false-positive collisions
-            // collapsing distinct corners. See cli_mesh_info.cpp
-            // for the same pattern.
-            const float invEps = 1.0f / std::max(weldEps, 1e-9f);
-            using QKey = std::tuple<int64_t, int64_t, int64_t>;
-            std::map<QKey, uint32_t> bucket;
-            auto qkey = [&](const glm::vec3& p) -> QKey {
-                return {static_cast<int64_t>(std::lround(p.x * invEps)),
-                        static_cast<int64_t>(std::lround(p.y * invEps)),
-                        static_cast<int64_t>(std::lround(p.z * invEps))};
-            };
-            for (std::size_t v = 0; v < g.vertices.size(); ++v) {
-                QKey k = qkey(g.vertices[v].position);
-                auto it = bucket.find(k);
-                if (it == bucket.end()) {
-                    bucket.emplace(k, static_cast<uint32_t>(v));
-                    canon[v] = static_cast<uint32_t>(v);
-                } else {
-                    canon[v] = it->second;
-                }
-            }
-            gs.uniquePositions = bucket.size();
+            std::vector<glm::vec3> positions;
+            positions.reserve(g.vertices.size());
+            for (const auto& v : g.vertices) positions.push_back(v.position);
+            canon = buildWeldMap(positions, weldEps, gs.uniquePositions);
         } else {
+            canon.resize(g.vertices.size());
             for (std::size_t v = 0; v < g.vertices.size(); ++v) {
                 canon[v] = static_cast<uint32_t>(v);
             }
