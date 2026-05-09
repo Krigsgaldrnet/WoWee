@@ -95,10 +95,6 @@ int handleInfoWobStats(int& i, int argc, char** argv) {
         return 1;
     }
     auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
-    auto edgeKey = [](uint32_t a, uint32_t b) -> uint64_t {
-        if (a > b) std::swap(a, b);
-        return (uint64_t(a) << 32) | uint64_t(b);
-    };
     struct GroupStats {
         std::string name;
         std::size_t tris = 0;
@@ -140,8 +136,7 @@ int handleInfoWobStats(int& i, int argc, char** argv) {
             }
             gs.uniquePositions = g.vertices.size();
         }
-        std::unordered_map<uint64_t, uint32_t> edgeUses;
-        edgeUses.reserve(gs.tris * 3);
+        // Triangle area pass (also catches out-of-range indices).
         for (std::size_t t = 0; t < gs.tris; ++t) {
             uint32_t i0 = g.indices[t * 3 + 0];
             uint32_t i1 = g.indices[t * 3 + 1];
@@ -160,17 +155,12 @@ int handleInfoWobStats(int& i, int argc, char** argv) {
             double area = 0.5 * glm::length(glm::cross(b - a, c - a));
             if (area < 1e-12) ++gs.degenerate;
             gs.surfaceArea += area;
-            uint32_t c0 = canon[i0], c1 = canon[i1], c2 = canon[i2];
-            if (c0 != c1) ++edgeUses[edgeKey(c0, c1)];
-            if (c1 != c2) ++edgeUses[edgeKey(c1, c2)];
-            if (c2 != c0) ++edgeUses[edgeKey(c2, c0)];
         }
-        for (const auto& [_k, count] : edgeUses) {
-            if (count == 1) ++gs.boundary;
-            else if (count == 2) ++gs.manifold;
-            else ++gs.nonManifold;
-        }
-        gs.watertight = (gs.boundary == 0 && gs.nonManifold == 0);
+        EdgeStats edges = classifyEdges(g.indices, canon);
+        gs.boundary = edges.boundary;
+        gs.manifold = edges.manifold;
+        gs.nonManifold = edges.nonManifold;
+        gs.watertight = edges.watertight();
         aggBoundary += gs.boundary;
         aggManifold += gs.manifold;
         aggNonManifold += gs.nonManifold;

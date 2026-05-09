@@ -322,10 +322,9 @@ int handleValidateZonePack(int& i, int argc, char** argv) {
 }
 
 // Watertight check on a single WOM after the standard weld pass.
-// Returns true if the welded mesh has zero boundary edges and zero
-// non-manifold edges. Stats are written through outBoundary /
-// outNonManifold for the per-zone audit's summary line. eps is the
-// caller-supplied weld tolerance.
+// Returns true if every welded edge is shared by exactly 2 triangles.
+// Per-mesh stats are written through outBoundary / outNonManifold
+// for the audit's summary line.
 bool isWomWatertightAfterWeld(
         const std::string& womBase, float eps,
         std::size_t& outTris, std::size_t& outBoundary,
@@ -341,32 +340,10 @@ bool isWomWatertightAfterWeld(
     for (const auto& v : wom.vertices) positions.push_back(v.position);
     std::size_t uniq = 0;
     auto canon = buildWeldMap(positions, eps, uniq);
-    auto edgeKey = [](uint32_t a, uint32_t b) -> uint64_t {
-        if (a > b) std::swap(a, b);
-        return (uint64_t(a) << 32) | uint64_t(b);
-    };
-    std::unordered_map<uint64_t, uint32_t> edgeUses;
-    edgeUses.reserve(outTris * 3);
-    for (std::size_t t = 0; t < outTris; ++t) {
-        uint32_t i0 = wom.indices[t * 3 + 0];
-        uint32_t i1 = wom.indices[t * 3 + 1];
-        uint32_t i2 = wom.indices[t * 3 + 2];
-        if (i0 >= wom.vertices.size() || i1 >= wom.vertices.size() ||
-            i2 >= wom.vertices.size()) {
-            return false;
-        }
-        uint32_t c0 = canon[i0], c1 = canon[i1], c2 = canon[i2];
-        if (c0 != c1) ++edgeUses[edgeKey(c0, c1)];
-        if (c1 != c2) ++edgeUses[edgeKey(c1, c2)];
-        if (c2 != c0) ++edgeUses[edgeKey(c2, c0)];
-    }
-    outBoundary = 0;
-    outNonManifold = 0;
-    for (const auto& [_k, count] : edgeUses) {
-        if (count == 1) ++outBoundary;
-        else if (count >= 3) ++outNonManifold;
-    }
-    return outBoundary == 0 && outNonManifold == 0;
+    EdgeStats edges = classifyEdges(wom.indices, canon);
+    outBoundary = edges.boundary;
+    outNonManifold = edges.nonManifold;
+    return edges.watertight();
 }
 
 int handleAuditWatertight(int& i, int argc, char** argv) {

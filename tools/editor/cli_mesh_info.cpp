@@ -395,17 +395,7 @@ int handleInfoMeshStats(int& i, int argc, char** argv) {
         }
         uniquePositions = wom.vertices.size();
     }
-    // Edge-use counter: key is (lo<<32 | hi) of the two canonical
-    // endpoint indices; value counts how many triangles share that
-    // edge. Skipped for huge meshes (>2M tris) since the
-    // unordered_map would balloon.
-    const bool runEdgeAnalysis = (triCount <= 2'000'000);
-    std::unordered_map<uint64_t, uint32_t> edgeUses;
-    if (runEdgeAnalysis) edgeUses.reserve(triCount * 3);
-    auto edgeKey = [](uint32_t a, uint32_t b) -> uint64_t {
-        if (a > b) std::swap(a, b);
-        return (uint64_t(a) << 32) | uint64_t(b);
-    };
+    // First pass: triangle areas + range checks (no edge work).
     for (std::size_t t = 0; t < triCount; ++t) {
         uint32_t i0 = wom.indices[t * 3 + 0];
         uint32_t i1 = wom.indices[t * 3 + 1];
@@ -420,21 +410,10 @@ int handleInfoMeshStats(int& i, int argc, char** argv) {
         glm::vec3 a = wom.vertices[i0].position;
         glm::vec3 b = wom.vertices[i1].position;
         glm::vec3 c = wom.vertices[i2].position;
-        glm::vec3 e1 = b - a;
-        glm::vec3 e2 = c - a;
-        double area = 0.5 * glm::length(glm::cross(e1, e2));
+        double area = 0.5 * glm::length(glm::cross(b - a, c - a));
         if (area < 1e-12) ++degenerate;
         areas.push_back(area);
         totalArea += area;
-        if (runEdgeAnalysis) {
-            uint32_t c0 = canon[i0], c1 = canon[i1], c2 = canon[i2];
-            // Skip degenerate edges where the two endpoints map to
-            // the same canonical vertex — they aren't real edges
-            // after welding.
-            if (c0 != c1) ++edgeUses[edgeKey(c0, c1)];
-            if (c1 != c2) ++edgeUses[edgeKey(c1, c2)];
-            if (c2 != c0) ++edgeUses[edgeKey(c2, c0)];
-        }
     }
     double minArea = areas.empty() ? 0.0 :
                      *std::min_element(areas.begin(), areas.end());
@@ -449,16 +428,15 @@ int handleInfoMeshStats(int& i, int argc, char** argv) {
                          sortedAreas.end());
         medianArea = sortedAreas[sortedAreas.size() / 2];
     }
-    std::size_t boundaryEdges = 0;     // shared by 1 triangle
-    std::size_t manifoldEdges = 0;     // shared by 2
-    std::size_t nonManifoldEdges = 0;  // shared by 3+
-    for (const auto& [_k, count] : edgeUses) {
-        if (count == 1) ++boundaryEdges;
-        else if (count == 2) ++manifoldEdges;
-        else ++nonManifoldEdges;
+    // Edge analysis via shared cli_weld utility. Skipped for huge
+    // meshes (>2M tris) since the underlying unordered_map would
+    // balloon.
+    const bool runEdgeAnalysis = (triCount <= 2'000'000);
+    EdgeStats edges;
+    if (runEdgeAnalysis) {
+        edges = classifyEdges(wom.indices, canon);
     }
-    bool watertight = runEdgeAnalysis && boundaryEdges == 0 &&
-                      nonManifoldEdges == 0;
+    bool watertight = runEdgeAnalysis && edges.watertight();
     glm::vec3 dim = wom.boundMax - wom.boundMin;
     double bboxVol = double(dim.x) * dim.y * dim.z;
     if (jsonOut) {
@@ -477,10 +455,10 @@ int handleInfoMeshStats(int& i, int argc, char** argv) {
             j["totalVertices"] = wom.vertices.size();
         }
         if (runEdgeAnalysis) {
-            j["edges"] = {{"total", edgeUses.size()},
-                           {"boundary", boundaryEdges},
-                           {"manifold", manifoldEdges},
-                           {"nonManifold", nonManifoldEdges}};
+            j["edges"] = {{"total", edges.total},
+                           {"boundary", edges.boundary},
+                           {"manifold", edges.manifold},
+                           {"nonManifold", edges.nonManifold}};
             j["watertight"] = watertight;
         }
         std::printf("%s\n", j.dump(2).c_str());
@@ -500,11 +478,11 @@ int handleInfoMeshStats(int& i, int argc, char** argv) {
                     uniquePositions, wom.vertices.size(), weldEps);
     }
     if (runEdgeAnalysis) {
-        std::printf("  edges          : %zu total\n", edgeUses.size());
-        std::printf("    boundary     : %zu (open seams)\n", boundaryEdges);
-        std::printf("    manifold     : %zu (shared by 2 tris)\n", manifoldEdges);
+        std::printf("  edges          : %zu total\n", edges.total);
+        std::printf("    boundary     : %zu (open seams)\n", edges.boundary);
+        std::printf("    manifold     : %zu (shared by 2 tris)\n", edges.manifold);
         std::printf("    non-manifold : %zu (shared by 3+ tris)\n",
-                    nonManifoldEdges);
+                    edges.nonManifold);
         std::printf("  watertight     : %s%s\n", watertight ? "YES" : "NO",
                     useWeld ? " (after weld)" : "");
     } else {
