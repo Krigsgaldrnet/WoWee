@@ -1075,6 +1075,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMS maps (id / type / expansion / max players) + areas (id / map / parent / level / faction / xp)\n");
     std::printf("  --validate-wms <wms-base> [--json]\n");
     std::printf("                         Static checks: ids unique, areas reference real maps, parent areas exist + same map, BG/Arena needs maxPlayers\n");
+    std::printf("  --export-wms-json <wms-base> [out.json]\n");
+    std::printf("                         Export binary .wms to a human-editable JSON sidecar (defaults to <base>.wms.json)\n");
+    std::printf("  --import-wms-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wms.json sidecar back into binary .wms (accepts mapType/expansion/faction int OR name forms)\n");
     std::printf("  --gen-chars <wchc-base> [name]\n");
     std::printf("                         Emit .wchc starter: 2 classes (Warrior + Mage) + 2 races (Human + Orc) + 4 outfits with WIT cross-refs\n");
     std::printf("  --gen-chars-alliance <wchc-base> [name]\n");
