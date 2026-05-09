@@ -877,6 +877,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WIT item entries (id / ilvl / quality / class / slot / buy price / name)\n");
     std::printf("  --validate-wit <wit-base> [--json]\n");
     std::printf("                         Static checks: itemId>0 + unique, weapon damage>0 + min<=max, equippable durability>0, sell<buy\n");
+    std::printf("  --gen-loot <wlot-base> [name]\n");
+    std::printf("                         Emit .wlot starter loot catalog: 1 creature with 1 drop slot, 1 item @ 50%%, 0..50 copper\n");
+    std::printf("  --gen-loot-bandit <wlot-base> [name]\n");
+    std::printf("                         Emit .wlot bandit loot table: dropCount=2, 4 candidate items, 5..50 copper\n");
+    std::printf("  --gen-loot-boss <wlot-base> [name]\n");
+    std::printf("                         Emit .wlot elite boss table: dropCount=4, 6 candidates incl. quest item + group-only epic, 50..200 silver\n");
+    std::printf("  --info-wlot <wlot-base> [--json]\n");
+    std::printf("                         Print WLOT loot tables (creatureId / dropCount / money range / per-drop chance + qty + flags)\n");
+    std::printf("  --validate-wlot <wlot-base> [--json]\n");
+    std::printf("                         Static checks: creatureId>0 + unique, chance in 0..100, minQty<=maxQty, money min<=max\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

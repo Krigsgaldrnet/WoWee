@@ -40,6 +40,7 @@
 #include "cli_sound_catalog.hpp"
 #include "cli_spawns_catalog.hpp"
 #include "cli_items_catalog.hpp"
+#include "cli_loot_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -121,6 +122,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSoundCatalog,
     handleSpawnsCatalog,
     handleItemsCatalog,
+    handleLootCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
