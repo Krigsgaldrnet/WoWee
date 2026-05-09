@@ -219,10 +219,7 @@ int handlePillar(int& i, int argc, char** argv) {
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Shaft side ring at given y. radius modulated by flute count.
     auto buildShaftRing = [&](float y) -> uint32_t {
@@ -460,10 +457,7 @@ int handleTower(int& i, int argc, char** argv) {
     const float pi = 3.14159265358979f;
     const int radSegs = std::max(24, battlements * 4);
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Cylinder shaft: side ring at y=0 and y=height.
     uint32_t botRing = static_cast<uint32_t>(wom.vertices.size());
@@ -610,10 +604,7 @@ int handleHouse(int& i, int argc, char** argv) {
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     float hx = width * 0.5f;
     float hz = depth * 0.5f;
@@ -729,10 +720,7 @@ int handleFountain(int& i, int argc, char** argv) {
     const float pi = 3.14159265358979f;
     const int segs = 24;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Cylinder helper: build side ring + caps from y0 to y1
     // at given radius. Returns when done; indices appended
@@ -834,10 +822,7 @@ int handleStatue(int& i, int argc, char** argv) {
     wom.version = 3;
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Pedestal: low square block (24 unique verts).
     float pedH = pedSize * 0.4f;
@@ -990,10 +975,7 @@ int handleAltar(int& i, int argc, char** argv) {
     const float pi = 3.14159265358979f;
     const int segs = 24;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Build a cylindrical disc from y0 to y1 at radius r.
     // Side ring + top cap (faces +Y). Bottom of each disc
@@ -1200,10 +1182,7 @@ int handleArchway(int& i, int argc, char** argv) {
     const float pi = 3.14159265358979f;
     const int pillarSegs = 16;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Cylindrical pillar at given (cx, cz), from y=0 to y=pillarH.
     auto pillar = [&](float cx, float cz) {
@@ -1380,10 +1359,7 @@ int handleBarrel(int& i, int argc, char** argv) {
     const int segs = 16;        // angular subdivisions
     const int rings = 12;       // vertical slices
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Radius profile: smooth cosine bulge from rim to mid.
     // r(t) = topR + (midR - topR) * sin(pi*t) where t in 0..1
@@ -1726,15 +1702,10 @@ int handleStairs(int& i, int argc, char** argv) {
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
-    auto addV = [&](float x, float y, float z,
-                      float nx, float ny, float nz,
-                      float u, float v) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = glm::vec3(x, y, z);
-        vtx.normal = glm::vec3(nx, ny, nz);
-        vtx.texCoord = glm::vec2(u, v);
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    auto addV = [&](float px, float py, float pz,
+                    float nx, float ny, float nz,
+                    float u,  float v) -> uint32_t {
+        return addVertex(wom, px, py, pz, nx, ny, nz, u, v);
     };
     float halfW = width * 0.5f;
     // Each step is a box from y=0 to y=(k+1)*stepHeight,
@@ -2015,15 +1986,10 @@ int handleTube(int& i, int argc, char** argv) {
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
     float h = height * 0.5f;
-    auto addV = [&](float x, float y, float z,
-                      float nx, float ny, float nz,
-                      float u, float v) {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = glm::vec3(x, y, z);
-        vtx.normal = glm::vec3(nx, ny, nz);
-        vtx.texCoord = glm::vec2(u, v);
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    auto addV = [&](float px, float py, float pz,
+                    float nx, float ny, float nz,
+                    float u,  float v) -> uint32_t {
+        return addVertex(wom, px, py, pz, nx, ny, nz, u, v);
     };
     // Outer wall: 2 rows × (segments+1) verts, normals point
     // radially outward.
@@ -2194,15 +2160,10 @@ int handleCapsule(int& i, int argc, char** argv) {
     wom.version = 3;
     float halfBody = cylHeight * 0.5f;
     float totalH = cylHeight + 2.0f * radius;
-    auto addV = [&](float x, float y, float z,
-                      float nx, float ny, float nz,
-                      float u, float v) {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = glm::vec3(x, y, z);
-        vtx.normal = glm::vec3(nx, ny, nz);
-        vtx.texCoord = glm::vec2(u, v);
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    auto addV = [&](float px, float py, float pz,
+                    float nx, float ny, float nz,
+                    float u,  float v) -> uint32_t {
+        return addVertex(wom, px, py, pz, nx, ny, nz, u, v);
     };
     // Top hemisphere: stacks rings from north pole down to
     // body top. Vertex layout per ring: (segments+1) verts.
@@ -2359,15 +2320,10 @@ int handleArch(int& i, int argc, char** argv) {
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
     // Helper to push a vertex.
-    auto addV = [&](float x, float y, float z,
-                      float nx, float ny, float nz,
-                      float u, float v) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = glm::vec3(x, y, z);
-        vtx.normal = glm::vec3(nx, ny, nz);
-        vtx.texCoord = glm::vec2(u, v);
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    auto addV = [&](float px, float py, float pz,
+                    float nx, float ny, float nz,
+                    float u,  float v) -> uint32_t {
+        return addVertex(wom, px, py, pz, nx, ny, nz, u, v);
     };
     // Helper to emit an axis-aligned box from min to max.
     auto addBox = [&](glm::vec3 lo, glm::vec3 hi) {
@@ -2486,12 +2442,7 @@ int handlePyramid(int& i, int argc, char** argv) {
     wom.version = 3;
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p;
-        vtx.normal = n;
-        vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Build base ring vertices (one per side).
     std::vector<glm::vec3> basePts;
@@ -2694,12 +2645,7 @@ int handleTree(int& i, int argc, char** argv) {
     wom.version = 3;
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p;
-        vtx.normal = n;
-        vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Trunk cylinder: 12 segments, side ring + top + bottom.
     const int trunkSegs = 12;
@@ -3292,10 +3238,7 @@ int handleMushroom(int& i, int argc, char** argv) {
     wom.version = 3;
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Stalk: 12-segment cylinder from y=0 to y=stalkH.
     const int segs = 12;
@@ -3428,10 +3371,7 @@ int handleCart(int& i, int argc, char** argv) {
     wom.version = 3;
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
@@ -3559,10 +3499,7 @@ int handleBanner(int& i, int argc, char** argv) {
     wom.version = 3;
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Pole cylinder (12 segments)
     const int poleSegs = 12;
@@ -3827,10 +3764,7 @@ int handleShrine(int& i, int argc, char** argv) {
     wom.version = 3;
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
@@ -6210,10 +6144,7 @@ int handleTent(int& i, int argc, char** argv) {
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     const float L2 = length * 0.5f;
     const float W2 = width  * 0.5f;
@@ -6544,10 +6475,7 @@ int handleHaystack(int& i, int argc, char** argv) {
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     const float pi = 3.14159265358979f;
     const float layerH = height / layers;
@@ -6814,10 +6742,7 @@ int handleWoodpile(int& i, int argc, char** argv) {
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
+        return addVertex(wom, p, n, uv);
     };
     // Add a log: z-axis cylinder centered at (cx, cy, 0) with
     // length logLen along Z. Each log gets unique vertices for

@@ -2,10 +2,39 @@
 
 #include "pipeline/wowee_model.hpp"
 #include <glm/glm.hpp>
+#include <cstdint>
 
 namespace wowee {
 namespace editor {
 namespace cli {
+
+// Append one vertex (position, normal, UV) to a WoweeModel and
+// return its newly-assigned index. Inline because the procedural
+// mesh primitives call this thousands of times per build and the
+// abstraction shouldn't cost a function-call frame each time.
+// Pre-extraction this was the same 5-line lambda copy-pasted into
+// 21 different handlers.
+inline uint32_t addVertex(wowee::pipeline::WoweeModel& wom,
+                          glm::vec3 p, glm::vec3 n, glm::vec2 uv) {
+    wowee::pipeline::WoweeModel::Vertex vtx;
+    vtx.position = p;
+    vtx.normal = n;
+    vtx.texCoord = uv;
+    wom.vertices.push_back(vtx);
+    return static_cast<uint32_t>(wom.vertices.size() - 1);
+}
+
+// Per-float overload used by handlers that compute pos/normal/uv
+// components inline rather than building intermediate glm vectors
+// (--gen-mesh-stairs, --gen-mesh-tube, --gen-mesh-capsule,
+// --gen-mesh-arch). Same semantics as the vec3/vec2 form.
+inline uint32_t addVertex(wowee::pipeline::WoweeModel& wom,
+                          float px, float py, float pz,
+                          float nx, float ny, float nz,
+                          float u,  float v) {
+    return addVertex(wom, glm::vec3(px, py, pz), glm::vec3(nx, ny, nz),
+                      glm::vec2(u, v));
+}
 
 // Append a flat-shaded axis-aligned box to a WoweeModel. The box
 // is centered at (cx, cy, cz) with half-extents (hx, hy, hz). Each
