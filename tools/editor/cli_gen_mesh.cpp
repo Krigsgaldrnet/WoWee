@@ -1,4 +1,5 @@
 #include "cli_gen_mesh.hpp"
+#include "cli_box_emitter.hpp"
 
 #include "pipeline/wowee_model.hpp"
 #include <glm/glm.hpp>
@@ -357,39 +358,7 @@ int handleBridge(int& i, int argc, char** argv) {
     // pushed into wom.indices directly.
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        glm::vec3 c(cx, cy, cz);
-        struct Face {
-            glm::vec3 n;
-            glm::vec3 du, dv;  // unit-length axes spanning the face
-        };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},   // top    (+Y)
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},   // bottom (-Y)
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},   // right  (+X)
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},   // left   (-X)
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},   // front  (+Z)
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},   // back   (-Z)
-        };
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p;
-                vtx.normal = f.n;
-                vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                { base, base + 1, base + 2, base, base + 2, base + 3 });
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Deck: planks along X, gap = 5% of plank pitch.
     float plankThickness = 0.08f;
@@ -1147,36 +1116,7 @@ int handlePortal(int& i, int argc, char** argv) {
     // Box helper — same pattern as other multi-box meshes.
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p;
-                vtx.normal = f.n;
-                vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Two posts at z = ±(width/2 - postThick/2). Each
     // post extends from y=0 to y=height-lintelH so it
@@ -1555,34 +1495,7 @@ int handleChest(int& i, int argc, char** argv) {
     // face gets unique normals for flat shading.
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float hx = width * 0.5f;
     float hz = depth * 0.5f;
@@ -1674,34 +1587,7 @@ int handleAnvil(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Pedestal: bottom 60% of total height, narrower base
     // (4-step taper would be classic but for simplicity we use
@@ -2485,29 +2371,7 @@ int handleArch(int& i, int argc, char** argv) {
     };
     // Helper to emit an axis-aligned box from min to max.
     auto addBox = [&](glm::vec3 lo, glm::vec3 hi) {
-        struct Face { float nx, ny, nz; float verts[4][3]; };
-        Face faces[6] = {
-            { 0,  0,  1, {{lo.x,lo.y,hi.z},{hi.x,lo.y,hi.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}}},
-            { 0,  0, -1, {{hi.x,lo.y,lo.z},{lo.x,lo.y,lo.z},{lo.x,hi.y,lo.z},{hi.x,hi.y,lo.z}}},
-            { 1,  0,  0, {{hi.x,lo.y,hi.z},{hi.x,lo.y,lo.z},{hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z}}},
-            {-1,  0,  0, {{lo.x,lo.y,lo.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,hi.z},{lo.x,hi.y,lo.z}}},
-            { 0,  1,  0, {{lo.x,hi.y,hi.z},{hi.x,hi.y,hi.z},{hi.x,hi.y,lo.z},{lo.x,hi.y,lo.z}}},
-            { 0, -1,  0, {{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},{hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z}}},
-        };
-        float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
-        for (auto& f : faces) {
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            for (int k = 0; k < 4; ++k) {
-                addV(f.verts[k][0], f.verts[k][1], f.verts[k][2],
-                      f.nx, f.ny, f.nz, uvs[k][0], uvs[k][1]);
-            }
-            wom.indices.push_back(base + 0);
-            wom.indices.push_back(base + 1);
-            wom.indices.push_back(base + 2);
-            wom.indices.push_back(base + 0);
-            wom.indices.push_back(base + 2);
-            wom.indices.push_back(base + 3);
-        }
+        addFlatBox(wom, lo, hi);
     };
     float halfOW = openingW * 0.5f;
     float halfD = depth * 0.5f;
@@ -2737,39 +2601,8 @@ int handleFence(int& i, int argc, char** argv) {
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
-    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        wowee::pipeline::WoweeModel::Vertex vtx;
-        vtx.position = p;
-        vtx.normal = n;
-        vtx.texCoord = uv;
-        wom.vertices.push_back(vtx);
-        return static_cast<uint32_t>(wom.vertices.size() - 1);
-    };
     auto addBox = [&](glm::vec3 lo, glm::vec3 hi) {
-        struct Face { float nx, ny, nz; float verts[4][3]; };
-        Face faces[6] = {
-            { 0,  1,  0, {{lo.x,hi.y,hi.z},{hi.x,hi.y,hi.z},{hi.x,hi.y,lo.z},{lo.x,hi.y,lo.z}}},
-            { 0, -1,  0, {{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},{hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z}}},
-            { 0,  0,  1, {{lo.x,lo.y,hi.z},{hi.x,lo.y,hi.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}}},
-            { 0,  0, -1, {{hi.x,lo.y,lo.z},{lo.x,lo.y,lo.z},{lo.x,hi.y,lo.z},{hi.x,hi.y,lo.z}}},
-            { 1,  0,  0, {{hi.x,lo.y,hi.z},{hi.x,lo.y,lo.z},{hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z}}},
-            {-1,  0,  0, {{lo.x,lo.y,lo.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,hi.z},{lo.x,hi.y,lo.z}}},
-        };
-        float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
-        for (auto& f : faces) {
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            for (int k = 0; k < 4; ++k) {
-                addV(glm::vec3(f.verts[k][0], f.verts[k][1], f.verts[k][2]),
-                      glm::vec3(f.nx, f.ny, f.nz),
-                      glm::vec2(uvs[k][0], uvs[k][1]));
-            }
-            wom.indices.push_back(base + 0);
-            wom.indices.push_back(base + 1);
-            wom.indices.push_back(base + 2);
-            wom.indices.push_back(base + 0);
-            wom.indices.push_back(base + 2);
-            wom.indices.push_back(base + 3);
-        }
+        addFlatBox(wom, lo, hi);
     };
     float postHalfW = rt;
     // Posts along +X starting at X=0.
@@ -3602,34 +3435,7 @@ int handleCart(int& i, int argc, char** argv) {
     };
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Bed sits at y = wheelR (so wheels touch ground at y=0)
     // up to y = wheelR + bedH.
@@ -3872,34 +3678,7 @@ int handleGrave(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Base: wider, lower. Sits at y=0 to baseH where baseH = 20% of tablet H.
     float baseH = tabletH * 0.2f;
@@ -3974,34 +3753,7 @@ int handleBench(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Seat: top plank at y=seatY-seatT to y=seatY.
     float seatCY = seatY - seatT * 0.5f;
@@ -4082,34 +3834,7 @@ int handleShrine(int& i, int argc, char** argv) {
     };
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Base: low square slab, 10% of pillar height tall.
     float baseH = pillarH * 0.1f;
@@ -4214,34 +3939,7 @@ int handleTotem(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Stack blocks bottom-up. Bottom block always full width.
     // Even blocks (0, 2, 4...) get full width, odd blocks 70%.
@@ -4311,34 +4009,7 @@ int handleCage(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float halfW = width * 0.5f;
     float frameT = barRadius * 1.5f;  // top/bottom slab thickness
@@ -4433,34 +4104,7 @@ int handleThrone(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Pedestal: low square slab at the floor
     float pedH = seatH * 0.4f;
@@ -4685,33 +4329,7 @@ int handleArchwayDouble(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float halfPost = postT * 0.5f;
     float halfLintel = lintelT * 0.5f;
@@ -4799,33 +4417,7 @@ int handleBrazier(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Base plate.
     float baseHeight = baseSize * 0.20f;
@@ -4922,33 +4514,7 @@ int handlePodium(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Each step is shorter on each side by ~15% of base size,
     // and the top platform's footprint is half the base. Step
@@ -5036,33 +4602,7 @@ int handleSundial(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float halfBase = baseSize * 0.5f;
     // Base plate at floor.
@@ -5155,33 +4695,7 @@ int handleScarecrow(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Vertical body post — full bodyHeight.
     float halfPost = postT * 0.5f;
@@ -5280,33 +4794,7 @@ int handleWeathervane(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Base plate at floor.
     float baseHeight = baseSize * 0.30f;
@@ -5399,33 +4887,7 @@ int handleBeehive(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Optional wooden base plate, slightly wider than the
     // bottom tier so it reads as a foundation.
@@ -5519,33 +4981,7 @@ int handleGate(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Total gate width = openingWidth + 2*postT (posts sit flush
     // against the rails so the rail length = openingWidth).
@@ -5626,33 +5062,7 @@ int handleCauldron(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Tier proportions (bottom → top): 60% / 90% / 100% of rimWidth.
     // Heights split: legs / 30% body / 55% body / 15% body (rim).
@@ -5745,33 +5155,7 @@ int handleStool(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float halfSeat = seatSize * 0.5f;
     float halfLeg  = legT * 0.5f;
@@ -5839,33 +5223,7 @@ int handleCrate(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float halfBody = size * 0.5f;
     // Main body: cube centered at (0, halfBody, 0).
@@ -5943,33 +5301,7 @@ int handleTombstone(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Vertical layout: base 15%, slab 75%, crown 10% of total height.
     float baseH  = height * 0.15f;
@@ -6060,33 +5392,7 @@ int handleMailbox(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Vertical post from y=0 to y=postHeight.
     float halfPost = postThickness * 0.5f;
@@ -6190,33 +5496,7 @@ int handleSignpost(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Base plinth at the floor.
     float baseHeight = baseSize * 0.45f;
@@ -6314,33 +5594,7 @@ int handleWell(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float halfOuter = outerSize * 0.5f;
     float halfWallT = wallT * 0.5f;
@@ -6445,33 +5699,7 @@ int handleLadder(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float halfW = width  * 0.5f;
     float halfRail = railT * 0.5f;
@@ -6560,33 +5788,7 @@ int handleBed(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float halfL = length * 0.5f;
     float halfW = width  * 0.5f;
@@ -6691,33 +5893,7 @@ int handleLamppost(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Base plinth: low square slab at the floor.
     float baseHeight = baseSize * 0.4f;
@@ -6816,33 +5992,7 @@ int handleTable(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
-            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     float halfW = width  * 0.5f;
     float halfD = depth  * 0.5f;
@@ -6920,34 +6070,7 @@ int handleBookshelf(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Cabinet skin: thickness scales with the smaller cabinet
     // dimension so the shelf reads at any size without becoming
@@ -7238,34 +6361,7 @@ int handleDock(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        const Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base+1, base+2, base, base+2, base+3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     const float W2 = width * 0.5f;
     const float L2 = length * 0.5f;
@@ -7525,34 +6621,7 @@ int handleCanopy(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        const Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base+1, base+2, base, base+2, base+3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     const float W2 = width * 0.5f;
     const float D2 = depth * 0.5f;
@@ -7783,34 +6852,7 @@ int handleFirepit(int& i, int argc, char** argv) {
     wom.version = 3;
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
-        struct Face { glm::vec3 n, du, dv; };
-        const Face faces[6] = {
-            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},   // +Y
-            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},   // -Y
-            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},   // +X
-            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},   // -X
-            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},   // +Z
-            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},   // -Z
-        };
-        glm::vec3 c(cx, cy, cz);
-        glm::vec3 ext(hx, hy, hz);
-        for (const Face& f : faces) {
-            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
-            glm::vec3 du(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
-            glm::vec3 dv(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
-            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
-            auto push = [&](glm::vec3 p, float u, float v) {
-                wowee::pipeline::WoweeModel::Vertex vtx;
-                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
-                wom.vertices.push_back(vtx);
-            };
-            push(center - du - dv, 0, 0);
-            push(center + du - dv, 1, 0);
-            push(center + du + dv, 1, 1);
-            push(center - du + dv, 0, 1);
-            wom.indices.insert(wom.indices.end(),
-                {base, base+1, base+2, base, base+2, base+3});
-        }
+        addFlatBox(wom, cx, cy, cz, hx, hy, hz);
     };
     // Ring of stones — N axis-aligned cube stones evenly placed
     // around the firepit center. Slight Y offset puts them sitting
