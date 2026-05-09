@@ -593,8 +593,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Walk every .wom + .wob under zoneDir, weld each independently, append to one shared WOC\n");
     std::printf("  --audit-watertight <zoneDir|projectDir> [--weld <eps>] [--json] [--summary]\n");
     std::printf("                         Walk every .wom under root, run welded watertight check; --summary prints a one-line rollup\n");
-    std::printf("  --audit-watertight-wob <zoneDir|projectDir> [--weld <eps>] [--json]\n");
-    std::printf("                         Walk every .wob, check that EVERY group is closed (per-group weld) — interior rooms must be solid\n");
+    std::printf("  --audit-watertight-wob <zoneDir|projectDir> [--weld <eps>] [--json] [--summary]\n");
+    std::printf("                         Walk every .wob, check that EVERY group is closed (per-group weld); --summary prints one-line rollup\n");
     std::printf("  --import-obj <obj-path> [wom-base]\n");
     std::printf("                         Convert a Wavefront OBJ back into WOM (round-trips with --export-obj)\n");
     std::printf("  --export-wob-obj <wob-base> [out.obj]\n");
