@@ -4655,6 +4655,119 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBeehive(int& i, int argc, char** argv) {
+    // Beehive: 5-box woven straw skep — stacked tiers of
+    // decreasing width approximating a dome, with a small
+    // entrance notch box at the front. Useful for druidic
+    // groves, beekeeper farms, hunter camps. The 52nd
+    // procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float baseWidth = 0.70f;     // bottom tier width
+    float height    = 0.85f;     // total dome height (excluding base plate)
+    float plateH    = 0.05f;     // optional foundation plate thickness
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseWidth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { plateH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (baseWidth <= 0 || height <= 0 || plateH < 0) {
+        std::fprintf(stderr,
+            "gen-mesh-beehive: baseWidth/height > 0; plateH >= 0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Optional wooden base plate, slightly wider than the
+    // bottom tier so it reads as a foundation.
+    float halfBaseW = baseWidth * 0.5f;
+    float halfPlateW = baseWidth * 0.55f;
+    if (plateH > 0) {
+        addBox(0, plateH * 0.5f, 0, halfPlateW, plateH * 0.5f, halfPlateW);
+    }
+    // 4 stacked tiers approximating a conical dome. Tier widths
+    // ramp 100% -> 90% -> 70% -> 40% of baseWidth. Each tier
+    // takes 1/4 of the dome height.
+    float tierHeight = height / 4.0f;
+    float tierWidths[4] = {1.00f, 0.90f, 0.70f, 0.40f};
+    float tierBase = plateH;
+    for (int t = 0; t < 4; ++t) {
+        float halfW = baseWidth * tierWidths[t] * 0.5f;
+        float tierCY = tierBase + tierHeight * 0.5f + t * tierHeight;
+        addBox(0, tierCY, 0, halfW, tierHeight * 0.5f, halfW);
+    }
+    // Entrance notch: a small dark box at the front (+Z face)
+    // of the bottom tier, slightly proud of it so it reads as
+    // a separate cutout rather than texture detail.
+    float entryW = baseWidth * 0.20f;
+    float entryH = tierHeight * 0.55f;
+    float entryT = baseWidth * 0.04f;
+    float entryCY = tierBase + entryH * 0.5f;
+    float entryCZ = halfBaseW + entryT * 0.5f;
+    addBox(0, entryCY, entryCZ,
+           entryW * 0.5f, entryH * 0.5f, entryT * 0.5f);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = plateH + height;
+    wom.boundMin = glm::vec3(-halfPlateW, 0.0f,    -halfPlateW);
+    wom.boundMax = glm::vec3( halfPlateW, totalH,   halfBaseW + entryT);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-beehive: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  base width : %.3f (plate %.3f thick)\n", baseWidth, plateH);
+    std::printf("  height     : %.3f dome (4 tapered tiers)\n", height);
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  entrance   : %.3f wide × %.3f tall on +Z face\n",
+                entryW, entryH);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleGate(int& i, int argc, char** argv) {
     // Gate: 5-box wooden farm gate — 2 vertical posts on either
     // side and 3 horizontal cross rails (top, middle, bottom)
@@ -6365,6 +6478,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-gate") == 0 && i + 1 < argc) {
         outRc = handleGate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-beehive") == 0 && i + 1 < argc) {
+        outRc = handleBeehive(i, argc, argv); return true;
     }
     return false;
 }
