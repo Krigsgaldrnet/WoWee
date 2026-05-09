@@ -3887,6 +3887,80 @@ int handleGingham(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleLattice(int& i, int argc, char** argv) {
+    // Lattice: garden trellis — two sets of diagonal lines, one
+    // at +45° and one at -45°, drawn simultaneously across the
+    // whole image so they form diamond-shaped openings between
+    // the lines. Distinct from --gen-texture-herringbone (which
+    // alternates strip orientation) — this draws both diagonals
+    // at every pixel.
+    std::string outPath  = argv[++i];
+    std::string bgHex    = argv[++i];
+    std::string lineHex  = argv[++i];
+    int lineSpacing = 24;
+    int lineWidth   = 3;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { lineSpacing = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { lineWidth = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        lineSpacing < 4 || lineSpacing > 256 ||
+        lineWidth < 1 || lineWidth >= lineSpacing) {
+        std::fprintf(stderr,
+            "gen-texture-lattice: invalid dims (W/H 1..8192, spacing 4..256, width 1..spacing-1)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, lr, lg, lb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(lineHex, lr, lg, lb_)) {
+        std::fprintf(stderr,
+            "gen-texture-lattice: bg or line hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            // +45° line set: where (x + y) mod spacing is small.
+            int posMod = ((x + y) % lineSpacing + lineSpacing) % lineSpacing;
+            // -45° line set: where (x - y) mod spacing is small.
+            int negMod = ((x - y) % lineSpacing + lineSpacing) % lineSpacing;
+            bool onLine = (posMod < lineWidth) || (negMod < lineWidth);
+            uint8_t r, g, b;
+            if (onLine) {
+                r = lr; g = lg; b = lb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-lattice: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg / line  : %s / %s\n", bgHex.c_str(), lineHex.c_str());
+    std::printf("  diagonals  : ±45° at %d-px spacing, %d-px width\n",
+                lineSpacing, lineWidth);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -4011,6 +4085,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-gingham") == 0 && i + 4 < argc) {
         outRc = handleGingham(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-lattice") == 0 && i + 3 < argc) {
+        outRc = handleLattice(i, argc, argv); return true;
     }
     return false;
 }
