@@ -1,6 +1,8 @@
 #include "cli_audits.hpp"
+#include "cli_weld.hpp"
 
 #include "pipeline/wowee_model.hpp"
+#include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -10,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace wowee {
@@ -318,6 +321,141 @@ int handleValidateZonePack(int& i, int argc, char** argv) {
     return pass ? 0 : 1;
 }
 
+// Watertight check on a single WOM after the standard weld pass.
+// Returns true if the welded mesh has zero boundary edges and zero
+// non-manifold edges. Stats are written through outBoundary /
+// outNonManifold for the per-zone audit's summary line. eps is the
+// caller-supplied weld tolerance.
+bool isWomWatertightAfterWeld(
+        const std::string& womBase, float eps,
+        std::size_t& outTris, std::size_t& outBoundary,
+        std::size_t& outNonManifold) {
+    auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+    if (!wom.isValid() || wom.indices.size() % 3 != 0) {
+        outTris = outBoundary = outNonManifold = 0;
+        return false;
+    }
+    outTris = wom.indices.size() / 3;
+    std::vector<glm::vec3> positions;
+    positions.reserve(wom.vertices.size());
+    for (const auto& v : wom.vertices) positions.push_back(v.position);
+    std::size_t uniq = 0;
+    auto canon = buildWeldMap(positions, eps, uniq);
+    auto edgeKey = [](uint32_t a, uint32_t b) -> uint64_t {
+        if (a > b) std::swap(a, b);
+        return (uint64_t(a) << 32) | uint64_t(b);
+    };
+    std::unordered_map<uint64_t, uint32_t> edgeUses;
+    edgeUses.reserve(outTris * 3);
+    for (std::size_t t = 0; t < outTris; ++t) {
+        uint32_t i0 = wom.indices[t * 3 + 0];
+        uint32_t i1 = wom.indices[t * 3 + 1];
+        uint32_t i2 = wom.indices[t * 3 + 2];
+        if (i0 >= wom.vertices.size() || i1 >= wom.vertices.size() ||
+            i2 >= wom.vertices.size()) {
+            return false;
+        }
+        uint32_t c0 = canon[i0], c1 = canon[i1], c2 = canon[i2];
+        if (c0 != c1) ++edgeUses[edgeKey(c0, c1)];
+        if (c1 != c2) ++edgeUses[edgeKey(c1, c2)];
+        if (c2 != c0) ++edgeUses[edgeKey(c2, c0)];
+    }
+    outBoundary = 0;
+    outNonManifold = 0;
+    for (const auto& [_k, count] : edgeUses) {
+        if (count == 1) ++outBoundary;
+        else if (count >= 3) ++outNonManifold;
+    }
+    return outBoundary == 0 && outNonManifold == 0;
+}
+
+int handleAuditWatertight(int& i, int argc, char** argv) {
+    // Walk every .wom under <zoneDir|projectDir> and run the
+    // welded-watertight check. Reports per-mesh PASS/FAIL plus a
+    // rollup. Exit code is the number of failures, capped at 255 —
+    // CI-friendly: zero on full success.
+    std::string root = argv[++i];
+    bool jsonOut = false;
+    float weldEps = 1e-4f;
+    while (i + 1 < argc && argv[i + 1][0] == '-') {
+        if (std::strcmp(argv[i + 1], "--json") == 0) {
+            jsonOut = true; ++i;
+        } else if (std::strcmp(argv[i + 1], "--weld") == 0 && i + 2 < argc) {
+            try { weldEps = std::stof(argv[i + 2]); } catch (...) {}
+            i += 2;
+        } else {
+            break;
+        }
+    }
+    namespace fs = std::filesystem;
+    if (!fs::exists(root) || !fs::is_directory(root)) {
+        std::fprintf(stderr,
+            "audit-watertight: %s is not a directory\n", root.c_str());
+        return 1;
+    }
+    struct Result {
+        std::string rel;
+        std::size_t tris;
+        std::size_t boundary;
+        std::size_t nonManifold;
+        bool ok;
+    };
+    std::vector<Result> rows;
+    std::error_code ec;
+    for (const auto& e : fs::recursive_directory_iterator(root, ec)) {
+        if (!e.is_regular_file()) continue;
+        if (e.path().extension() != ".wom") continue;
+        std::string base = e.path().string();
+        base = base.substr(0, base.size() - 4);
+        Result r;
+        r.rel = fs::relative(e.path(), root).string();
+        r.ok = isWomWatertightAfterWeld(base, weldEps, r.tris,
+                                         r.boundary, r.nonManifold);
+        rows.push_back(std::move(r));
+    }
+    std::sort(rows.begin(), rows.end(), [](const Result& a, const Result& b) {
+        return a.rel < b.rel;
+    });
+    int failCount = 0;
+    for (const auto& r : rows) if (!r.ok) ++failCount;
+    if (jsonOut) {
+        nlohmann::json j;
+        j["root"] = root;
+        j["weldEps"] = weldEps;
+        j["totalMeshes"] = rows.size();
+        j["failures"] = failCount;
+        nlohmann::json items = nlohmann::json::array();
+        for (const auto& r : rows) {
+            items.push_back({{"path", r.rel},
+                              {"triangles", r.tris},
+                              {"boundary", r.boundary},
+                              {"nonManifold", r.nonManifold},
+                              {"watertight", r.ok}});
+        }
+        j["meshes"] = items;
+        std::printf("%s\n", j.dump(2).c_str());
+        return std::min(failCount, 255);
+    }
+    std::printf("Watertight audit: %s (weld eps %.6f)\n",
+                root.c_str(), weldEps);
+    if (rows.empty()) {
+        std::printf("  No .wom files found.\n");
+        return 0;
+    }
+    for (const auto& r : rows) {
+        std::printf("  %s  %s  (%zu tris", r.ok ? "PASS" : "FAIL",
+                    r.rel.c_str(), r.tris);
+        if (!r.ok) {
+            std::printf(", %zu boundary, %zu non-manifold",
+                        r.boundary, r.nonManifold);
+        }
+        std::printf(")\n");
+    }
+    std::printf("\n  TOTAL: %zu meshes, %d failure(s)\n",
+                rows.size(), failCount);
+    return std::min(failCount, 255);
+}
+
 }  // namespace
 
 bool handleAudits(int& i, int argc, char** argv, int& outRc) {
@@ -342,6 +480,10 @@ bool handleAudits(int& i, int argc, char** argv, int& outRc) {
         std::string self = (argc > 0) ? argv[0] : "wowee_editor";
         outRc = runPerZoneAudit(projectDir, "Project pack audit",
                                 "--validate-zone-pack", self, "");
+        return true;
+    }
+    if (std::strcmp(argv[i], "--audit-watertight") == 0 && i + 1 < argc) {
+        outRc = handleAuditWatertight(i, argc, argv);
         return true;
     }
     return false;
