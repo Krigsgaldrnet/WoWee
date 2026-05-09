@@ -5193,6 +5193,74 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleForge(int& i, int argc, char** argv) {
+    // Blacksmith forge: rectangular stone hearth with a smaller
+    // hood on top and an optional thin chimney rising from the
+    // hood. Pairs naturally with --gen-mesh-anvil and
+    // --gen-mesh-workbench for forge / smithy scenes. The 69th
+    // procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float width    = 1.4f;
+    float depth    = 1.0f;
+    float baseH    = 0.9f;        // stone hearth height
+    float hoodH    = 0.5f;        // hood height (smaller footprint)
+    float hoodInset = 0.15f;       // hood is `inset` smaller per side
+    float chimneyH = 1.2f;        // 0 → no chimney
+    float chimneyW = 0.25f;       // chimney square footprint
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, baseH);
+    parseOptFloat(i, argc, argv, hoodH);
+    parseOptFloat(i, argc, argv, hoodInset);
+    parseOptFloat(i, argc, argv, chimneyH);
+    parseOptFloat(i, argc, argv, chimneyW);
+    if (width <= 0 || depth <= 0 || baseH <= 0 || hoodH <= 0 ||
+        hoodInset < 0 || hoodInset * 2 >= std::min(width, depth) ||
+        chimneyH < 0 ||
+        chimneyW <= 0 ||
+        chimneyW * 2 >= std::min(width - 2 * hoodInset,
+                                  depth - 2 * hoodInset)) {
+        std::fprintf(stderr,
+            "gen-mesh-forge: dims > 0; insets/chimney must fit inside\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float W2 = width * 0.5f;
+    const float D2 = depth * 0.5f;
+    // Stone hearth base.
+    addFlatBox(wom, 0.0f, baseH * 0.5f, 0.0f, W2, baseH * 0.5f, D2);
+    // Hood: smaller footprint, sitting on top of hearth.
+    const float hW2 = W2 - hoodInset;
+    const float hD2 = D2 - hoodInset;
+    const float hoodCY = baseH + hoodH * 0.5f;
+    addFlatBox(wom, 0.0f, hoodCY, 0.0f, hW2, hoodH * 0.5f, hD2);
+    float topY = baseH + hoodH;
+    if (chimneyH > 0.0f) {
+        const float chCY = topY + chimneyH * 0.5f;
+        addFlatBox(wom, 0.0f, chCY, 0.0f,
+                   chimneyW * 0.5f, chimneyH * 0.5f, chimneyW * 0.5f);
+        topY += chimneyH;
+    }
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, W2, D2, topY);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-forge")) return 1;
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  hearth     : %.3f x %.3f x %.3f\n", width, depth, baseH);
+    std::printf("  hood       : %.3f x %.3f x %.3f (inset %.3f)\n",
+                width - 2 * hoodInset, depth - 2 * hoodInset, hoodH,
+                hoodInset);
+    std::printf("  chimney    : %s\n",
+                chimneyH > 0
+                    ? (std::to_string(chimneyW) + " x " +
+                       std::to_string(chimneyH) + " tall").c_str()
+                    : "(none)");
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleOuthouse(int& i, int argc, char** argv) {
     // Small wooden shed / outhouse: solid body box with an
     // inset door slab on the +Z face and a slightly-larger flat
@@ -6504,6 +6572,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-training-dummy", 1, handleTrainingDummy},
     {"--gen-mesh-hitching-post",  1, handleHitchingPost},
     {"--gen-mesh-outhouse",       1, handleOuthouse},
+    {"--gen-mesh-forge",          1, handleForge},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},

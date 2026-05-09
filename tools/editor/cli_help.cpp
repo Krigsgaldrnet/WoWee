@@ -264,6 +264,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Hitching post: 2 vertical posts + horizontal cross-bar + optional decorative caps (stable / town square)\n");
     std::printf("  --gen-mesh-outhouse <wom-base> [width] [depth] [height] [doorH] [doorW] [roofOverhang] [roofT]\n");
     std::printf("                         Outhouse: solid body + inset door slab on +Z + overhanging roof slab (privy / tool shed)\n");
+    std::printf("  --gen-mesh-forge <wom-base> [width] [depth] [baseH] [hoodH] [hoodInset] [chimneyH] [chimneyW]\n");
+    std::printf("                         Blacksmith forge: stone hearth + smaller hood + optional chimney (smithy / armorer set dressing)\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
