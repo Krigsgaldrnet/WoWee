@@ -284,6 +284,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Convenience: emit forge + anvil + workbench + water-trough + crate-stack + hitching-post into outDir\n");
     std::printf("  --gen-village-pack <outDir>\n");
     std::printf("                         Convenience: emit house + outhouse + chimney + hitching-post + well + signpost + haystack into outDir\n");
+    std::printf("  --gen-temple-pack <outDir>\n");
+    std::printf("                         Convenience: emit altar + shrine + brazier + pillar + statue + portal + podium into outDir\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
     std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");
@@ -811,6 +813,7 @@ void printUsage(const char* argv0) {
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
     std::printf("  --list-primitives [--mesh|--texture] [--json]\n");
     std::printf("                         Filtered list of just procedural primitive flags (--gen-mesh-*, --gen-texture-*)\n");
+    std::printf("  --list-packs           Print every --gen-*-pack composite flag (camp, blacksmith, village, temple…)\n");
     std::printf("  --info-cli-stats [--json]\n");
     std::printf("                         Meta-stats on the CLI surface (command count by category prefix)\n");
     std::printf("  --info-cli-categories\n");

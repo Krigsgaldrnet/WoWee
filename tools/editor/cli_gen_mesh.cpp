@@ -6719,6 +6719,24 @@ int handleGenBlacksmithPack(int& i, int /*argc*/, char** argv) {
     });
 }
 
+int handleGenTemplePack(int& i, int /*argc*/, char** argv) {
+    // Temple / shrine scene: altar (the focal point), shrine
+    // (auxiliary devotional), brazier (lit on either side of the
+    // altar), 2 pillars (flanking the altar approach), statue
+    // (deity figure), portal (entrance gateway). A full ritual
+    // hall in 7 primitives.
+    std::string outDir = argv[++i];
+    return emitMeshPack(outDir, "temple pack", {
+        {"--gen-mesh-altar",     handleAltar,    "altar"},
+        {"--gen-mesh-shrine",    handleShrine,   "shrine"},
+        {"--gen-mesh-brazier",   handleBrazier,  "brazier"},
+        {"--gen-mesh-pillar",    handlePillar,   "pillar"},
+        {"--gen-mesh-statue",    handleStatue,   "statue"},
+        {"--gen-mesh-portal",    handlePortal,   "portal"},
+        {"--gen-mesh-podium",    handlePodium,   "podium"},
+    });
+}
+
 int handleGenVillagePack(int& i, int /*argc*/, char** argv) {
     // Village square scene: a small house, an outhouse beside it,
     // a chimney for the house roof piece, a hitching post at the
@@ -6813,6 +6831,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
+    {"--gen-temple-pack",         1, handleGenTemplePack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
