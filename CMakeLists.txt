@@ -1350,6 +1350,7 @@ add_executable(wowee_editor
     tools/editor/cli_strip.cpp
     tools/editor/cli_repair.cpp
     tools/editor/cli_makefile.cpp
+    tools/editor/cli_zone_list.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
