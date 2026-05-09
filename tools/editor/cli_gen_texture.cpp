@@ -3500,6 +3500,90 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleSnowflake(int& i, int argc, char** argv) {
+    // Snowflake: 6-fold symmetric stamp in each cell. Built
+    // by computing polar (r, theta) from the cell center and
+    // folding theta into a [0, pi/6] wedge so a single
+    // arm-shape definition replicates 12 times via mirror +
+    // 60-degree rotation. Each arm is a thin sliver thickened
+    // by two knob-like bumps at fixed radii for the classic
+    // "branched ice crystal" silhouette. The 84th procedural
+    // texture.
+    //
+    // Useful for: arctic / winter zones, ice spell effects,
+    // frost-mage themed gear icons, holiday-event decoration,
+    // crystal-shrine backdrops, snowstorm overlays.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string fgHex   = argv[++i];
+    int cell = 64;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cell);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cell < 8 || cell > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-snowflake: invalid dims (W/H 1..8192, cell 8..1024)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, fr, fg_, fb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-snowflake")) return 1;
+    if (!parseHexOrError(fgHex, fr, fg_, fb_,
+                         "gen-texture-snowflake")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float halfCell = cell * 0.5f;
+    const float armWidth   = halfCell * 0.06f;
+    const float bumpWidth  = halfCell * 0.18f;
+    const float bumpRadius = halfCell * 0.08f;
+    const float pi3 = 3.14159265358979323846f / 3.0f;
+    const float pi6 = pi3 * 0.5f;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            int tx = x % cell;
+            int ty = y % cell;
+            float dx = tx - halfCell;
+            float dy = ty - halfCell;
+            float r = std::sqrt(dx * dx + dy * dy);
+            float rNorm = r / halfCell;
+            // Fold theta into [0, pi/6] for 12-fold symmetry
+            // (6 mirrored arms, each spanning 60 deg).
+            float theta = std::atan2(dy, dx);
+            float thetaMod = std::fmod(theta + pi6 + 100 * pi3, pi3) - pi6;
+            float thetaWedge = std::fabs(thetaMod);
+            // Distance from the nearest arm axis (folded space).
+            float armDist = r * std::sin(thetaWedge);
+            bool inMainArm = (rNorm < 0.85f) && (armDist < armWidth);
+            // Two perpendicular knobs at r = 0.40 and 0.70 of
+            // the cell-half. Within the knob radius we widen
+            // the arm so the snowflake gets its branched look.
+            bool inKnob =
+                (rNorm < 0.85f) &&
+                (std::fabs(r - 0.40f * halfCell) < bumpRadius ||
+                 std::fabs(r - 0.70f * halfCell) < bumpRadius) &&
+                (armDist < bumpWidth);
+            // Small filled center dot anchors the motif at
+            // tiny cell sizes where the knobs vanish.
+            bool centerDot = r < halfCell * 0.10f;
+            bool isMotif = inMainArm || inKnob || centerDot;
+            uint8_t r8, g8, b8;
+            if (isMotif) {
+                r8 = fr; g8 = fg_; b8 = fb_;
+            } else {
+                r8 = br_; g8 = bg_; b8 = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r8, g8, b8);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-snowflake")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/fg      : %s / %s\n", bgHex.c_str(), fgHex.c_str());
+    std::printf("  cell       : %d px\n", cell);
+    return 0;
+}
+
 int handleDamask(int& i, int argc, char** argv) {
     // Damask: classic ornate-wallpaper motif — a 4-petal
     // flower shape (one peak at each cell N/S/E/W) plus a
@@ -6102,6 +6186,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-bayer",          3, handleBayer},
     {"--gen-texture-moon",           3, handleMoon},
     {"--gen-texture-damask",         3, handleDamask},
+    {"--gen-texture-snowflake",      3, handleSnowflake},
 };
 }  // namespace
 

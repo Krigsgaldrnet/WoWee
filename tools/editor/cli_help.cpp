@@ -201,6 +201,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Moon disc with optional crescent shadow (phase 0=full, =moonR=half, >moonR=crescent)\n");
     std::printf("  --gen-texture-damask <out.png> <bgHex> <fgHex> [cell] [W H]\n");
     std::printf("                         Damask: 4-petal floral motif tiled per cell (palace wallpaper / noble-faction tapestry)\n");
+    std::printf("  --gen-texture-snowflake <out.png> <bgHex> <fgHex> [cell] [W H]\n");
+    std::printf("                         Snowflake: 6-fold symmetric ice crystal stamped per cell (winter zones / frost spell effects)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
