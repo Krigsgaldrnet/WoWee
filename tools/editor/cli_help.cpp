@@ -1089,6 +1089,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCHC classes (id / power / hp scaling) + races (faction / starting zone) + outfit item lists\n");
     std::printf("  --validate-wchc <wchc-base> [--json]\n");
     std::printf("                         Static checks: class+race ids unique, baseHealth>0, faction availability set, outfit refs resolve\n");
+    std::printf("  --gen-tokens <wtkn-base> [name]\n");
+    std::printf("                         Emit .wtkn starter: 3 tokens (Honor / Marks / Stormwind Guard) covering Pvp + Reputation categories\n");
+    std::printf("  --gen-tokens-pvp <wtkn-base> [name]\n");
+    std::printf("                         Emit .wtkn full PvP set: Honor (75k cap) + Arena (5k cap, weekly 1500) + 6 BG marks of honor\n");
+    std::printf("  --gen-tokens-seasonal <wtkn-base> [name]\n");
+    std::printf("                         Emit .wtkn 4 holiday tokens (Tricky Treats / Brewfest / Coin of Ancestry / Stranger's Gift) — ResetsOnLogout\n");
+    std::printf("  --info-wtkn <wtkn-base> [--json]\n");
+    std::printf("                         Print WTKN entries (id / category / max balance / weekly cap / flags / name)\n");
+    std::printf("  --validate-wtkn <wtkn-base> [--json]\n");
+    std::printf("                         Static checks: tokenId>0+unique, name not empty, weeklyCap<=maxBalance, no Resets+AccountWide conflict\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
