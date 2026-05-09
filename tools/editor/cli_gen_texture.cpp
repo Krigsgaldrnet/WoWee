@@ -4586,6 +4586,116 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handlePlanks(int& i, int argc, char** argv) {
+    // Plank floor: horizontal "boards" of randomized length and tint
+    // separated by thin dark seams. Each plank gets a hash-derived
+    // brightness offset so the tile reads as real boards rather than
+    // a single grain pattern. Useful for inn floors, deck planking,
+    // bridge surface, market stall counters.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string seamHex = argv[++i];
+    int plankH = 16;
+    int grainsPerPlank = 5;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { plankH = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { grainsPerPlank = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        plankH < 4 || plankH > 256 ||
+        grainsPerPlank < 0 || grainsPerPlank > 64) {
+        std::fprintf(stderr,
+            "gen-texture-planks: invalid dims (W/H 1..8192, plankH 4..256, "
+            "grainsPerPlank 0..64)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr, sg, sb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(seamHex, sr, sg, sb_)) {
+        std::fprintf(stderr,
+            "gen-texture-planks: bg or seam hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Plank-index hash → per-plank brightness modulation in [-24, +24]
+    // and an end-seam x position so the planks look staggered rather
+    // than all the same length.
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    auto clamp = [](int v) {
+        return v < 0 ? 0 : (v > 255 ? 255 : v);
+    };
+    for (int y = 0; y < H; ++y) {
+        int plankIdx = y / plankH;
+        int yInPlank = y % plankH;
+        uint32_t h = hash32(plankIdx * 0x9e3779b1u + seed);
+        int tint = static_cast<int>(h % 49) - 24;  // -24..+24
+        // Plank-end seam at this y: a vertical line at x = endX.
+        int endX = static_cast<int>(hash32(h ^ 0xa5a5a5a5u) % W);
+        for (int x = 0; x < W; ++x) {
+            uint8_t r = clamp(br_ + tint);
+            uint8_t g = clamp(bg_ + tint);
+            uint8_t b = clamp(bb_ + tint);
+            // Horizontal plank seam: the bottom 1 px of every plank
+            // is the seam color so adjacent planks read as separate
+            // boards, not one long stripe.
+            bool atHSeam = (yInPlank == plankH - 1);
+            // Vertical end seam: 1 px wide at endX.
+            bool atVSeam = (x == endX);
+            if (atHSeam || atVSeam) {
+                r = sr; g = sg; b = sb_;
+            } else if (grainsPerPlank > 0) {
+                // Vertical grain streaks: at G evenly-spaced columns
+                // within the plank, draw a faint darker line. Position
+                // jittered per plank so it doesn't repeat exactly
+                // every row.
+                int strideX = W / (grainsPerPlank + 1);
+                int jitter = static_cast<int>(h >> 8) % strideX;
+                int dx = (x - jitter) % strideX;
+                if (dx == 0) {
+                    r = static_cast<uint8_t>(clamp(int(r) - 15));
+                    g = static_cast<uint8_t>(clamp(int(g) - 15));
+                    b = static_cast<uint8_t>(clamp(int(b) - 15));
+                }
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-planks: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/seam    : %s / %s\n", bgHex.c_str(), seamHex.c_str());
+    std::printf("  plank H    : %d (grains/plank %d)\n",
+                plankH, grainsPerPlank);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
 int handleChainmail(int& i, int argc, char** argv) {
     // Chainmail: rings tile in a brick/hexagonal pattern with even
     // and odd rows offset by half a cell width — each pixel is
@@ -4743,6 +4853,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-zebra",          3, handleZebra},
     {"--gen-texture-knit",           3, handleKnit},
     {"--gen-texture-chainmail",      3, handleChainmail},
+    {"--gen-texture-planks",         3, handlePlanks},
 };
 }  // namespace
 
