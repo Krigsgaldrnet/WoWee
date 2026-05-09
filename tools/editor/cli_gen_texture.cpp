@@ -1,5 +1,6 @@
 #include "cli_gen_texture.hpp"
 #include "cli_arg_parse.hpp"
+#include "cli_png_emit.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -162,13 +163,7 @@ int handleCobble(int& i, int argc, char** argv) {
             }
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-cobble: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-cobble")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size         : %dx%d\n", W, H);
     std::printf("  stone/mortar : %s / %s\n",
@@ -252,13 +247,7 @@ int handleMarble(int& i, int argc, char** argv) {
             pixels[i2 + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-marble: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-marble")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size      : %dx%d\n", W, H);
     std::printf("  base/vein : %s / %s\n",
@@ -357,13 +346,7 @@ int handleMetal(int& i, int argc, char** argv) {
                 std::clamp(mb * shade, 0.0f, 255.0f));
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-metal: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-metal")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size        : %dx%d\n", W, H);
     std::printf("  base color  : %s\n", baseHex.c_str());
@@ -454,13 +437,7 @@ int handleLeather(int& i, int argc, char** argv) {
                 std::clamp(lb * shade, 0.0f, 255.0f));
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-leather: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-leather")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  base color : %s\n", baseHex.c_str());
@@ -529,13 +506,7 @@ int handleSand(int& i, int argc, char** argv) {
                 std::clamp(bb_ * shade, 0.0f, 255.0f));
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-sand: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-sand")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size           : %dx%d\n", W, H);
     std::printf("  base color     : %s\n", baseHex.c_str());
@@ -606,13 +577,7 @@ int handleSnow(int& i, int argc, char** argv) {
         pixels[i2 + 1] = 255;
         pixels[i2 + 2] = 255;
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-snow: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-snow")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  base color : %s\n", baseHex.c_str());
@@ -712,13 +677,7 @@ int handleLava(int& i, int argc, char** argv) {
             pixels[i2 + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-lava: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-lava")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size        : %dx%d\n", W, H);
     std::printf("  dark/hot    : %s / %s\n",
@@ -793,13 +752,7 @@ int handleGradient(int& i, int argc, char** argv) {
             pixels[i2 + 2] = lerp(b0, b1, t);
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-gradient: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-gradient")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  direction  : %s\n",
@@ -878,13 +831,7 @@ int handleNoise(int& i, int argc, char** argv) {
             pixels[i2 + 2] = g;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-noise: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-noise")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size  : %dx%d\n", W, H);
     std::printf("  seed  : %u\n", seed);
@@ -966,13 +913,7 @@ int handleNoiseColor(int& i, int argc, char** argv) {
             pixels[i2 + 2] = lerp(ba, bb, v);
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-noise-color: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-noise-color")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size  : %dx%d\n", W, H);
     std::printf("  seed  : %u\n", seed);
@@ -1039,13 +980,7 @@ int handleRadial(int& i, int argc, char** argv) {
             pixels[i2 + 2] = lerp(bc, be, smt);
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-radial: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-radial")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size   : %dx%d\n", W, H);
     std::printf("  center : %s (rgb %u,%u,%u)\n",
@@ -1112,13 +1047,7 @@ int handleStripes(int& i, int argc, char** argv) {
             pixels[i2 + 2] = isA ? ba : bb;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-stripes: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-stripes")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size      : %dx%d\n", W, H);
     std::printf("  direction : %s\n", dir.c_str());
@@ -1176,13 +1105,7 @@ int handleDots(int& i, int argc, char** argv) {
             pixels[i2 + 2] = inDot ? db : bb;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-dots: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-dots")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size      : %dx%d\n", W, H);
     std::printf("  bg        : %s\n", bgHex.c_str());
@@ -1239,13 +1162,7 @@ int handleRings(int& i, int argc, char** argv) {
             pixels[i2 + 2] = isA ? ba : bb;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-rings: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-rings")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size      : %dx%d\n", W, H);
     std::printf("  ring px   : %d\n", ringPx);
@@ -1296,13 +1213,7 @@ int handleChecker(int& i, int argc, char** argv) {
             pixels[i2 + 2] = isA ? ba : bb;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-checker: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-checker")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size     : %dx%d\n", W, H);
     std::printf("  cell px  : %d\n", cellPx);
@@ -1364,13 +1275,7 @@ int handleBrick(int& i, int argc, char** argv) {
             pixels[i2 + 2] = isMortar ? mb : bb_;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-brick: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-brick")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size      : %dx%d\n", W, H);
     std::printf("  brick     : %d × %d px (%s)\n",
@@ -1479,13 +1384,7 @@ int handleWood(int& i, int argc, char** argv) {
             }
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-wood: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-wood")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size      : %dx%d\n", W, H);
     std::printf("  light/dark: %s / %s\n",
@@ -1567,13 +1466,7 @@ int handleGrass(int& i, int argc, char** argv) {
             pixels[i2 + 2] = static_cast<uint8_t>(pixels[i2 + 2] * (1 - t) + gb * t);
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-grass: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-grass")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size      : %dx%d\n", W, H);
     std::printf("  base/blade: %s / %s\n",
@@ -1646,13 +1539,7 @@ int handleFabric(int& i, int argc, char** argv) {
             pixels[i2 + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-fabric: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-fabric")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  warp/weft  : %s / %s\n",
@@ -1732,13 +1619,7 @@ int handleTile(int& i, int argc, char** argv) {
             }
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-tile: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-tile")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  tile/grout : %s / %s\n",
@@ -1833,13 +1714,7 @@ int handleBark(int& i, int argc, char** argv) {
             pixels[i2 + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-bark: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-bark")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  base/crack : %s / %s\n",
@@ -1926,13 +1801,7 @@ int handleClouds(int& i, int argc, char** argv) {
             pixels[i2 + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-clouds: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-clouds")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  sky/cloud  : %s / %s\n",
@@ -2007,13 +1876,7 @@ int handleStars(int& i, int argc, char** argv) {
         pixels[i2 + 1] = static_cast<uint8_t>(bg * (1 - t) + sg * t);
         pixels[i2 + 2] = static_cast<uint8_t>(bb_ * (1 - t) + sb * t);
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-stars: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-stars")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/star    : %s / %s\n",
@@ -2095,13 +1958,7 @@ int handleVines(int& i, int argc, char** argv) {
             }
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-vines: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-vines")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size        : %dx%d\n", W, H);
     std::printf("  wall/vine   : %s / %s\n",
@@ -2178,13 +2035,7 @@ int handleMosaic(int& i, int argc, char** argv) {
             }
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-mosaic: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-mosaic")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  colors     : %s / %s / %s\n",
@@ -2273,13 +2124,7 @@ int handleRust(int& i, int argc, char** argv) {
             pixels[i2 + 2] = static_cast<uint8_t>(std::clamp(b, 0.0f, 255.0f));
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-rust: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-rust")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  metal/rust : %s / %s\n",
@@ -2374,13 +2219,7 @@ int handleCircuit(int& i, int argc, char** argv) {
             horiz = !horiz;  // alternate axis
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-circuit: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-circuit")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  pcb/trace  : %s / %s\n",
@@ -2485,13 +2324,7 @@ int handleCoral(int& i, int argc, char** argv) {
             }
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-coral: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-coral")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size        : %dx%d\n", W, H);
     std::printf("  water/coral : %s / %s\n",
@@ -2570,13 +2403,7 @@ int handleFlame(int& i, int argc, char** argv) {
             pixels[i2 + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-flame: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-flame")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  dark/hot   : %s / %s\n",
@@ -2653,13 +2480,7 @@ int handleTartan(int& i, int argc, char** argv) {
             pixels[i2 + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-tartan: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-tartan")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  colors A/B/C: %s / %s / %s\n",
@@ -2739,13 +2560,7 @@ int handleArgyle(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-argyle: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-argyle")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  colors A/B  : %s / %s\n", aHex.c_str(), bHex.c_str());
@@ -2815,13 +2630,7 @@ int handleHerringbone(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-herringbone: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-herringbone")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg / line  : %s / %s\n", bgHex.c_str(), lineHex.c_str());
@@ -2907,13 +2716,7 @@ int handleScales(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-scales: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-scales")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/scale/rim : %s / %s / %s\n",
@@ -3018,13 +2821,7 @@ int handleStainedGlass(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-stained-glass: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-stained-glass")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  lead       : %s\n", leadHex.c_str());
@@ -3099,13 +2896,7 @@ int handleShingles(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-shingles: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-shingles")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  base/shadow/seam: %s / %s / %s\n",
@@ -3209,13 +3000,7 @@ int handleFrost(int& i, int argc, char** argv) {
             }
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-frost: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-frost")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg / ice   : %s / %s\n", bgHex.c_str(), iceHex.c_str());
@@ -3307,13 +3092,7 @@ int handleParquet(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-parquet: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-parquet")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  wood A/B   : %s / %s (%s gap)\n",
@@ -3412,13 +3191,7 @@ int handleBubbles(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-bubbles: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-bubbles")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/fill/rim: %s / %s / %s\n",
@@ -3505,13 +3278,7 @@ int handleSpiderWeb(int& i, int argc, char** argv) {
             pixels[idx + 2] = cb_;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-spider-web: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-spider-web")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d (web center at %.1f, %.1f)\n",
                 W, H, cx, cy);
@@ -3576,13 +3343,7 @@ int handleGingham(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-gingham: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-gingham")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/stripe/cross : %s / %s / %s\n",
@@ -3643,13 +3404,7 @@ int handleLattice(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-lattice: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-lattice")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg / line  : %s / %s\n", bgHex.c_str(), lineHex.c_str());
@@ -3743,13 +3498,7 @@ int handleHoneycomb(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-honeycomb: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-honeycomb")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  fill / border : %s / %s\n",
@@ -3850,13 +3599,7 @@ int handleCracked(int& i, int argc, char** argv) {
             stack.push_back({fx, fy, c.remaining / 2});
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-cracked: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-cracked")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg / crack : %s / %s\n", bgHex.c_str(), crackHex.c_str());
@@ -3962,13 +3705,7 @@ int handleRunes(int& i, int argc, char** argv) {
             runeCount++;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-runes: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-runes")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg / rune  : %s / %s\n", bgHex.c_str(), runeHex.c_str());
@@ -4072,13 +3809,7 @@ int handleLeopard(int& i, int argc, char** argv) {
             }
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-leopard: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-leopard")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg / spot  : %s / %s\n", bgHex.c_str(), spotHex.c_str());
@@ -4145,13 +3876,7 @@ int handleZebra(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-zebra: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-zebra")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/stripe  : %s / %s\n", bgHex.c_str(), stripeHex.c_str());
@@ -4220,13 +3945,7 @@ int handleKnit(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-knit: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-knit")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/stitch  : %s / %s\n", bgHex.c_str(), stitchHex.c_str());
@@ -4294,13 +4013,7 @@ int handlePinstripe(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-pinstripe: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-pinstripe")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/line    : %s / %s\n", bgHex.c_str(), lineHex.c_str());
@@ -4364,13 +4077,7 @@ int handleCarbon(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-carbon: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-carbon")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/fiber   : %s / %s\n", bgHex.c_str(), fibHex.c_str());
@@ -4447,13 +4154,7 @@ int handleWoodgrain(int& i, int argc, char** argv) {
             pixels[idx + 2] = b8;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-woodgrain: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-woodgrain")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  light/dark : %s / %s\n", lightHex.c_str(), darkHex.c_str());
@@ -4546,13 +4247,7 @@ int handleMoss(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-moss: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-moss")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/moss    : %s / %s\n", bgHex.c_str(), mossHex.c_str());
@@ -4626,13 +4321,7 @@ int handleStuds(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-studs: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-studs")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/stud    : %s / %s\n", bgHex.c_str(), studHex.c_str());
@@ -4713,13 +4402,7 @@ int handleStarburst(int& i, int argc, char** argv) {
             pixels[idx + 2] = resB;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-starburst: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-starburst")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/ray     : %s / %s\n", bgHex.c_str(), rayHex.c_str());
@@ -4784,13 +4467,7 @@ int handleCaustics(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-caustics: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-caustics")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/hi      : %s / %s\n", bgHex.c_str(), hiHex.c_str());
@@ -4867,13 +4544,7 @@ int handleRope(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-rope: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-rope")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/rope    : %s / %s\n", bgHex.c_str(), ropeHex.c_str());
@@ -4933,13 +4604,7 @@ int handleCorrugated(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-corrugated: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-corrugated")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/hi      : %s / %s\n", bgHex.c_str(), hiHex.c_str());
@@ -5032,13 +4697,7 @@ int handlePlanks(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-planks: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-planks")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/seam    : %s / %s\n", bgHex.c_str(), seamHex.c_str());
@@ -5115,13 +4774,7 @@ int handleChainmail(int& i, int argc, char** argv) {
             pixels[idx + 2] = b;
         }
     }
-    if (!stbi_write_png(outPath.c_str(), W, H, 3,
-                        pixels.data(), W * 3)) {
-        std::fprintf(stderr,
-            "gen-texture-chainmail: stbi_write_png failed for %s\n",
-            outPath.c_str());
-        return 1;
-    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-chainmail")) return 1;
     std::printf("Wrote %s\n", outPath.c_str());
     std::printf("  size       : %dx%d\n", W, H);
     std::printf("  bg/ring    : %s / %s\n", bgHex.c_str(), ringHex.c_str());
