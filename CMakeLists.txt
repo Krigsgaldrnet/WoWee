@@ -1329,6 +1329,7 @@ add_executable(wowee_editor
     tools/editor/cli_glb_inspect.cpp
     tools/editor/cli_wom_io.cpp
     tools/editor/cli_world_io.cpp
+    tools/editor/cli_info_tree.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
