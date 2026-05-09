@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -170,6 +171,168 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors WOL/WOW/WOMX/WSND/WSPN/WIT JSON pairs. Each
+    // table emits creatureId / dropCount / money range plus
+    // a sub-array of per-drop entries; flags also emit a
+    // string-array form so a hand-author can write
+    // ["quest", "always"] instead of "5".
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWlotExt(base);
+    if (outPath.empty()) outPath = base + ".wlot.json";
+    if (!wowee::pipeline::WoweeLootLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wlot-json: WLOT not found: %s.wlot\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeLootLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        std::string fs;
+        appendTableFlagsStr(fs, e.flags);
+        nlohmann::json je;
+        je["creatureId"] = e.creatureId;
+        je["flags"] = e.flags;
+        nlohmann::json fa = nlohmann::json::array();
+        if (e.flags & wowee::pipeline::WoweeLoot::QuestOnly)  fa.push_back("quest-only");
+        if (e.flags & wowee::pipeline::WoweeLoot::GroupOnly)  fa.push_back("group-only");
+        if (e.flags & wowee::pipeline::WoweeLoot::Pickpocket) fa.push_back("pickpocket");
+        je["flagsList"] = fa;
+        je["dropCount"] = e.dropCount;
+        je["moneyMinCopper"] = e.moneyMinCopper;
+        je["moneyMaxCopper"] = e.moneyMaxCopper;
+        nlohmann::json drops = nlohmann::json::array();
+        for (const auto& d : e.itemDrops) {
+            nlohmann::json jd;
+            jd["itemId"] = d.itemId;
+            jd["chancePercent"] = d.chancePercent;
+            jd["minQty"] = d.minQty;
+            jd["maxQty"] = d.maxQty;
+            jd["flags"] = d.flags;
+            nlohmann::json dfa = nlohmann::json::array();
+            if (d.flags & wowee::pipeline::WoweeLoot::QuestRequired)
+                dfa.push_back("quest");
+            if (d.flags & wowee::pipeline::WoweeLoot::GroupRollOnly)
+                dfa.push_back("group");
+            if (d.flags & wowee::pipeline::WoweeLoot::AlwaysDrop)
+                dfa.push_back("always");
+            jd["flagsList"] = dfa;
+            drops.push_back(jd);
+        }
+        je["itemDrops"] = drops;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wlot-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wlot\n", base.c_str());
+    std::printf("  tables : %zu (%u drops total)\n",
+                c.entries.size(), totalDrops(c));
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wlot.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWlotExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wlot-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wlot-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto tableFlagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "quest-only") return wowee::pipeline::WoweeLoot::QuestOnly;
+        if (s == "group-only") return wowee::pipeline::WoweeLoot::GroupOnly;
+        if (s == "pickpocket") return wowee::pipeline::WoweeLoot::Pickpocket;
+        return 0;
+    };
+    auto dropFlagFromName = [](const std::string& s) -> uint8_t {
+        if (s == "quest")  return wowee::pipeline::WoweeLoot::QuestRequired;
+        if (s == "group")  return wowee::pipeline::WoweeLoot::GroupRollOnly;
+        if (s == "always") return wowee::pipeline::WoweeLoot::AlwaysDrop;
+        return 0;
+    };
+    wowee::pipeline::WoweeLoot c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeLoot::Entry e;
+            e.creatureId = je.value("creatureId", 0u);
+            if (je.contains("flags") && je["flags"].is_number_integer()) {
+                e.flags = je["flags"].get<uint32_t>();
+            } else if (je.contains("flagsList") && je["flagsList"].is_array()) {
+                for (const auto& f : je["flagsList"]) {
+                    if (f.is_string()) e.flags |= tableFlagFromName(f.get<std::string>());
+                }
+            }
+            e.dropCount = static_cast<uint8_t>(je.value("dropCount", 1));
+            e.moneyMinCopper = je.value("moneyMinCopper", 0u);
+            e.moneyMaxCopper = je.value("moneyMaxCopper", 0u);
+            if (je.contains("itemDrops") && je["itemDrops"].is_array()) {
+                for (const auto& jd : je["itemDrops"]) {
+                    wowee::pipeline::WoweeLoot::ItemDrop d;
+                    d.itemId = jd.value("itemId", 0u);
+                    d.chancePercent = jd.value("chancePercent", 100.0f);
+                    d.minQty = static_cast<uint8_t>(jd.value("minQty", 1));
+                    d.maxQty = static_cast<uint8_t>(jd.value("maxQty", 1));
+                    if (jd.contains("flags") && jd["flags"].is_number_integer()) {
+                        d.flags = static_cast<uint8_t>(jd["flags"].get<int>());
+                    } else if (jd.contains("flagsList") && jd["flagsList"].is_array()) {
+                        for (const auto& f : jd["flagsList"]) {
+                            if (f.is_string())
+                                d.flags |= dropFlagFromName(f.get<std::string>());
+                        }
+                    }
+                    e.itemDrops.push_back(d);
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeLootLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wlot-json: failed to save %s.wlot\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wlot\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  tables : %zu (%u drops total)\n",
+                c.entries.size(), totalDrops(c));
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -275,6 +438,12 @@ bool handleLootCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wlot") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wlot-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wlot-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

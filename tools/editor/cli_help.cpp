@@ -891,6 +891,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WLOT loot tables (creatureId / dropCount / money range / per-drop chance + qty + flags)\n");
     std::printf("  --validate-wlot <wlot-base> [--json]\n");
     std::printf("                         Static checks: creatureId>0 + unique, chance in 0..100, minQty<=maxQty, money min<=max\n");
+    std::printf("  --export-wlot-json <wlot-base> [out.json]\n");
+    std::printf("                         Export binary .wlot to a human-editable JSON sidecar (defaults to <base>.wlot.json)\n");
+    std::printf("  --import-wlot-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wlot.json sidecar back into binary .wlot (accepts flag int OR flagsList strings)\n");
     std::printf("  --gen-creatures <wcrt-base> [name]\n");
     std::printf("                         Emit .wcrt starter creature template: 1 friendly innkeeper (vendor + repair flags)\n");
     std::printf("  --gen-creatures-bandit <wcrt-base> [name]\n");
