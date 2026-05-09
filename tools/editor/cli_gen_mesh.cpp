@@ -3943,6 +3943,109 @@ int handleGrave(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBench(int& i, int argc, char** argv) {
+    // Wooden bench: long thin seat plank (X×Z plane) supported
+    // by 2 leg slabs (vertical Y rectangles) at each end. Legs
+    // are 90% of the bench's depth and span the full seat
+    // height down to the floor. The 33rd procedural mesh
+    // primitive — useful for taverns, plazas, roadside rest
+    // stops.
+    std::string womBase = argv[++i];
+    float length = 1.5f;       // along X (bench length)
+    float seatY = 0.5f;        // seat top height
+    float seatT = 0.06f;       // seat plank thickness (Y)
+    float seatW = 0.4f;        // seat width (Z)
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { length = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatY = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (length <= 0 || seatY <= 0 || seatT <= 0 || seatW <= 0 ||
+        seatT > seatY) {
+        std::fprintf(stderr,
+            "gen-mesh-bench: all dims > 0; seatT must be <= seatY\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Seat: top plank at y=seatY-seatT to y=seatY.
+    float seatCY = seatY - seatT * 0.5f;
+    addBox(0, seatCY, 0, length * 0.5f, seatT * 0.5f, seatW * 0.5f);
+    // Two leg slabs: thin Y slabs at the +X and -X ends, span
+    // 90% of the seat depth, 5% of bench length thick, full
+    // height from floor to bottom-of-seat.
+    float legHy = (seatY - seatT) * 0.5f;
+    float legCY = legHy;
+    float legHx = length * 0.025f;     // ~2.5% of length on each side
+    float legHz = seatW * 0.45f;
+    float legX = length * 0.45f;       // legs at 90% of length out
+    addBox( legX, legCY, 0, legHx, legHy, legHz);
+    addBox(-legX, legCY, 0, legHx, legHy, legHz);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-length * 0.5f, 0, -seatW * 0.5f);
+    wom.boundMax = glm::vec3( length * 0.5f, seatY, seatW * 0.5f);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-bench: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  length    : %.3f\n", length);
+    std::printf("  seat Y    : %.3f (thickness %.3f)\n", seatY, seatT);
+    std::printf("  seat W    : %.3f\n", seatW);
+    std::printf("  legs      : 2 (at ±%.3f along X)\n", legX);
+    std::printf("  vertices  : %zu\n", wom.vertices.size());
+    std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -4033,6 +4136,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-grave") == 0 && i + 1 < argc) {
         outRc = handleGrave(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-bench") == 0 && i + 1 < argc) {
+        outRc = handleBench(i, argc, argv); return true;
     }
     return false;
 }

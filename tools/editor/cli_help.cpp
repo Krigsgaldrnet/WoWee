@@ -142,6 +142,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Banner: vertical pole + rectangular hanging flag (default 3.0/0.05/0.8/1.2)\n");
     std::printf("  --gen-mesh-grave <wom-base> [tabletWidth] [tabletHeight] [tabletThickness] [baseWidth]\n");
     std::printf("                         Tombstone: low rectangular base + vertical tablet (default 0.6/1.0/0.15/0.8)\n");
+    std::printf("  --gen-mesh-bench <wom-base> [length] [seatHeight] [seatThickness] [seatWidth]\n");
+    std::printf("                         Wooden bench: seat plank + 2 leg slabs (default 1.5/0.5/0.06/0.4)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
