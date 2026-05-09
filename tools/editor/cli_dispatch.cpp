@@ -37,6 +37,7 @@
 #include "cli_info_audio.hpp"
 #include "cli_world_info.hpp"
 #include "cli_world_map.hpp"
+#include "cli_sound_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -115,6 +116,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleInfoAudio,
     handleWorldInfo,
     handleWorldMap,
+    handleSoundCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

@@ -835,6 +835,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .womx to a human-editable JSON sidecar (rows of '1'/'0' strings, easy to hand-edit)\n");
     std::printf("  --import-womx-json <json-path> [out-base]\n");
     std::printf("                         Import a .womx.json sidecar back into binary .womx (round-trip with --export-womx-json)\n");
+    std::printf("  --gen-sound-catalog <wsnd-base> [name]\n");
+    std::printf("                         Emit .wsnd starter catalog (one entry per kind: sfx/music/ambient/ui/voice/spell/combat)\n");
+    std::printf("  --gen-sound-catalog-ambient <wsnd-base> [name]\n");
+    std::printf("                         Emit .wsnd wilderness catalog: looped birds + wind + 3 footstep variants\n");
+    std::printf("  --gen-sound-catalog-tavern <wsnd-base> [name]\n");
+    std::printf("                         Emit .wsnd tavern catalog: fire-crackle + crowd murmur + drink-clink + door-creak + lute music\n");
+    std::printf("  --info-wsnd <wsnd-base> [--json]\n");
+    std::printf("                         Print WSND catalog entries (id / kind / flags / volume / 3D distances / file path / label)\n");
+    std::printf("  --validate-wsnd <wsnd-base> [--json]\n");
+    std::printf("                         Static checks: kind in 0..6, finite distances, 3D needs max>min>=0, no duplicate sound IDs\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
