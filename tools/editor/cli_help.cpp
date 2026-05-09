@@ -975,6 +975,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSKL entries (id / category / max rank / per-level grow / trainer-required / name)\n");
     std::printf("  --validate-wskl <wskl-base> [--json]\n");
     std::printf("                         Static checks: skillId>0+unique, name not empty, maxRank>0, weapon needs rankPerLevel>0\n");
+    std::printf("  --export-wskl-json <wskl-base> [out.json]\n");
+    std::printf("                         Export binary .wskl to a human-editable JSON sidecar (defaults to <base>.wskl.json)\n");
+    std::printf("  --import-wskl-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wskl.json sidecar back into binary .wskl (accepts category int OR categoryName string)\n");
     std::printf("  --gen-spells <wspl-base> [name]\n");
     std::printf("                         Emit .wspl starter spell catalog: 4 spells covering damage / heal / buff / teleport effect kinds\n");
     std::printf("  --gen-spells-mage <wspl-base> [name]\n");
