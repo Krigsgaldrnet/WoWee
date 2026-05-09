@@ -315,6 +315,262 @@ int handleInfoMesh(int& i, int argc, char** argv) {
 }
 
 
+int handleInfoMeshStorageBudget(int& i, int argc, char** argv) {
+    // Estimated bytes-per-category breakdown for a WOM.
+    // Numbers are based on the in-memory struct sizes, not
+    // the actual on-disk encoding (which has framing
+    // overhead) — but the relative shares are accurate and
+    // help users decide where shrinking efforts pay off.
+    //
+    // For example: a heightmap mesh's bytes are dominated by
+    // vertices, so reducing vertex count is the lever to
+    // pull. A skeletal mesh's animation keyframes can dwarf
+    // the geometry itself — surfacing that lets the user
+    // know to consider --strip-mesh --anims.
+    std::string base = argv[++i];
+    bool jsonOut = (i + 1 < argc &&
+                    std::strcmp(argv[i + 1], "--json") == 0);
+    if (jsonOut) i++;
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom") {
+        base = base.substr(0, base.size() - 4);
+    }
+    if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+        std::fprintf(stderr,
+            "info-mesh-storage-budget: %s.wom does not exist\n",
+            base.c_str());
+        return 1;
+    }
+    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+    if (!wom.isValid()) {
+        std::fprintf(stderr,
+            "info-mesh-storage-budget: failed to load %s.wom\n",
+            base.c_str());
+        return 1;
+    }
+    // Per-category byte estimates. Vertex is 12+12+8+4+4=40
+    // bytes (pos/normal/uv/4 weights/4 indices). Index is
+    // 4 bytes. Bone is 4+2+12+4=22 bytes. Batch is 4+4+4+2+
+    // 2=16. Animation keyframe is 4+12+16+12=44 bytes.
+    // Texture path is summed length plus a small per-string
+    // overhead.
+    uint64_t vertBytes = wom.vertices.size() * 40;
+    uint64_t idxBytes = wom.indices.size() * 4;
+    uint64_t boneBytes = wom.bones.size() * 22;
+    uint64_t batchBytes = wom.batches.size() * 16;
+    uint64_t animBytes = 0;
+    size_t totalKeyframes = 0;
+    for (const auto& a : wom.animations) {
+        animBytes += 12;  // id + duration + movingSpeed
+        for (const auto& bone : a.boneKeyframes) {
+            animBytes += bone.size() * 44;
+            totalKeyframes += bone.size();
+        }
+    }
+    uint64_t texBytes = 0;
+    for (const auto& t : wom.texturePaths) texBytes += t.size() + 8;
+    namespace fs = std::filesystem;
+    uint64_t actualBytes = fs::file_size(base + ".wom");
+    uint64_t estBytes = vertBytes + idxBytes + boneBytes +
+                         batchBytes + animBytes + texBytes;
+    struct Row { const char* name; uint64_t bytes; };
+    std::vector<Row> rows = {
+        {"vertices  ", vertBytes},
+        {"indices   ", idxBytes},
+        {"bones     ", boneBytes},
+        {"animations", animBytes},
+        {"batches   ", batchBytes},
+        {"textures  ", texBytes},
+    };
+    if (jsonOut) {
+        nlohmann::json j;
+        j["base"] = base;
+        j["fileBytes"] = actualBytes;
+        j["estimatedBytes"] = estBytes;
+        j["categories"] = nlohmann::json::object();
+        for (const auto& r : rows) {
+            double share = estBytes > 0
+                           ? 100.0 * r.bytes / estBytes : 0.0;
+            j["categories"][r.name] = {{"bytes", r.bytes},
+                                        {"share", share}};
+        }
+        j["counts"] = {{"vertices", wom.vertices.size()},
+                        {"indices", wom.indices.size()},
+                        {"bones", wom.bones.size()},
+                        {"animations", wom.animations.size()},
+                        {"keyframes", totalKeyframes},
+                        {"batches", wom.batches.size()},
+                        {"textures", wom.texturePaths.size()}};
+        std::printf("%s\n", j.dump(2).c_str());
+        return 0;
+    }
+    std::printf("Mesh storage budget: %s.wom\n", base.c_str());
+    std::printf("  on-disk    : %llu bytes (%.1f KB)\n",
+                static_cast<unsigned long long>(actualBytes),
+                actualBytes / 1024.0);
+    std::printf("  estimated  : %llu bytes (sum of in-memory parts)\n",
+                static_cast<unsigned long long>(estBytes));
+    std::printf("\n  Per-category (estimated):\n");
+    for (const auto& r : rows) {
+        if (r.bytes == 0) continue;
+        double share = estBytes > 0
+                       ? 100.0 * r.bytes / estBytes : 0.0;
+        std::printf("    %s : %10llu bytes  (%5.1f%%)\n",
+                    r.name,
+                    static_cast<unsigned long long>(r.bytes),
+                    share);
+    }
+    std::printf("\n  Tips:\n");
+    if (animBytes > vertBytes && wom.animations.size() > 0) {
+        std::printf("    - animations dominate; --strip-mesh "
+                    "--anims would save %.1f KB\n",
+                    animBytes / 1024.0);
+    }
+    if (boneBytes > vertBytes / 2 && wom.bones.size() > 0) {
+        std::printf("    - bones non-trivial; consider "
+                    "--strip-mesh --bones for static placement\n");
+    }
+    if (vertBytes > estBytes / 2) {
+        std::printf("    - vertices dominate; check if a "
+                    "lower-poly variant works for placement\n");
+    }
+    return 0;
+}
+
+int handleInfoProjectModelsTotal(int& i, int argc, char** argv) {
+    // Multi-zone aggregate. Walks every zone in <projectDir>,
+    // sums the same WOM/WOB metrics --info-zone-models-total
+    // emits, and prints a per-zone breakdown table followed
+    // by project-wide totals. Useful for capacity planning
+    // across an entire content project.
+    std::string projectDir = argv[++i];
+    bool jsonOut = (i + 1 < argc &&
+                    std::strcmp(argv[i + 1], "--json") == 0);
+    if (jsonOut) i++;
+    namespace fs = std::filesystem;
+    if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+        std::fprintf(stderr,
+            "info-project-models-total: %s is not a directory\n",
+            projectDir.c_str());
+        return 1;
+    }
+    std::vector<std::string> zones;
+    for (const auto& entry : fs::directory_iterator(projectDir)) {
+        if (!entry.is_directory()) continue;
+        if (!fs::exists(entry.path() / "zone.json")) continue;
+        zones.push_back(entry.path().string());
+    }
+    std::sort(zones.begin(), zones.end());
+    struct ZRow {
+        std::string name;
+        int womCount = 0, wobCount = 0;
+        uint64_t womVerts = 0, womIndices = 0, womBones = 0;
+        uint64_t womAnims = 0, womBatches = 0;
+        uint64_t wobGroups = 0, wobVerts = 0, wobIndices = 0;
+        uint64_t wobDoodads = 0, wobPortals = 0;
+    };
+    std::vector<ZRow> rows;
+    ZRow tot;
+    tot.name = "TOTAL";
+    for (const auto& zoneDir : zones) {
+        ZRow r;
+        r.name = fs::path(zoneDir).filename().string();
+        std::error_code ec;
+        for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+            if (!e.is_regular_file()) continue;
+            std::string ext = e.path().extension().string();
+            std::string base = e.path().string();
+            if (base.size() > ext.size())
+                base = base.substr(0, base.size() - ext.size());
+            if (ext == ".wom") {
+                r.womCount++;
+                auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                r.womVerts += wom.vertices.size();
+                r.womIndices += wom.indices.size();
+                r.womBones += wom.bones.size();
+                r.womAnims += wom.animations.size();
+                r.womBatches += wom.batches.size();
+            } else if (ext == ".wob") {
+                r.wobCount++;
+                auto wob = wowee::pipeline::WoweeBuildingLoader::load(base);
+                r.wobGroups += wob.groups.size();
+                for (const auto& g : wob.groups) {
+                    r.wobVerts += g.vertices.size();
+                    r.wobIndices += g.indices.size();
+                }
+                r.wobDoodads += wob.doodads.size();
+                r.wobPortals += wob.portals.size();
+            }
+        }
+        tot.womCount += r.womCount;
+        tot.wobCount += r.wobCount;
+        tot.womVerts += r.womVerts;
+        tot.womIndices += r.womIndices;
+        tot.womBones += r.womBones;
+        tot.womAnims += r.womAnims;
+        tot.womBatches += r.womBatches;
+        tot.wobGroups += r.wobGroups;
+        tot.wobVerts += r.wobVerts;
+        tot.wobIndices += r.wobIndices;
+        tot.wobDoodads += r.wobDoodads;
+        tot.wobPortals += r.wobPortals;
+        rows.push_back(r);
+    }
+    if (jsonOut) {
+        nlohmann::json j;
+        j["project"] = projectDir;
+        j["zones"] = nlohmann::json::array();
+        auto rowJson = [](const ZRow& r) {
+            nlohmann::json z;
+            z["name"] = r.name;
+            z["wom"] = {{"count", r.womCount},
+                         {"vertices", r.womVerts},
+                         {"indices", r.womIndices},
+                         {"triangles", r.womIndices / 3},
+                         {"bones", r.womBones},
+                         {"animations", r.womAnims},
+                         {"batches", r.womBatches}};
+            z["wob"] = {{"count", r.wobCount},
+                         {"groups", r.wobGroups},
+                         {"vertices", r.wobVerts},
+                         {"indices", r.wobIndices},
+                         {"triangles", r.wobIndices / 3},
+                         {"doodads", r.wobDoodads},
+                         {"portals", r.wobPortals}};
+            return z;
+        };
+        for (const auto& r : rows) j["zones"].push_back(rowJson(r));
+        j["total"] = rowJson(tot);
+        std::printf("%s\n", j.dump(2).c_str());
+        return 0;
+    }
+    std::printf("Project models total: %s\n", projectDir.c_str());
+    std::printf("  zones : %zu\n\n", zones.size());
+    std::printf("  zone                  WOMs  WOMtri  bones  WOBs  WOBtri  doodads\n");
+    for (const auto& r : rows) {
+        std::printf("  %-20s %5d %7llu %6llu %5d %7llu %8llu\n",
+                    r.name.substr(0, 20).c_str(),
+                    r.womCount,
+                    static_cast<unsigned long long>(r.womIndices / 3),
+                    static_cast<unsigned long long>(r.womBones),
+                    r.wobCount,
+                    static_cast<unsigned long long>(r.wobIndices / 3),
+                    static_cast<unsigned long long>(r.wobDoodads));
+    }
+    std::printf("  %-20s %5d %7llu %6llu %5d %7llu %8llu\n",
+                tot.name.c_str(),
+                tot.womCount,
+                static_cast<unsigned long long>(tot.womIndices / 3),
+                static_cast<unsigned long long>(tot.womBones),
+                tot.wobCount,
+                static_cast<unsigned long long>(tot.wobIndices / 3),
+                static_cast<unsigned long long>(tot.wobDoodads));
+    std::printf("\n  Combined verts/tris (WOM+WOB): %llu / %llu\n",
+                static_cast<unsigned long long>(tot.womVerts + tot.wobVerts),
+                static_cast<unsigned long long>((tot.womIndices + tot.wobIndices) / 3));
+    return 0;
+}
+
+
 }  // namespace
 
 bool handleMeshInfo(int& i, int argc, char** argv, int& outRc) {
@@ -326,6 +582,12 @@ bool handleMeshInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--info-mesh") == 0 && i + 1 < argc) {
         outRc = handleInfoMesh(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--info-mesh-storage-budget") == 0 && i + 1 < argc) {
+        outRc = handleInfoMeshStorageBudget(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--info-project-models-total") == 0 && i + 1 < argc) {
+        outRc = handleInfoProjectModelsTotal(i, argc, argv); return true;
     }
     return false;
 }
