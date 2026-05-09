@@ -4586,6 +4586,100 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleChainmail(int& i, int argc, char** argv) {
+    // Chainmail: rings tile in a brick/hexagonal pattern with even
+    // and odd rows offset by half a cell width — each pixel is
+    // tested against the nearest ring center; if its distance lies
+    // in [ringR-stroke/2, ringR+stroke/2] it's painted as the ring
+    // color, else background. The cellH < cellW default produces
+    // overlapping rings that read as interlinked metal mail.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string ringHex = argv[++i];
+    int cellW = 14;
+    int cellH = 10;
+    int ringR = 5;
+    float strokeW = 1.5f;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellW = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellH = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { ringR = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { strokeW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellW < 4 || cellW > 256 ||
+        cellH < 4 || cellH > 256 ||
+        ringR < 2 || ringR > cellW ||
+        strokeW < 0.5f || strokeW > ringR) {
+        std::fprintf(stderr,
+            "gen-texture-chainmail: invalid dims (W/H 1..8192, "
+            "cellW/H 4..256, ringR 2..cellW, strokeW 0.5..ringR)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, rr_, rg_, rb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(ringHex, rr_, rg_, rb_)) {
+        std::fprintf(stderr,
+            "gen-texture-chainmail: bg or ring hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float halfStroke = strokeW * 0.5f;
+    const float fRingR = static_cast<float>(ringR);
+    for (int y = 0; y < H; ++y) {
+        // Offset alternate rows by half a cell so rings interlock
+        // with the row above/below — classic brick/hex layout.
+        int row = y / cellH;
+        float rowOffset = (row & 1) ? cellW * 0.5f : 0.0f;
+        float cy = (row + 0.5f) * cellH;
+        for (int x = 0; x < W; ++x) {
+            // Wrap into the row's offset cell to find ring center.
+            float xOff = x - rowOffset;
+            int col = static_cast<int>(std::floor(xOff / cellW));
+            float cx = (col + 0.5f) * cellW + rowOffset;
+            float dx = x - cx;
+            float dy = y - cy;
+            float d = std::sqrt(dx * dx + dy * dy);
+            uint8_t r, g, b;
+            if (std::fabs(d - fRingR) < halfStroke) {
+                r = rr_; g = rg_; b = rb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-chainmail: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/ring    : %s / %s\n", bgHex.c_str(), ringHex.c_str());
+    std::printf("  ring       : R=%d on %dx%d brick (stroke %.2f px)\n",
+                ringR, cellW, cellH, strokeW);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -4731,6 +4825,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-knit") == 0 && i + 3 < argc) {
         outRc = handleKnit(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-chainmail") == 0 && i + 3 < argc) {
+        outRc = handleChainmail(i, argc, argv); return true;
     }
     return false;
 }
