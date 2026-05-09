@@ -3500,6 +3500,91 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleIronbark(int& i, int argc, char** argv) {
+    // Ironbark: vertical wood-grain streaks (like --gen-texture-
+    // bark) overlaid with horizontal "plate" bands at regular
+    // intervals — the segmented look of mature hardwood / iron-
+    // wood / sycamore bark. Within each plate cell, the inside
+    // is the base wood color and the cell border is the dark
+    // crack color. Distinct from --gen-texture-bark (vertical-
+    // crack only) and --gen-texture-wood (vertical-streak only).
+    std::string outPath = argv[++i];
+    std::string baseHex = argv[++i];
+    std::string crackHex = argv[++i];
+    int streakSpacing = 14;     // horizontal pitch of vertical streaks
+    int plateY = 48;            // vertical pitch of horizontal plate bands
+    int crackW = 1;             // crack thickness
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, streakSpacing);
+    parseOptInt(i, argc, argv, plateY);
+    parseOptInt(i, argc, argv, crackW);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        streakSpacing < 4 || streakSpacing > 1024 ||
+        plateY < 8 || plateY > 4096 ||
+        crackW < 1 || crackW * 4 >= std::min(streakSpacing, plateY)) {
+        std::fprintf(stderr,
+            "gen-texture-ironbark: invalid dims (W/H 1..8192, "
+            "streakSpacing 4..1024, plateY 8..4096, crackW 1..min/4)\n");
+        return 1;
+    }
+    uint8_t lr, lg, lb_, dr, dg, db;
+    if (!parseHexOrError(baseHex, lr, lg, lb_,
+                         "gen-texture-ironbark")) return 1;
+    if (!parseHexOrError(crackHex, dr, dg, db,
+                         "gen-texture-ironbark")) return 1;
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    auto clampU8 = [](int v) {
+        return v < 0 ? 0 : (v > 255 ? 255 : v);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        // Plate-cell row index + within-plate Y offset.
+        int plateRow = y / plateY;
+        int yInPlate = y - plateRow * plateY;
+        // Horizontal crack: top crackW pixels of every plate.
+        bool onPlateCrack = (yInPlate < crackW);
+        for (int x = 0; x < W; ++x) {
+            // Vertical streak: hash-jittered crack position per
+            // streakSpacing column.
+            int streakCol = x / streakSpacing;
+            int xInStreak = x - streakCol * streakSpacing;
+            // Per-streak hash determines exact crack offset within
+            // the streakSpacing block, AND a per-streak-+-plateRow
+            // brightness tint.
+            uint32_t hStreak = hash32(streakCol * 0x9E3779B1u + seed);
+            int crackOffset = static_cast<int>(hStreak % streakSpacing);
+            bool onStreakCrack = std::abs(xInStreak - crackOffset) < crackW;
+            int tint = (static_cast<int>(hash32(
+                streakCol * 0x9E3779B1u + plateRow * 0x85EBCA77u + seed)
+                % 31)) - 15;     // -15..+15 brightness jitter
+            uint8_t r, g, b;
+            if (onPlateCrack || onStreakCrack) {
+                r = dr; g = dg; b = db;
+            } else {
+                r = static_cast<uint8_t>(clampU8(lr + tint));
+                g = static_cast<uint8_t>(clampU8(lg + tint));
+                b = static_cast<uint8_t>(clampU8(lb_ + tint));
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-ironbark")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  base/crack : %s / %s\n", baseHex.c_str(), crackHex.c_str());
+    std::printf("  bark       : streak=%d, plateY=%d, crackW=%d (seed %u)\n",
+                streakSpacing, plateY, crackW, seed);
+    return 0;
+}
+
 int handleSwirl(int& i, int argc, char** argv) {
     // Logarithmic spiral: pixels are colored as the spiral arm
     // when (θ - log(r) * spiralFactor) mod 2π/N falls inside a
@@ -5145,6 +5230,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-chevron",        3, handleChevron},
     {"--gen-texture-dunes",          3, handleDunes},
     {"--gen-texture-swirl",          3, handleSwirl},
+    {"--gen-texture-ironbark",       3, handleIronbark},
 };
 }  // namespace
 

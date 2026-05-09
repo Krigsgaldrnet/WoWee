@@ -175,6 +175,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Dunes: stack of parallel sinusoidal curves (desert ground / shallow-water sand / wave ripples)\n");
     std::printf("  --gen-texture-swirl <out.png> <bgHex> <armHex> [armCount] [spiralFactor] [armWidth] [W H]\n");
     std::printf("                         Swirl: N-arm logarithmic spiral (magic sigils / summoning circles / ritual floor markings)\n");
+    std::printf("  --gen-texture-ironbark <out.png> <baseHex> <crackHex> [streakSpacing] [plateY] [crackW] [seed] [W H]\n");
+    std::printf("                         Ironbark: vertical wood streaks + horizontal plate bands (mature hardwood / sycamore / ironwood)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
