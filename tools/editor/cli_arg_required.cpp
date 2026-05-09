@@ -70,6 +70,8 @@ const char* const kArgRequired[] = {
     "--export-wgsp-json", "--import-wgsp-json",
     "--gen-taxi", "--gen-taxi-region", "--gen-taxi-continent",
     "--info-wtax", "--validate-wtax",
+    "--gen-talents", "--gen-talents-warrior", "--gen-talents-mage",
+    "--info-wtal", "--validate-wtal",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

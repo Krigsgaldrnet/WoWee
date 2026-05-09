@@ -1047,6 +1047,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTAX nodes (id / map / position / name) + paths (id / from->to / cost / waypoint count)\n");
     std::printf("  --validate-wtax <wtax-base> [--json]\n");
     std::printf("                         Static checks: ids>0+unique, finite positions, paths reference real nodes, no self-loop, non-negative delays\n");
+    std::printf("  --gen-talents <wtal-base> [name]\n");
+    std::printf("                         Emit .wtal starter: 1 small tree (3 talents in chain) for class warrior\n");
+    std::printf("  --gen-talents-warrior <wtal-base> [name]\n");
+    std::printf("                         Emit .wtal warrior trees: Arms (4 talents) + Fury (4) + Protection (3) with WSPL spell cross-refs\n");
+    std::printf("  --gen-talents-mage <wtal-base> [name]\n");
+    std::printf("                         Emit .wtal mage trees: Arcane (3 talents) + Fire (3) + Frost (3) with WSPL Frostbolt/Fireball/Blink refs\n");
+    std::printf("  --info-wtal <wtal-base> [--json]\n");
+    std::printf("                         Print WTAL trees + per-talent grid position / max rank / prereq chain / rank-1 spellId\n");
+    std::printf("  --validate-wtal <wtal-base> [--json]\n");
+    std::printf("                         Static checks: tree+talent ids>0+unique, maxRank 1..5, prereq references resolve, no self-prereq\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
