@@ -3,6 +3,7 @@
 
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wowee_collision.hpp"
+#include "pipeline/wowee_light.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include "pipeline/adt_loader.hpp"
 #include <glm/glm.hpp>
@@ -327,6 +328,94 @@ int handleInfoWoc(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleInfoWol(int& i, int argc, char** argv) {
+    // Inspect a Wowee Open Light (.wol) file: zone name + per-
+    // keyframe time-of-day + ambient/directional/fog colors and
+    // fog distances.
+    std::string base = argv[++i];
+    bool jsonOut = (i + 1 < argc &&
+                    std::strcmp(argv[i + 1], "--json") == 0);
+    if (jsonOut) ++i;
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wol")
+        base = base.substr(0, base.size() - 4);
+    if (!wowee::pipeline::WoweeLightLoader::exists(base)) {
+        std::fprintf(stderr, "WOL not found: %s.wol\n", base.c_str());
+        return 1;
+    }
+    auto wol = wowee::pipeline::WoweeLightLoader::load(base);
+    if (!wol.isValid()) {
+        std::fprintf(stderr, "WOL parse failed: %s.wol\n", base.c_str());
+        return 1;
+    }
+    if (jsonOut) {
+        nlohmann::json j;
+        j["wol"] = base + ".wol";
+        j["name"] = wol.name;
+        j["keyframeCount"] = wol.keyframes.size();
+        nlohmann::json kfs = nlohmann::json::array();
+        for (const auto& kf : wol.keyframes) {
+            kfs.push_back({
+                {"timeOfDayMin", kf.timeOfDayMin},
+                {"ambient", {kf.ambientColor.r, kf.ambientColor.g,
+                              kf.ambientColor.b}},
+                {"directional", {kf.directionalColor.r,
+                                  kf.directionalColor.g,
+                                  kf.directionalColor.b}},
+                {"directionalDir", {kf.directionalDir.x,
+                                     kf.directionalDir.y,
+                                     kf.directionalDir.z}},
+                {"fog", {kf.fogColor.r, kf.fogColor.g, kf.fogColor.b}},
+                {"fogStart", kf.fogStart},
+                {"fogEnd", kf.fogEnd},
+            });
+        }
+        j["keyframes"] = kfs;
+        std::printf("%s\n", j.dump(2).c_str());
+        return 0;
+    }
+    std::printf("WOL: %s.wol\n", base.c_str());
+    std::printf("  zone       : %s\n", wol.name.c_str());
+    std::printf("  keyframes  : %zu\n", wol.keyframes.size());
+    for (std::size_t k = 0; k < wol.keyframes.size(); ++k) {
+        const auto& kf = wol.keyframes[k];
+        std::printf("  [%zu] %02u:%02u  ambient=(%.2f, %.2f, %.2f) "
+                    "fog=(%.2f, %.2f, %.2f) [%.0f..%.0f]\n",
+                    k,
+                    kf.timeOfDayMin / 60, kf.timeOfDayMin % 60,
+                    kf.ambientColor.r, kf.ambientColor.g, kf.ambientColor.b,
+                    kf.fogColor.r, kf.fogColor.g, kf.fogColor.b,
+                    kf.fogStart, kf.fogEnd);
+    }
+    return 0;
+}
+
+int handleGenLight(int& i, int argc, char** argv) {
+    // Emit a starter .wol file with the default 4-keyframe day/
+    // night cycle (midnight, dawn, noon, dusk). User can edit
+    // the keyframes by re-saving via a future authoring tool;
+    // for now this is the canonical "make me a usable atmosphere
+    // file in one command" entrypoint.
+    std::string base = argv[++i];
+    std::string zoneName = "Default";
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        zoneName = argv[++i];
+    }
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wol") {
+        base = base.substr(0, base.size() - 4);
+    }
+    auto wol = wowee::pipeline::WoweeLightLoader::makeDefaultDayNight(zoneName);
+    if (!wowee::pipeline::WoweeLightLoader::save(wol, base)) {
+        std::fprintf(stderr, "gen-light: failed to save %s.wol\n",
+                     base.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wol\n", base.c_str());
+    std::printf("  zone       : %s\n", zoneName.c_str());
+    std::printf("  keyframes  : %zu (midnight + dawn + noon + dusk)\n",
+                wol.keyframes.size());
+    return 0;
+}
+
 }  // namespace
 
 bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
@@ -341,6 +430,12 @@ bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--info-woc") == 0 && i + 1 < argc) {
         outRc = handleInfoWoc(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--info-wol") == 0 && i + 1 < argc) {
+        outRc = handleInfoWol(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-light") == 0 && i + 1 < argc) {
+        outRc = handleGenLight(i, argc, argv); return true;
     }
     return false;
 }

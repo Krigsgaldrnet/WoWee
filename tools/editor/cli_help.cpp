@@ -771,6 +771,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Per-group + aggregate geometric stats (surface area, edges, watertight) for a WOB building\n");
     std::printf("  --info-woc <woc-path> [--json]\n");
     std::printf("                         Print WOC collision metadata (triangle counts, bounds) and exit\n");
+    std::printf("  --info-wol <wol-base> [--json]\n");
+    std::printf("                         Print WOL lighting keyframes (zone name + per-time-of-day ambient/directional/fog) and exit\n");
+    std::printf("  --gen-light <wol-base> [zoneName]\n");
+    std::printf("                         Emit a starter .wol with the canonical 4-keyframe day/night cycle (midnight + dawn + noon + dusk)\n");
     std::printf("  --info-wot <wot-base> [--json]\n");
     std::printf("                         Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-extract <dir> [--json]\n");
