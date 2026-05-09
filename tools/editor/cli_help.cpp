@@ -919,6 +919,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WQT entries (questId / level / giver / objectives / rewards / chain links)\n");
     std::printf("  --validate-wqt <wqt-base> [--json]\n");
     std::printf("                         Static checks: questId>0+unique, level>0+min<=max, title not empty, no rewards warning, daily needs repeatable\n");
+    std::printf("  --export-wqt-json <wqt-base> [out.json]\n");
+    std::printf("                         Export binary .wqt to a human-editable JSON sidecar (defaults to <base>.wqt.json)\n");
+    std::printf("  --import-wqt-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wqt.json sidecar back into binary .wqt (accepts kind/flag int OR name forms)\n");
     std::printf("  --gen-objects <wgot-base> [name]\n");
     std::printf("                         Emit .wgot starter object catalog: 1 chest + 1 mailbox + 1 sign\n");
     std::printf("  --gen-objects-dungeon <wgot-base> [name]\n");
