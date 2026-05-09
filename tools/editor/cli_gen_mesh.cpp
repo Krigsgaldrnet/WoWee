@@ -5161,6 +5161,66 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStatueBase(int& i, int argc, char** argv) {
+    // Statue / monument pedestal: 3-tier stacked-box pedestal
+    // (plinth foundation, tall body, capital cap). Distinct from
+    // --gen-mesh-podium (stepped pyramid with lectern) and
+    // --gen-mesh-altar (stacked discs) — this is the classic
+    // single-statue square pedestal for monuments, plazas,
+    // hero-of-the-revolution memorials. The 76th procedural mesh
+    // primitive.
+    std::string womBase = argv[++i];
+    float bodyW = 0.45f;            // square footprint of body
+    float bodyH = 1.10f;            // body height (most of the pedestal)
+    float plinthExtra = 0.12f;      // plinth wider than body per side
+    float plinthH = 0.10f;          // plinth thickness
+    float capitalExtra = 0.08f;     // capital wider than body per side
+    float capitalH = 0.08f;         // capital thickness
+    parseOptFloat(i, argc, argv, bodyW);
+    parseOptFloat(i, argc, argv, bodyH);
+    parseOptFloat(i, argc, argv, plinthExtra);
+    parseOptFloat(i, argc, argv, plinthH);
+    parseOptFloat(i, argc, argv, capitalExtra);
+    parseOptFloat(i, argc, argv, capitalH);
+    if (bodyW <= 0 || bodyH <= 0 ||
+        plinthExtra < 0 || plinthH <= 0 ||
+        capitalExtra < 0 || capitalH <= 0) {
+        std::fprintf(stderr,
+            "gen-mesh-statue-base: dims > 0; extras >= 0\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float bodyHalf = bodyW * 0.5f;
+    // Plinth: bottom box, wider than body.
+    const float plinthHalf = bodyHalf + plinthExtra;
+    addFlatBox(wom, 0.0f, plinthH * 0.5f, 0.0f,
+               plinthHalf, plinthH * 0.5f, plinthHalf);
+    // Body: tall central pedestal sitting on the plinth.
+    const float bodyCY = plinthH + bodyH * 0.5f;
+    addFlatBox(wom, 0.0f, bodyCY, 0.0f,
+               bodyHalf, bodyH * 0.5f, bodyHalf);
+    // Capital: small wider cap on top of the body.
+    const float capitalCY = plinthH + bodyH + capitalH * 0.5f;
+    const float capitalHalf = bodyHalf + capitalExtra;
+    addFlatBox(wom, 0.0f, capitalCY, 0.0f,
+               capitalHalf, capitalH * 0.5f, capitalHalf);
+    finalizeAsSingleBatch(wom);
+    float maxHalf = std::max(plinthHalf, capitalHalf);
+    setCenteredBoundsXZ(wom, maxHalf, maxHalf,
+                         plinthH + bodyH + capitalH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-statue-base")) return 1;
+    printWomWrote(womBase);
+    std::printf("  body       : %.3f square x %.3f tall\n", bodyW, bodyH);
+    std::printf("  plinth     : %.3f thick, +%.3f per side\n",
+                plinthH, plinthExtra);
+    std::printf("  capital    : %.3f thick, +%.3f per side\n",
+                capitalH, capitalExtra);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handlePillarRow(int& i, int argc, char** argv) {
     // Row of N stone pillars evenly spaced along the X axis.
     // Each pillar is a single tall rectangular box, optionally
@@ -7074,6 +7134,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-mine-cart",      1, handleMineCart},
     {"--gen-mesh-hitching-rail",  1, handleHitchingRail},
     {"--gen-mesh-pillar-row",     1, handlePillarRow},
+    {"--gen-mesh-statue-base",    1, handleStatueBase},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},

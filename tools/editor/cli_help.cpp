@@ -292,6 +292,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Hitching rail: long horizontal bar on N evenly-spaced posts (taverns / stockyards / market days)\n");
     std::printf("  --gen-mesh-pillar-row <wom-base> [count] [span] [height] [pillarW] [capH] [capExtra]\n");
     std::printf("                         Pillar row: N evenly-spaced rectangular pillars with optional square caps (colonnade / temple ruin)\n");
+    std::printf("  --gen-mesh-statue-base <wom-base> [bodyW] [bodyH] [plinthExtra] [plinthH] [capitalExtra] [capitalH]\n");
+    std::printf("                         Statue base: 3-tier pedestal (plinth + body + capital) for monuments / hero memorials\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");
