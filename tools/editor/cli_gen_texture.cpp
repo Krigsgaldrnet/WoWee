@@ -3500,6 +3500,90 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleHalftone(int& i, int argc, char** argv) {
+    // Halftone: regular grid of dots whose radii grow with a
+    // configurable gradient direction (vertical, horizontal, or
+    // radial-from-center). Mimics the comic-print / newspaper
+    // image-reproduction trick of varying dot size to encode
+    // grayscale. Distinct from --gen-texture-dots (uniform dot
+    // radius) and --gen-texture-studs (uniform with inner
+    // highlight) — halftone is the gradient-modulated variant.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string dotHex  = argv[++i];
+    int stride = 16;
+    int maxR = 7;
+    char dir = 'v';        // 'v' vertical, 'h' horizontal, 'r' radial
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, stride);
+    parseOptInt(i, argc, argv, maxR);
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        const char* a = argv[++i];
+        if (a[0] == 'h' || a[0] == 'H') dir = 'h';
+        else if (a[0] == 'r' || a[0] == 'R') dir = 'r';
+        else dir = 'v';
+    }
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stride < 4 || stride > 1024 ||
+        maxR < 1 || maxR * 2 >= stride) {
+        std::fprintf(stderr,
+            "gen-texture-halftone: invalid dims (W/H 1..8192, "
+            "stride 4..1024, maxR 1..stride/2)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, dr, dg, db;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-halftone")) return 1;
+    if (!parseHexOrError(dotHex, dr, dg, db,
+                         "gen-texture-halftone")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float cx = W * 0.5f;
+    const float cy = H * 0.5f;
+    const float maxDist = std::sqrt(cx * cx + cy * cy);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            // Find nearest grid center.
+            int col = (x + stride / 2) / stride;
+            int row = (y + stride / 2) / stride;
+            float gx = col * stride;
+            float gy = row * stride;
+            // Gradient value t in [0, 1] at the cell center based
+            // on direction.
+            float t;
+            if (dir == 'h') {
+                t = gx / (W - 1);
+            } else if (dir == 'r') {
+                float dxc = gx - cx, dyc = gy - cy;
+                t = std::sqrt(dxc * dxc + dyc * dyc) / maxDist;
+            } else {
+                t = gy / (H - 1);
+            }
+            float r = maxR * t;
+            float ddx = x - gx;
+            float ddy = y - gy;
+            float d = std::sqrt(ddx * ddx + ddy * ddy);
+            uint8_t outR, outG, outB;
+            if (d < r) {
+                outR = dr; outG = dg; outB = db;
+            } else {
+                outR = br_; outG = bg_; outB = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, outR, outG, outB);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-halftone")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/dot     : %s / %s\n", bgHex.c_str(), dotHex.c_str());
+    std::printf("  grid       : stride=%d, maxR=%d, dir=%s\n",
+                stride, maxR,
+                dir == 'h' ? "horizontal" :
+                (dir == 'r' ? "radial" : "vertical"));
+    return 0;
+}
+
 int handleStar(int& i, int argc, char** argv) {
     // N-pointed star polygon centered on the texture. Each pixel
     // computes its polar (r, θ); the star boundary at any θ
@@ -5831,6 +5915,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-scratched-metal",3, handleScratchedMetal},
     {"--gen-texture-crackle",        3, handleCrackle},
     {"--gen-texture-star",           3, handleStar},
+    {"--gen-texture-halftone",       3, handleHalftone},
 };
 }  // namespace
 
