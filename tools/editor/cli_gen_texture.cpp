@@ -781,9 +781,1053 @@ int handleLava(int& i, int argc, char** argv) {
 }
 
 
+int handleGradient(int& i, int argc, char** argv) {
+    // Linear two-color gradient. Useful for sky strips, UI
+    // fills, glow rings, dirt-on-grass terrain blends — the
+    // common "fade" cases that --gen-texture's solid/checker/
+    // grid don't cover.
+    //
+    // Direction: "vertical" (top→bottom, default) or
+    // "horizontal" (left→right). Colors are hex like
+    // --gen-texture.
+    std::string outPath = argv[++i];
+    std::string fromHex = argv[++i];
+    std::string toHex = argv[++i];
+    bool horizontal = false;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        std::string dir = argv[i + 1];
+        std::transform(dir.begin(), dir.end(), dir.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        if (dir == "horizontal" || dir == "vertical") {
+            horizontal = (dir == "horizontal");
+            i++;
+        }
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+        std::fprintf(stderr,
+            "gen-texture-gradient: invalid size %dx%d (1..8192)\n",
+            W, H);
+        return 1;
+    }
+    // Hex parser: shared local helper for both endpoints. Same
+    // RRGGBB / RGB rules as --gen-texture.
+    uint8_t r0, g0, b0, r1, g1, b1;
+    if (!parseHex(fromHex, r0, g0, b0)) {
+        std::fprintf(stderr,
+            "gen-texture-gradient: '%s' is not a valid hex color\n",
+            fromHex.c_str());
+        return 1;
+    }
+    if (!parseHex(toHex, r1, g1, b1)) {
+        std::fprintf(stderr,
+            "gen-texture-gradient: '%s' is not a valid hex color\n",
+            toHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float t;
+            if (horizontal) {
+                t = (W <= 1) ? 0.0f : float(x) / float(W - 1);
+            } else {
+                t = (H <= 1) ? 0.0f : float(y) / float(H - 1);
+            }
+            auto lerp = [](uint8_t a, uint8_t b, float t) {
+                return static_cast<uint8_t>(a + (b - a) * t + 0.5f);
+            };
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = lerp(r0, r1, t);
+            pixels[i2 + 1] = lerp(g0, g1, t);
+            pixels[i2 + 2] = lerp(b0, b1, t);
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-gradient: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  direction  : %s\n",
+                horizontal ? "horizontal" : "vertical");
+    std::printf("  from       : %s (rgb %u,%u,%u)\n",
+                fromHex.c_str(), r0, g0, b0);
+    std::printf("  to         : %s (rgb %u,%u,%u)\n",
+                toHex.c_str(), r1, g1, b1);
+    return 0;
+}
+
+int handleNoise(int& i, int argc, char** argv) {
+    // Smooth value-noise PNG. Useful for terrain detail
+    // overlays, dirt/grass blends, magic-fog backdrops —
+    // anywhere a "natural-looking" pseudo-random texture
+    // beats a flat color or grid.
+    //
+    // Algorithm: bilinearly-interpolated 16×16 random lattice
+    // sampled per pixel. Cheaper than perlin and produces a
+    // similar visual signal at this resolution.
+    //
+    // Deterministic from the integer seed so CI runs and
+    // re-runs are reproducible. Output is grayscale
+    // (R==G==B per pixel) so users can tint it externally.
+    std::string outPath = argv[++i];
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); }
+        catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+        std::fprintf(stderr,
+            "gen-texture-noise: invalid size %dx%d (1..8192)\n",
+            W, H);
+        return 1;
+    }
+    // Tiny LCG (numerical recipes constants) so noise is
+    // dependency-free and bit-for-bit identical across
+    // platforms.
+    const int latticeSize = 17;  // 16 cells × bilinear corners
+    std::vector<float> lattice(latticeSize * latticeSize);
+    uint32_t state = seed ? seed : 1u;
+    auto next = [&]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) / float(1 << 24);
+    };
+    for (auto& v : lattice) v = next();
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        float fy = static_cast<float>(y) / H * (latticeSize - 1);
+        int yi = static_cast<int>(fy);
+        if (yi >= latticeSize - 1) yi = latticeSize - 2;
+        float fty = fy - yi;
+        // Smoothstep so cell boundaries don't show as bands.
+        float ty = fty * fty * (3.0f - 2.0f * fty);
+        for (int x = 0; x < W; ++x) {
+            float fx = static_cast<float>(x) / W * (latticeSize - 1);
+            int xi = static_cast<int>(fx);
+            if (xi >= latticeSize - 1) xi = latticeSize - 2;
+            float ftx = fx - xi;
+            float tx = ftx * ftx * (3.0f - 2.0f * ftx);
+            float a = lattice[yi * latticeSize + xi];
+            float b = lattice[yi * latticeSize + xi + 1];
+            float c = lattice[(yi + 1) * latticeSize + xi];
+            float d = lattice[(yi + 1) * latticeSize + xi + 1];
+            float ab = a + (b - a) * tx;
+            float cd = c + (d - c) * tx;
+            float v = ab + (cd - ab) * ty;
+            uint8_t g = static_cast<uint8_t>(v * 255.0f + 0.5f);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = g;
+            pixels[i2 + 1] = g;
+            pixels[i2 + 2] = g;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-noise: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size  : %dx%d\n", W, H);
+    std::printf("  seed  : %u\n", seed);
+    std::printf("  type  : smooth value noise (16x16 bilinear lattice)\n");
+    return 0;
+}
+
+int handleNoiseColor(int& i, int argc, char** argv) {
+    // Two-color noise blend: same value-noise function as
+    // --gen-texture-noise but interpolated between two RGB
+    // endpoints rather than emitted as grayscale. Useful
+    // for terrain detail (grass+dirt mottle), magic fog,
+    // marble veining, or any "natural variation" pass that
+    // shouldn't be desaturated.
+    std::string outPath = argv[++i];
+    std::string aHex = argv[++i];
+    std::string bHex = argv[++i];
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); }
+        catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+        std::fprintf(stderr,
+            "gen-texture-noise-color: invalid size %dx%d\n", W, H);
+        return 1;
+    }
+    uint8_t ra, ga, ba, rb, gb, bb;
+    if (!parseHex(aHex, ra, ga, ba)) {
+        std::fprintf(stderr,
+            "gen-texture-noise-color: '%s' is not a valid hex color\n",
+            aHex.c_str());
+        return 1;
+    }
+    if (!parseHex(bHex, rb, gb, bb)) {
+        std::fprintf(stderr,
+            "gen-texture-noise-color: '%s' is not a valid hex color\n",
+            bHex.c_str());
+        return 1;
+    }
+    // Same noise pipeline as --gen-texture-noise.
+    const int latticeSize = 17;
+    std::vector<float> lattice(latticeSize * latticeSize);
+    uint32_t state = seed ? seed : 1u;
+    auto next = [&]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) / float(1 << 24);
+    };
+    for (auto& v : lattice) v = next();
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        float fy = static_cast<float>(y) / H * (latticeSize - 1);
+        int yi = static_cast<int>(fy);
+        if (yi >= latticeSize - 1) yi = latticeSize - 2;
+        float fty = fy - yi;
+        float ty = fty * fty * (3.0f - 2.0f * fty);
+        for (int x = 0; x < W; ++x) {
+            float fx = static_cast<float>(x) / W * (latticeSize - 1);
+            int xi = static_cast<int>(fx);
+            if (xi >= latticeSize - 1) xi = latticeSize - 2;
+            float ftx = fx - xi;
+            float tx = ftx * ftx * (3.0f - 2.0f * ftx);
+            float a = lattice[yi * latticeSize + xi];
+            float b = lattice[yi * latticeSize + xi + 1];
+            float c = lattice[(yi + 1) * latticeSize + xi];
+            float d = lattice[(yi + 1) * latticeSize + xi + 1];
+            float ab = a + (b - a) * tx;
+            float cd = c + (d - c) * tx;
+            float v = ab + (cd - ab) * ty;
+            auto lerp = [](uint8_t lo, uint8_t hi, float t) {
+                return static_cast<uint8_t>(lo + (hi - lo) * t + 0.5f);
+            };
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = lerp(ra, rb, v);
+            pixels[i2 + 1] = lerp(ga, gb, v);
+            pixels[i2 + 2] = lerp(ba, bb, v);
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-noise-color: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size  : %dx%d\n", W, H);
+    std::printf("  seed  : %u\n", seed);
+    std::printf("  from  : %s\n", aHex.c_str());
+    std::printf("  to    : %s\n", bHex.c_str());
+    return 0;
+}
+
+int handleRadial(int& i, int argc, char** argv) {
+    // Radial gradient: centerHex at the image center fading
+    // smoothly to edgeHex at the corner. Useful for spell
+    // glow rings, vignettes, soft-edged decals — the
+    // common "circular blob" cases that linear gradients
+    // can't produce.
+    //
+    // Distance is normalized so the corner is t=1 (image is
+    // not necessarily square). A smoothstep curve gives a
+    // soft falloff rather than a harsh disc edge.
+    std::string outPath = argv[++i];
+    std::string centerHex = argv[++i];
+    std::string edgeHex = argv[++i];
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+        std::fprintf(stderr,
+            "gen-texture-radial: invalid size %dx%d (1..8192)\n",
+            W, H);
+        return 1;
+    }
+    uint8_t rc, gc, bc, re, ge, be;
+    if (!parseHex(centerHex, rc, gc, bc)) {
+        std::fprintf(stderr,
+            "gen-texture-radial: '%s' is not a valid hex color\n",
+            centerHex.c_str());
+        return 1;
+    }
+    if (!parseHex(edgeHex, re, ge, be)) {
+        std::fprintf(stderr,
+            "gen-texture-radial: '%s' is not a valid hex color\n",
+            edgeHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    float cx = (W - 1) * 0.5f;
+    float cy = (H - 1) * 0.5f;
+    // Max distance is the corner (cx, cy itself = half-diag).
+    float maxD = std::sqrt(cx * cx + cy * cy);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float dx = x - cx;
+            float dy = y - cy;
+            float d = std::sqrt(dx * dx + dy * dy);
+            float t = (maxD > 0) ? (d / maxD) : 0.0f;
+            if (t > 1.0f) t = 1.0f;
+            // Smoothstep so the falloff is soft.
+            float smt = t * t * (3.0f - 2.0f * t);
+            auto lerp = [](uint8_t a, uint8_t b, float t) {
+                return static_cast<uint8_t>(a + (b - a) * t + 0.5f);
+            };
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = lerp(rc, re, smt);
+            pixels[i2 + 1] = lerp(gc, ge, smt);
+            pixels[i2 + 2] = lerp(bc, be, smt);
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-radial: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size   : %dx%d\n", W, H);
+    std::printf("  center : %s (rgb %u,%u,%u)\n",
+                centerHex.c_str(), rc, gc, bc);
+    std::printf("  edge   : %s (rgb %u,%u,%u)\n",
+                edgeHex.c_str(), re, ge, be);
+    return 0;
+}
+
+int handleStripes(int& i, int argc, char** argv) {
+    // Two-color stripe pattern. Stripe width in pixels, plus
+    // direction (diagonal default, or horizontal/vertical).
+    // Useful for caution tape, marble bands, hazard markers,
+    // and racing-style start/finish flags — patterns that
+    // checker/grid don't capture.
+    std::string outPath = argv[++i];
+    std::string aHex = argv[++i];
+    std::string bHex = argv[++i];
+    int stripePx = 16;
+    std::string dir = "diagonal";
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stripePx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        std::string d = argv[i + 1];
+        std::transform(d.begin(), d.end(), d.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        if (d == "diagonal" || d == "horizontal" || d == "vertical") {
+            dir = d;
+            i++;
+        }
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stripePx < 1 || stripePx > 4096) {
+        std::fprintf(stderr,
+            "gen-texture-stripes: invalid dims (W/H 1..8192, stripe 1..4096)\n");
+        return 1;
+    }
+    uint8_t ra, ga, ba, rb, gb, bb;
+    if (!parseHex(aHex, ra, ga, ba)) {
+        std::fprintf(stderr,
+            "gen-texture-stripes: '%s' is not a valid hex color\n",
+            aHex.c_str());
+        return 1;
+    }
+    if (!parseHex(bHex, rb, gb, bb)) {
+        std::fprintf(stderr,
+            "gen-texture-stripes: '%s' is not a valid hex color\n",
+            bHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            int proj;
+            if (dir == "horizontal") proj = y;
+            else if (dir == "vertical") proj = x;
+            else proj = x + y;
+            bool isA = ((proj / stripePx) & 1) == 0;
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = isA ? ra : rb;
+            pixels[i2 + 1] = isA ? ga : gb;
+            pixels[i2 + 2] = isA ? ba : bb;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-stripes: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size      : %dx%d\n", W, H);
+    std::printf("  direction : %s\n", dir.c_str());
+    std::printf("  stripe    : %d px\n", stripePx);
+    std::printf("  colors    : %s + %s\n", aHex.c_str(), bHex.c_str());
+    return 0;
+}
+
+int handleDots(int& i, int argc, char** argv) {
+    // Polka-dot pattern: solid background with circular dots
+    // on a regular grid. Useful for fabric/clothing textures,
+    // game-board patterns, or quick decorative tiling.
+    std::string outPath = argv[++i];
+    std::string bgHex = argv[++i];
+    std::string dotHex = argv[++i];
+    int radius = 8, spacing = 32;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { radius = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { spacing = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        radius < 1 || radius > 1024 ||
+        spacing < 2 || spacing > 4096) {
+        std::fprintf(stderr,
+            "gen-texture-dots: invalid dims (W/H 1..8192, radius 1..1024, spacing 2..4096)\n");
+        return 1;
+    }
+    uint8_t br, bg, bb, dr, dg, db;
+    if (!parseHex(bgHex, br, bg, bb)) {
+        std::fprintf(stderr,
+            "gen-texture-dots: '%s' is not a valid hex color\n",
+            bgHex.c_str());
+        return 1;
+    }
+    if (!parseHex(dotHex, dr, dg, db)) {
+        std::fprintf(stderr,
+            "gen-texture-dots: '%s' is not a valid hex color\n",
+            dotHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    float r2 = static_cast<float>(radius) * radius;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            // Distance to the nearest grid point.
+            int gx = (x + spacing / 2) / spacing * spacing;
+            int gy = (y + spacing / 2) / spacing * spacing;
+            float dx = static_cast<float>(x - gx);
+            float dy = static_cast<float>(y - gy);
+            bool inDot = (dx * dx + dy * dy) < r2;
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = inDot ? dr : br;
+            pixels[i2 + 1] = inDot ? dg : bg;
+            pixels[i2 + 2] = inDot ? db : bb;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-dots: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size      : %dx%d\n", W, H);
+    std::printf("  bg        : %s\n", bgHex.c_str());
+    std::printf("  dot       : %s\n", dotHex.c_str());
+    std::printf("  radius    : %d px\n", radius);
+    std::printf("  spacing   : %d px\n", spacing);
+    return 0;
+}
+
+int handleRings(int& i, int argc, char** argv) {
+    // Concentric rings centered on the image. Useful for
+    // archery targets, magic seal floors, dartboards, hypnosis
+    // visuals — anywhere a "circular alternation" reads as
+    // intentional design.
+    std::string outPath = argv[++i];
+    std::string aHex = argv[++i];
+    std::string bHex = argv[++i];
+    int ringPx = 16;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { ringPx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        ringPx < 1 || ringPx > 4096) {
+        std::fprintf(stderr,
+            "gen-texture-rings: invalid dims (W/H 1..8192, ringPx 1..4096)\n");
+        return 1;
+    }
+    uint8_t ra, ga, ba, rb, gb, bb;
+    if (!parseHex(aHex, ra, ga, ba)) {
+        std::fprintf(stderr,
+            "gen-texture-rings: '%s' is not a valid hex color\n",
+            aHex.c_str());
+        return 1;
+    }
+    if (!parseHex(bHex, rb, gb, bb)) {
+        std::fprintf(stderr,
+            "gen-texture-rings: '%s' is not a valid hex color\n",
+            bHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    float cx = (W - 1) * 0.5f;
+    float cy = (H - 1) * 0.5f;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float dx = x - cx;
+            float dy = y - cy;
+            float d = std::sqrt(dx * dx + dy * dy);
+            bool isA = (static_cast<int>(d / ringPx) & 1) == 0;
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = isA ? ra : rb;
+            pixels[i2 + 1] = isA ? ga : gb;
+            pixels[i2 + 2] = isA ? ba : bb;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-rings: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size      : %dx%d\n", W, H);
+    std::printf("  ring px   : %d\n", ringPx);
+    std::printf("  colors    : %s + %s\n", aHex.c_str(), bHex.c_str());
+    return 0;
+}
+
+int handleChecker(int& i, int argc, char** argv) {
+    // Two-color checkerboard with custom colors. The
+    // existing --gen-texture's "checker" pattern is fixed
+    // black/white at 32px; this is the configurable variant
+    // for game boards, kitchen floors, hazard markers in
+    // colors other than monochrome.
+    std::string outPath = argv[++i];
+    std::string aHex = argv[++i];
+    std::string bHex = argv[++i];
+    int cellPx = 32;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellPx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellPx < 1 || cellPx > 4096) {
+        std::fprintf(stderr,
+            "gen-texture-checker: invalid dims (W/H 1..8192, cellPx 1..4096)\n");
+        return 1;
+    }
+    uint8_t ra, ga, ba, rb, gb, bb;
+    if (!parseHex(aHex, ra, ga, ba)) {
+        std::fprintf(stderr,
+            "gen-texture-checker: '%s' is not a valid hex color\n",
+            aHex.c_str());
+        return 1;
+    }
+    if (!parseHex(bHex, rb, gb, bb)) {
+        std::fprintf(stderr,
+            "gen-texture-checker: '%s' is not a valid hex color\n",
+            bHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            bool isA = ((x / cellPx) + (y / cellPx)) % 2 == 0;
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = isA ? ra : rb;
+            pixels[i2 + 1] = isA ? ga : gb;
+            pixels[i2 + 2] = isA ? ba : bb;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-checker: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size     : %dx%d\n", W, H);
+    std::printf("  cell px  : %d\n", cellPx);
+    std::printf("  colors   : %s + %s\n", aHex.c_str(), bHex.c_str());
+    return 0;
+}
+
+int handleBrick(int& i, int argc, char** argv) {
+    // Brick wall pattern: rectangular bricks with offset rows
+    // (each row shifted by half a brick width) and mortar
+    // lines between. Useful for walls, chimneys, paths,
+    // medieval-zone props.
+    std::string outPath = argv[++i];
+    std::string brickHex = argv[++i];
+    std::string mortarHex = argv[++i];
+    int brickW = 64, brickH = 24, mortarPx = 4;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { brickW = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { brickH = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { mortarPx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        brickW < 4 || brickW > 4096 ||
+        brickH < 4 || brickH > 4096 ||
+        mortarPx < 0 || mortarPx > brickH / 2) {
+        std::fprintf(stderr,
+            "gen-texture-brick: invalid dims (W/H 1..8192, brick 4..4096, mortar < brickH/2)\n");
+        return 1;
+    }
+    uint8_t br, bg, bb_, mr, mg, mb;
+    if (!parseHex(brickHex, br, bg, bb_)) {
+        std::fprintf(stderr,
+            "gen-texture-brick: '%s' is not a valid hex color\n",
+            brickHex.c_str());
+        return 1;
+    }
+    if (!parseHex(mortarHex, mr, mg, mb)) {
+        std::fprintf(stderr,
+            "gen-texture-brick: '%s' is not a valid hex color\n",
+            mortarHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    int rowH = brickH;  // total row height (brick + mortar)
+    int halfBrick = brickW / 2;
+    for (int y = 0; y < H; ++y) {
+        int row = y / rowH;
+        int yInRow = y % rowH;
+        bool inMortarH = (yInRow < mortarPx);
+        int xOffset = (row & 1) ? halfBrick : 0;
+        for (int x = 0; x < W; ++x) {
+            int xS = (x + xOffset) % brickW;
+            bool inMortarV = (xS < mortarPx);
+            bool isMortar = inMortarH || inMortarV;
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = isMortar ? mr : br;
+            pixels[i2 + 1] = isMortar ? mg : bg;
+            pixels[i2 + 2] = isMortar ? mb : bb_;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-brick: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size      : %dx%d\n", W, H);
+    std::printf("  brick     : %d × %d px (%s)\n",
+                brickW, brickH, brickHex.c_str());
+    std::printf("  mortar    : %d px (%s)\n",
+                mortarPx, mortarHex.c_str());
+    return 0;
+}
+
+int handleWood(int& i, int argc, char** argv) {
+    // Wood grain pattern: vertical streaks of varying width
+    // alternating between light and dark hues, plus a few
+    // pseudo-random "knots" (small dark dots). Suitable for
+    // doors, planks, fences, crates.
+    std::string outPath = argv[++i];
+    std::string lightHex = argv[++i];
+    std::string darkHex = argv[++i];
+    int spacing = 12;     // average grain spacing in px
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { spacing = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        spacing < 2 || spacing > 256) {
+        std::fprintf(stderr,
+            "gen-texture-wood: invalid dims (W/H 1..8192, spacing 2..256)\n");
+        return 1;
+    }
+    uint8_t lr, lg, lb, dr, dg, db;
+    if (!parseHex(lightHex, lr, lg, lb)) {
+        std::fprintf(stderr,
+            "gen-texture-wood: '%s' is not a valid hex color\n",
+            lightHex.c_str());
+        return 1;
+    }
+    if (!parseHex(darkHex, dr, dg, db)) {
+        std::fprintf(stderr,
+            "gen-texture-wood: '%s' is not a valid hex color\n",
+            darkHex.c_str());
+        return 1;
+    }
+    // Tiny LCG so output is reproducible from `seed` alone
+    // without pulling in <random>.
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    // Pre-compute per-column "darkness" weight by accumulating
+    // grain bands of varying width across the image. A band's
+    // weight bleeds into a few neighbors so transitions feel
+    // soft rather than blocky.
+    std::vector<float> colWeight(W, 0.0f);
+    int x = 0;
+    while (x < W) {
+        int width = spacing + static_cast<int>(next01() * spacing);
+        float weight = next01();  // 0..1
+        int feather = std::max(1, width / 6);
+        for (int dx = -feather; dx < width + feather; ++dx) {
+            int cx = x + dx;
+            if (cx < 0 || cx >= W) continue;
+            float t = 1.0f;
+            if (dx < 0) t = 1.0f + dx / static_cast<float>(feather);
+            else if (dx >= width) t = 1.0f - (dx - width) / static_cast<float>(feather);
+            colWeight[cx] = std::max(colWeight[cx], weight * t);
+        }
+        x += width;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        // Slight Y-axis warp so streaks aren't perfectly straight
+        float yWave = std::sin(y * 0.025f) * 1.5f;
+        for (int xi = 0; xi < W; ++xi) {
+            int sx = xi + static_cast<int>(yWave);
+            if (sx < 0) sx = 0;
+            if (sx >= W) sx = W - 1;
+            float w = colWeight[sx];
+            uint8_t r = static_cast<uint8_t>(lr * (1 - w) + dr * w);
+            uint8_t g = static_cast<uint8_t>(lg * (1 - w) + dg * w);
+            uint8_t b = static_cast<uint8_t>(lb * (1 - w) + db * w);
+            size_t i2 = (static_cast<size_t>(y) * W + xi) * 3;
+            pixels[i2 + 0] = r;
+            pixels[i2 + 1] = g;
+            pixels[i2 + 2] = b;
+        }
+    }
+    // Sprinkle a handful of round "knots" using the same LCG.
+    int knotCount = std::max(1, (W * H) / 32768);
+    for (int k = 0; k < knotCount; ++k) {
+        int kx = static_cast<int>(next01() * W);
+        int ky = static_cast<int>(next01() * H);
+        int radius = 3 + static_cast<int>(next01() * 4);
+        for (int dy = -radius; dy <= radius; ++dy) {
+            for (int dx = -radius; dx <= radius; ++dx) {
+                int px = kx + dx, py = ky + dy;
+                if (px < 0 || py < 0 || px >= W || py >= H) continue;
+                float d = std::sqrt(static_cast<float>(dx * dx + dy * dy));
+                if (d > radius) continue;
+                float t = 1.0f - d / radius;
+                size_t i2 = (static_cast<size_t>(py) * W + px) * 3;
+                pixels[i2 + 0] = static_cast<uint8_t>(pixels[i2 + 0] * (1 - t) + dr * t);
+                pixels[i2 + 1] = static_cast<uint8_t>(pixels[i2 + 1] * (1 - t) + dg * t);
+                pixels[i2 + 2] = static_cast<uint8_t>(pixels[i2 + 2] * (1 - t) + db * t);
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-wood: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size      : %dx%d\n", W, H);
+    std::printf("  light/dark: %s / %s\n",
+                lightHex.c_str(), darkHex.c_str());
+    std::printf("  spacing   : %d px\n", spacing);
+    std::printf("  knots     : %d\n", knotCount);
+    std::printf("  seed      : %u\n", seed);
+    return 0;
+}
+
+int handleGrass(int& i, int argc, char** argv) {
+    // Tiling grass texture. Starts from a slightly perturbed
+    // base color (per-pixel jitter so the field doesn't read
+    // as flat), then sprinkles short blade highlights using
+    // the brighter blade color. Density controls roughly
+    // what fraction of pixels get touched by a blade.
+    std::string outPath = argv[++i];
+    std::string baseHex = argv[++i];
+    std::string bladeHex = argv[++i];
+    float density = 0.15f;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { density = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        density < 0.0f || density > 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-grass: invalid dims (W/H 1..8192, density 0..1)\n");
+        return 1;
+    }
+    uint8_t br, bg, bb_, gr, gg, gb;
+    if (!parseHex(baseHex, br, bg, bb_)) {
+        std::fprintf(stderr,
+            "gen-texture-grass: '%s' is not a valid hex color\n",
+            baseHex.c_str());
+        return 1;
+    }
+    if (!parseHex(bladeHex, gr, gg, gb)) {
+        std::fprintf(stderr,
+            "gen-texture-grass: '%s' is not a valid hex color\n",
+            bladeHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Base layer: per-pixel jitter ±10 around the base color.
+    for (int y = 0; y < H; ++y) {
+        for (int xi = 0; xi < W; ++xi) {
+            float j = (next01() - 0.5f) * 20.0f;
+            int r = std::clamp(static_cast<int>(br) + static_cast<int>(j), 0, 255);
+            int g = std::clamp(static_cast<int>(bg) + static_cast<int>(j), 0, 255);
+            int b = std::clamp(static_cast<int>(bb_) + static_cast<int>(j), 0, 255);
+            size_t i2 = (static_cast<size_t>(y) * W + xi) * 3;
+            pixels[i2 + 0] = static_cast<uint8_t>(r);
+            pixels[i2 + 1] = static_cast<uint8_t>(g);
+            pixels[i2 + 2] = static_cast<uint8_t>(b);
+        }
+    }
+    // Blades: short vertical strokes at random positions.
+    // Stroke length 2-5px, alpha-blended toward bladeHex.
+    int strokeCount = static_cast<int>(W * H * density * 0.05f);
+    for (int s = 0; s < strokeCount; ++s) {
+        int sx = static_cast<int>(next01() * W);
+        int sy = static_cast<int>(next01() * H);
+        int slen = 2 + static_cast<int>(next01() * 4);
+        float t = 0.4f + next01() * 0.4f;  // blade strength
+        for (int dy = 0; dy < slen; ++dy) {
+            int py = (sy + dy) % H;  // wrap so texture tiles
+            int px = sx;
+            size_t i2 = (static_cast<size_t>(py) * W + px) * 3;
+            pixels[i2 + 0] = static_cast<uint8_t>(pixels[i2 + 0] * (1 - t) + gr * t);
+            pixels[i2 + 1] = static_cast<uint8_t>(pixels[i2 + 1] * (1 - t) + gg * t);
+            pixels[i2 + 2] = static_cast<uint8_t>(pixels[i2 + 2] * (1 - t) + gb * t);
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-grass: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size      : %dx%d\n", W, H);
+    std::printf("  base/blade: %s / %s\n",
+                baseHex.c_str(), bladeHex.c_str());
+    std::printf("  density   : %.3f\n", density);
+    std::printf("  blades    : %d\n", strokeCount);
+    std::printf("  seed      : %u\n", seed);
+    return 0;
+}
+
+int handleFabric(int& i, int argc, char** argv) {
+    // Woven fabric pattern. We model an over/under weave: each
+    // "cell" of size threadPx × threadPx is alternately a warp
+    // (vertical) thread or a weft (horizontal) thread. Within
+    // a thread, brightness shades from edge to center so the
+    // weave reads as 3D yarn rather than flat checkerboard.
+    std::string outPath = argv[++i];
+    std::string warpHex = argv[++i];
+    std::string weftHex = argv[++i];
+    int threadPx = 4;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { threadPx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        threadPx < 2 || threadPx > 256) {
+        std::fprintf(stderr,
+            "gen-texture-fabric: invalid dims (W/H 1..8192, threadPx 2..256)\n");
+        return 1;
+    }
+    uint8_t wr, wg, wb, fr, fg, fb;
+    if (!parseHex(warpHex, wr, wg, wb)) {
+        std::fprintf(stderr,
+            "gen-texture-fabric: '%s' is not a valid hex color\n",
+            warpHex.c_str());
+        return 1;
+    }
+    if (!parseHex(weftHex, fr, fg, fb)) {
+        std::fprintf(stderr,
+            "gen-texture-fabric: '%s' is not a valid hex color\n",
+            weftHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int cy = y / threadPx;
+        int yInCell = y % threadPx;
+        for (int x = 0; x < W; ++x) {
+            int cx = x / threadPx;
+            int xInCell = x % threadPx;
+            // Plain weave: alternate warp/weft per cell on
+            // a checkerboard. Warp threads run vertically
+            // (so we shade across xInCell), weft threads
+            // run horizontally (shade across yInCell).
+            bool isWarp = ((cx + cy) & 1) == 0;
+            int across = isWarp ? xInCell : yInCell;
+            float t = static_cast<float>(across) / (threadPx - 1);
+            // Center is brighter, edges darker — gives the
+            // illusion of a rounded yarn cross-section.
+            float shade = 1.0f - 0.4f * std::abs(t - 0.5f) * 2.0f;
+            uint8_t r = isWarp ? static_cast<uint8_t>(wr * shade)
+                               : static_cast<uint8_t>(fr * shade);
+            uint8_t g = isWarp ? static_cast<uint8_t>(wg * shade)
+                               : static_cast<uint8_t>(fg * shade);
+            uint8_t b = isWarp ? static_cast<uint8_t>(wb * shade)
+                               : static_cast<uint8_t>(fb * shade);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = r;
+            pixels[i2 + 1] = g;
+            pixels[i2 + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-fabric: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  warp/weft  : %s / %s\n",
+                warpHex.c_str(), weftHex.c_str());
+    std::printf("  thread px  : %d\n", threadPx);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
+    if (std::strcmp(argv[i], "--gen-texture-gradient") == 0 && i + 3 < argc) {
+        outRc = handleGradient(i, argc, argv); return true;
+    }
+    // noise-color first because the prefix-match would otherwise hit
+    // 'noise' on a 'noise-color' invocation.
+    if (std::strcmp(argv[i], "--gen-texture-noise-color") == 0 && i + 3 < argc) {
+        outRc = handleNoiseColor(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-noise") == 0 && i + 1 < argc) {
+        outRc = handleNoise(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-radial") == 0 && i + 3 < argc) {
+        outRc = handleRadial(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-stripes") == 0 && i + 3 < argc) {
+        outRc = handleStripes(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-dots") == 0 && i + 3 < argc) {
+        outRc = handleDots(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-rings") == 0 && i + 3 < argc) {
+        outRc = handleRings(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-checker") == 0 && i + 3 < argc) {
+        outRc = handleChecker(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-brick") == 0 && i + 3 < argc) {
+        outRc = handleBrick(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-wood") == 0 && i + 3 < argc) {
+        outRc = handleWood(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-grass") == 0 && i + 3 < argc) {
+        outRc = handleGrass(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-fabric") == 0 && i + 3 < argc) {
+        outRc = handleFabric(i, argc, argv); return true;
+    }
     if (std::strcmp(argv[i], "--gen-texture-cobble") == 0 && i + 3 < argc) {
         outRc = handleCobble(i, argc, argv); return true;
     }
