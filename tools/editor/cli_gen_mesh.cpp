@@ -102,8 +102,7 @@ int handleRock(int& i, int argc, char** argv) {
         return 1.0f + roughness * (0.7f * n + 0.3f * n2);
     };
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     std::vector<glm::vec3> finalPos(sv.size());
     for (size_t v = 0; v < sv.size(); ++v) {
         finalPos[v] = sv[v] * (radius * displace(sv[v]));
@@ -143,11 +142,7 @@ int handleRock(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-bound);
     wom.boundMax = glm::vec3( bound);
     finalizeAsSingleBatch(wom);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-rock: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-rock")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  radius    : %.3f\n", radius);
     std::printf("  roughness : %.3f\n", roughness);
@@ -191,8 +186,7 @@ int handlePillar(int& i, int argc, char** argv) {
     float capR = radius * capScale;
     float capThick = radius * 0.25f;
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
     };
@@ -267,11 +261,7 @@ int handlePillar(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-capR, 0,      -capR);
     wom.boundMax = glm::vec3( capR, height,  capR);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-pillar: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-pillar")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  radius    : %.3f\n", radius);
     std::printf("  height    : %.3f\n", height);
@@ -307,8 +297,7 @@ int handleBridge(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     // Box helper — builds 24-vert / 12-tri box centered on
     // (cx, cy, cz) with half-extents (hx, hy, hz). Each face
     // gets unique vertices so flat-shading works. Indices are
@@ -355,11 +344,7 @@ int handleBridge(int& i, int argc, char** argv) {
     float maxY = plankThickness + railHeight;
     wom.boundMin = glm::vec3(-length * 0.5f, 0,        -width * 0.5f);
     wom.boundMax = glm::vec3( length * 0.5f, maxY,      width * 0.5f);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-bridge: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-bridge")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  length    : %.3f\n", length);
     std::printf("  width     : %.3f\n", width);
@@ -397,8 +382,7 @@ int handleTower(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     const int radSegs = std::max(24, battlements * 4);
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
@@ -491,11 +475,7 @@ int handleTower(int& i, int argc, char** argv) {
     float maxR = radius * 1.05f;
     wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
     wom.boundMax = glm::vec3( maxR, maxY,  maxR);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-tower: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-tower")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  radius      : %.3f\n", radius);
     std::printf("  height      : %.3f\n", height);
@@ -531,8 +511,7 @@ int handleHouse(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
     };
@@ -590,11 +569,7 @@ int handleHouse(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-hx, 0, -hz);
     wom.boundMax = glm::vec3( hx, apexY,  hz);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-house: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-house")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  width      : %.3f\n", width);
     std::printf("  depth      : %.3f\n", depth);
@@ -630,8 +605,7 @@ int handleFountain(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     const int segs = 24;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
@@ -684,11 +658,7 @@ int handleFountain(int& i, int argc, char** argv) {
     float maxY = basinH + spoutH;
     wom.boundMin = glm::vec3(-basinR, 0,    -basinR);
     wom.boundMax = glm::vec3( basinR, maxY,  basinR);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-fountain: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-fountain")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  basin    : R=%.3f H=%.3f\n", basinR, basinH);
     std::printf("  spout    : R=%.3f H=%.3f\n", spoutR, spoutH);
@@ -720,8 +690,7 @@ int handleStatue(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
@@ -816,11 +785,7 @@ int handleStatue(int& i, int argc, char** argv) {
     float maxY = headY + headR;
     wom.boundMin = glm::vec3(-hp, 0,    -hp);
     wom.boundMax = glm::vec3( hp, maxY,  hp);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-statue: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-statue")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  pedestal  : %.3f × %.3f × %.3f\n", pedSize, pedH, pedSize);
     std::printf("  body      : R=%.3f H=%.3f\n", bodyR, bodyH);
@@ -857,8 +822,7 @@ int handleAltar(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     const int segs = 24;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
@@ -924,11 +888,7 @@ int handleAltar(int& i, int argc, char** argv) {
     float maxR = topR + steps * stepStride;
     wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
     wom.boundMax = glm::vec3( maxR, maxY,  maxR);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-altar: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-altar")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  top      : R=%.3f H=%.3f\n", topR, topH);
     std::printf("  steps    : %d (stride %.3f)\n", steps, stepStride);
@@ -965,8 +925,7 @@ int handlePortal(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     // Box helper — same pattern as other multi-box meshes.
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
@@ -991,11 +950,7 @@ int handlePortal(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-postHt, 0,      -width * 0.5f);
     wom.boundMax = glm::vec3( postHt, height,  width * 0.5f);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-portal: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-portal")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  width      : %.3f\n", width);
     std::printf("  height     : %.3f\n", height);
@@ -1034,8 +989,7 @@ int handleArchway(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     const int pillarSegs = 16;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
@@ -1156,11 +1110,7 @@ int handleArchway(int& i, int argc, char** argv) {
     float maxY = pillarH + arcOuter;
     wom.boundMin = glm::vec3(-thickness, 0,    -width * 0.5f);
     wom.boundMax = glm::vec3( thickness, maxY,  width * 0.5f);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-archway: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-archway")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  width      : %.3f\n", width);
     std::printf("  pillar H   : %.3f\n", pillarH);
@@ -1195,8 +1145,7 @@ int handleBarrel(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     const int segs = 16;        // angular subdivisions
     const int rings = 12;       // vertical slices
@@ -1254,11 +1203,7 @@ int handleBarrel(int& i, int argc, char** argv) {
     float maxR = midR + hoopThick;
     wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
     wom.boundMax = glm::vec3( maxR, height, maxR);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-barrel: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-barrel")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  rim R     : %.3f\n", topR);
     std::printf("  bulge R   : %.3f\n", midR);
@@ -1291,8 +1236,7 @@ int handleChest(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     // Box helper — adds 24 unique verts / 12 tris centered
     // on (cx, cy, cz) with half-extents (hx, hy, hz). Each
     // face gets unique normals for flat shading.
@@ -1335,11 +1279,7 @@ int handleChest(int& i, int argc, char** argv) {
     float maxY = bodyH + lidH;
     wom.boundMin = glm::vec3(-hx, 0, -hz - 0.012f);
     wom.boundMax = glm::vec3( hx, maxY, hz + 0.012f);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-chest: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-chest")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  width × depth : %.3f × %.3f\n", width, depth);
     std::printf("  body H        : %.3f\n", bodyH);
@@ -1371,8 +1311,7 @@ int handleAnvil(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -1446,11 +1385,7 @@ int handleAnvil(int& i, int argc, char** argv) {
     float maxZ = std::max({baseHz, waistHz, capHz, faceHz});
     wom.boundMin = glm::vec3(-faceHx, 0, -maxZ);
     wom.boundMax = glm::vec3( maxX, bodyH, maxZ);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-anvil: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-anvil")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  length × width : %.3f × %.3f\n", length, width);
     std::printf("  body H         : %.3f\n", bodyH);
@@ -1499,8 +1434,7 @@ int handleStairs(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addV = [&](float px, float py, float pz,
                     float nx, float ny, float nz,
                     float u,  float v) -> uint32_t {
@@ -1559,11 +1493,7 @@ int handleStairs(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-stairs: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-stairs")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  steps     : %d\n", steps);
     std::printf("  stepHt    : %.3f\n", stepHeight);
@@ -1605,8 +1535,7 @@ int handleGrid(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     // (N+1)x(N+1) vertices on the XY plane centered on origin,
     // Z=0. Normals all point +Z; UVs are 0..1 across the grid.
     float halfSize = size * 0.5f;
@@ -1651,11 +1580,7 @@ int handleGrid(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-grid: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-grid")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  subdivisions : %d (%dx%d cells)\n", N, N, N);
     std::printf("  size         : %.3f\n", size);
@@ -1682,8 +1607,7 @@ int handleDisc(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     // Center vertex.
     {
         wowee::pipeline::WoweeModel::Vertex v;
@@ -1722,11 +1646,7 @@ int handleDisc(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-disc: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-disc")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  radius    : %.3f\n", radius);
     std::printf("  segments  : %d\n", segments);
@@ -1759,8 +1679,7 @@ int handleTube(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     float h = height * 0.5f;
     auto addV = [&](float px, float py, float pz,
                     float nx, float ny, float nz,
@@ -1882,11 +1801,7 @@ int handleTube(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-tube: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-tube")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  outer R   : %.3f\n", outerR);
     std::printf("  inner R   : %.3f\n", innerR);
@@ -1921,8 +1836,7 @@ int handleCapsule(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     float halfBody = cylHeight * 0.5f;
     float totalH = cylHeight + 2.0f * radius;
     auto addV = [&](float px, float py, float pz,
@@ -2024,11 +1938,7 @@ int handleCapsule(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-capsule: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-capsule")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  radius     : %.3f\n", radius);
     std::printf("  cylHeight  : %.3f\n", cylHeight);
@@ -2069,8 +1979,7 @@ int handleArch(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     // Helper to push a vertex.
     auto addV = [&](float px, float py, float pz,
                     float nx, float ny, float nz,
@@ -2141,11 +2050,7 @@ int handleArch(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-arch: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-arch")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  opening    : %.3f W × %.3f H\n", openingW, openingH);
     std::printf("  thickness  : %.3f (column), depth %.3f (Y)\n", thickness, depth);
@@ -2181,8 +2086,7 @@ int handlePyramid(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
@@ -2240,11 +2144,7 @@ int handlePyramid(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-pyramid: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-pyramid")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  sides     : %d\n", sides);
     std::printf("  base R    : %.3f\n", baseR);
@@ -2282,8 +2182,7 @@ int handleFence(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](glm::vec3 lo, glm::vec3 hi) {
         addFlatBox(wom, lo, hi);
     };
@@ -2323,11 +2222,7 @@ int handleFence(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-fence: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-fence")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  posts     : %d\n", posts);
     std::printf("  spacing   : %.3f\n", spacing);
@@ -2364,8 +2259,7 @@ int handleTree(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
@@ -2445,11 +2339,7 @@ int handleTree(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-tree: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-tree")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  trunk R   : %.3f\n", trunkR);
     std::printf("  trunk H   : %.3f\n", trunkH);
@@ -2482,8 +2372,7 @@ int handleMeshDispatch(int& i, int argc, char** argv) {
     // Strip .wom if user passed a full filename — saver expects base.
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     // Helper to push a vertex with explicit normal + uv.
     auto addVertex = [&](float x, float y, float z,
                           float nx, float ny, float nz,
@@ -2831,11 +2720,7 @@ int handleMeshDispatch(int& i, int argc, char** argv) {
     wom.texturePaths.push_back("");
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  shape    : %s\n", s.c_str());
     std::printf("  size     : %.3f\n", size);
@@ -2907,12 +2792,7 @@ int handleTextured(int& i, int argc, char** argv) {
     } else {
         wom.texturePaths[0] = pngLeaf;
     }
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-textured: failed to re-save %s.wom\n",
-            womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-textured")) return 1;
     std::printf("Wrote %s.wom + %s\n", womBase.c_str(), pngPath.c_str());
     std::printf("  shape    : %s\n", shape.c_str());
     std::printf("  color    : %s\n", colorSpec.c_str());
@@ -2940,8 +2820,7 @@ int handleMushroom(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
@@ -3022,11 +2901,7 @@ int handleMushroom(int& i, int argc, char** argv) {
     float maxY = stalkH + capR;
     wom.boundMin = glm::vec3(-capR, 0, -capR);
     wom.boundMax = glm::vec3( capR, maxY, capR);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-mushroom: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-mushroom")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  stalk     : R=%.3f H=%.3f\n", stalkR, stalkH);
     std::printf("  cap       : R=%.3f\n", capR);
@@ -3058,8 +2933,7 @@ int handleCart(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
@@ -3133,11 +3007,7 @@ int handleCart(int& i, int argc, char** argv) {
     float maxZ = wheelOffsetZ + wheelThick * 0.5f;
     wom.boundMin = glm::vec3(-bedLen * 0.5f, 0, -maxZ);
     wom.boundMax = glm::vec3( bedLen * 0.5f, std::max(maxY, 2 * wheelR), maxZ);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-cart: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-cart")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  bed       : %.3f × %.3f × %.3f\n",
                 bedLen, bedWidth, bedH);
@@ -3171,8 +3041,7 @@ int handleBanner(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
@@ -3235,11 +3104,7 @@ int handleBanner(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-poleR, 0, fz1);
     wom.boundMax = glm::vec3(fx + poleR, poleH, poleR);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-banner: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-banner")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  pole       : R=%.3f H=%.3f\n", poleR, poleH);
     std::printf("  flag       : W=%.3f H=%.3f (drapes -Z)\n",
@@ -3272,8 +3137,7 @@ int handleGrave(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -3292,11 +3156,7 @@ int handleGrave(int& i, int argc, char** argv) {
     float maxXZ = std::max(baseW * 0.5f, tabletW * 0.5f);
     wom.boundMin = glm::vec3(-maxXZ, 0, -baseDepth * 0.5f);
     wom.boundMax = glm::vec3( maxXZ, maxY,  baseDepth * 0.5f);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-grave: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-grave")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base       : %.3f × %.3f (h=%.3f)\n",
                 baseW, baseDepth, baseH);
@@ -3332,8 +3192,7 @@ int handleBench(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -3354,11 +3213,7 @@ int handleBench(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-length * 0.5f, 0, -seatW * 0.5f);
     wom.boundMax = glm::vec3( length * 0.5f, seatY, seatW * 0.5f);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-bench: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-bench")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  length    : %.3f\n", length);
     std::printf("  seat Y    : %.3f (thickness %.3f)\n", seatY, seatT);
@@ -3391,8 +3246,7 @@ int handleShrine(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
@@ -3451,11 +3305,7 @@ int handleShrine(int& i, int argc, char** argv) {
     float maxY = roofY + roofT;
     wom.boundMin = glm::vec3(-roofHalfSize, 0, -roofHalfSize);
     wom.boundMax = glm::vec3( roofHalfSize, maxY, roofHalfSize);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-shrine: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-shrine")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  size       : %.3f × %.3f\n", size, size);
     std::printf("  pillars    : 4 × R=%.3f H=%.3f\n", pillarR, pillarH);
@@ -3487,8 +3337,7 @@ int handleTotem(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -3505,11 +3354,7 @@ int handleTotem(int& i, int argc, char** argv) {
     float maxXZ = baseW * 0.5f;
     wom.boundMin = glm::vec3(-maxXZ, 0, -maxXZ);
     wom.boundMax = glm::vec3( maxXZ, maxY, maxXZ);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-totem: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-totem")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base width : %.3f\n", baseW);
     std::printf("  segments   : %d (each %.3f tall)\n", segments, segH);
@@ -3542,8 +3387,7 @@ int handleCage(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -3586,11 +3430,7 @@ int handleCage(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfW, 0, -halfW);
     wom.boundMax = glm::vec3( halfW, height, halfW);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-cage: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-cage")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  width × height : %.3f × %.3f\n", width, height);
     std::printf("  bars per side  : %d (%d total)\n",
@@ -3622,8 +3462,7 @@ int handleThrone(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -3655,11 +3494,7 @@ int handleThrone(int& i, int argc, char** argv) {
     float maxY = pedH + seatT + backH;
     wom.boundMin = glm::vec3(-halfPed, 0, -halfPed);
     wom.boundMax = glm::vec3( halfPed, maxY, halfPed);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-throne: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-throne")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  pedestal   : %.3f × %.3f (h=%.3f)\n",
                 pedSize, pedSize, pedH);
@@ -3693,8 +3528,7 @@ int handleCoffin(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     // Top-down hexagonal coffin profile (CCW from head looking
     // down +Y). Head end is narrow, shoulder is widest, feet
     // taper to a narrow toe — the canonical "casket" silhouette.
@@ -3781,11 +3615,7 @@ int handleCoffin(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-hW, 0.0f,    -hL);
     wom.boundMax = glm::vec3( hW, height,   hL);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-coffin: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-coffin")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  length     : %.3f\n", length);
     std::printf("  width      : %.3f (shoulder)\n", width);
@@ -3819,8 +3649,7 @@ int handleArchwayDouble(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -3852,11 +3681,7 @@ int handleArchwayDouble(int& i, int argc, char** argv) {
     float halfTotalX = rightPostX + halfPost;
     wom.boundMin = glm::vec3(-halfTotalX, 0.0f,    -halfPost);
     wom.boundMax = glm::vec3( halfTotalX, totalH,   halfPost);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-archway-double: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-archway-double")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  total W    : %.3f (2 openings × %.3f + 3 posts × %.3f)\n",
                 halfTotalX * 2, openingWidth, postT);
@@ -3892,8 +3717,7 @@ int handleBrazier(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -3933,11 +3757,7 @@ int handleBrazier(int& i, int argc, char** argv) {
     float totalH = flameTop + bowlSize * 0.50f;
     wom.boundMin = glm::vec3(-halfBowl, 0.0f,    -halfBowl);
     wom.boundMax = glm::vec3( halfBowl, totalH,   halfBowl);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-brazier: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-brazier")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base       : %.3f square × %.3f thick\n",
                 baseSize, baseHeight);
@@ -3974,8 +3794,7 @@ int handlePodium(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4005,11 +3824,7 @@ int handlePodium(int& i, int argc, char** argv) {
     float halfBase = baseSize * 0.5f;
     wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
     wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-podium: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-podium")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base       : %.3f square × %.3f thick\n",
                 baseSize, baseHeight);
@@ -4047,8 +3862,7 @@ int handleSundial(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4080,11 +3894,7 @@ int handleSundial(int& i, int argc, char** argv) {
     float totalH = baseHeight + gnomonHeight;
     wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
     wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-sundial: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-sundial")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base       : %.3f square × %.3f thick\n",
                 baseSize, baseHeight);
@@ -4123,8 +3933,7 @@ int handleScarecrow(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4162,11 +3971,7 @@ int handleScarecrow(int& i, int argc, char** argv) {
     float halfArm = armSpan * 0.5f;
     wom.boundMin = glm::vec3(-halfArm, 0.0f,    -halfHead);
     wom.boundMax = glm::vec3( halfArm, totalH,   halfHead);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-scarecrow: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-scarecrow")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  body       : %.3f tall (%.3f square post)\n",
@@ -4205,8 +4010,7 @@ int handleWeathervane(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4246,11 +4050,7 @@ int handleWeathervane(int& i, int argc, char** argv) {
     float maxX = std::max({halfBase, arrowLen, tailX + halfAT});
     wom.boundMin = glm::vec3(-maxX,    0.0f,    -armLen);
     wom.boundMax = glm::vec3( maxX,    totalH,   armLen);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-weathervane: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-weathervane")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  base       : %.3f square × %.3f tall\n",
@@ -4285,8 +4085,7 @@ int handleBeehive(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4323,11 +4122,7 @@ int handleBeehive(int& i, int argc, char** argv) {
     float totalH = plateH + height;
     wom.boundMin = glm::vec3(-halfPlateW, 0.0f,    -halfPlateW);
     wom.boundMax = glm::vec3( halfPlateW, totalH,   halfBaseW + entryT);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-beehive: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-beehive")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base width : %.3f (plate %.3f thick)\n", baseWidth, plateH);
     std::printf("  height     : %.3f dome (4 tapered tiers)\n", height);
@@ -4364,8 +4159,7 @@ int handleGate(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4394,11 +4188,7 @@ int handleGate(int& i, int argc, char** argv) {
     float halfTotalX = postX + halfPost;
     wom.boundMin = glm::vec3(-halfTotalX, 0.0f,        -halfPost);
     wom.boundMax = glm::vec3( halfTotalX, postHeight,   halfPost);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-gate: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-gate")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  total W    : %.3f (opening %.3f + 2 posts)\n",
                 openingWidth + postT * 2, openingWidth);
@@ -4432,8 +4222,7 @@ int handleCauldron(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4471,11 +4260,7 @@ int handleCauldron(int& i, int argc, char** argv) {
     float totalH = legHeight + bodyHeight;
     wom.boundMin = glm::vec3(-halfRim, 0.0f,    -halfRim);
     wom.boundMax = glm::vec3( halfRim, totalH,   halfRim);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-cauldron: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-cauldron")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  rim width  : %.3f (widest)\n", rimWidth);
     std::printf("  body H     : %.3f (legs %.3f tall)\n", bodyHeight, legHeight);
@@ -4510,8 +4295,7 @@ int handleStool(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4533,11 +4317,7 @@ int handleStool(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfSeat, 0.0f,    -halfSeat);
     wom.boundMax = glm::vec3( halfSeat, seatTopY, halfSeat);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-stool: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-stool")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  seat       : %.3f square × %.3f thick\n", seatSize, seatT);
     std::printf("  legs       : 4 × %.3f square (%.3f tall)\n",
@@ -4567,8 +4347,7 @@ int handleCrate(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4593,11 +4372,7 @@ int handleCrate(int& i, int argc, char** argv) {
     float halfTotal = halfBody + halfPost;
     wom.boundMin = glm::vec3(-halfTotal, 0.0f,    -halfTotal);
     wom.boundMax = glm::vec3( halfTotal, size,     halfTotal);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-crate: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-crate")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  size       : %.3f cube\n", size);
     std::printf("  posts      : 4 × %.3f square (full height)\n",
@@ -4630,8 +4405,7 @@ int handleTombstone(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4663,11 +4437,7 @@ int handleTombstone(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfBaseW, 0.0f,    -halfBaseD);
     wom.boundMax = glm::vec3( halfBaseW, height,   halfBaseD);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-tombstone: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-tombstone")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  total H    : %.3f (base %.3f + slab %.3f + crown %.3f)\n",
                 height, baseH, slabH, crownH);
@@ -4704,8 +4474,7 @@ int handleMailbox(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4748,11 +4517,7 @@ int handleMailbox(int& i, int argc, char** argv) {
     float maxX = std::max(halfBoxW, flagPlateX + halfFlagL);
     wom.boundMin = glm::vec3(-halfBoxW, 0.0f,    -halfBoxL);
     wom.boundMax = glm::vec3( maxX,     totalH,   halfBoxL);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-mailbox: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-mailbox")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  post       : %.3f square × %.3f tall\n",
@@ -4791,8 +4556,7 @@ int handleSignpost(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4828,11 +4592,7 @@ int handleSignpost(int& i, int argc, char** argv) {
     float halfSignZ = signWidth * 0.5f;
     wom.boundMin = glm::vec3(-std::max(halfBase, halfSignZ), 0.0f,    -halfSignZ);
     wom.boundMax = glm::vec3( std::max(halfBase, halfSignZ), totalH,   halfSignZ);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-signpost: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-signpost")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  base       : %.3f square × %.3f tall\n",
@@ -4872,8 +4632,7 @@ int handleWell(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4920,11 +4679,7 @@ int handleWell(int& i, int argc, char** argv) {
     float totalH = wallH + postH;
     wom.boundMin = glm::vec3(-halfOuter, 0.0f,    -halfOuter);
     wom.boundMax = glm::vec3( halfOuter, totalH,   halfOuter);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-well: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-well")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  outerSize  : %.3f square\n", outerSize);
     std::printf("  wall       : %.3f tall, %.3f thick\n", wallH, wallT);
@@ -4960,8 +4715,7 @@ int handleLadder(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -4988,11 +4742,7 @@ int handleLadder(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfRail);
     wom.boundMax = glm::vec3( halfW, height,   halfRail);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-ladder: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-ladder")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  size       : %.3f wide × %.3f tall\n", width, height);
     std::printf("  rails      : 2 × %.3f square (full height)\n", railT);
@@ -5030,8 +4780,7 @@ int handleBed(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -5075,11 +4824,7 @@ int handleBed(int& i, int argc, char** argv) {
     float totalH = matBottomY + std::max({matThick + pillowH, headH, footH});
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfL);
     wom.boundMax = glm::vec3( halfW, totalH,   halfL);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-bed: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-bed")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  size       : %.3f x %.3f x %.3f (W x H x L)\n",
                 width, totalH, length);
@@ -5118,8 +4863,7 @@ int handleLamppost(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -5156,11 +4900,7 @@ int handleLamppost(int& i, int argc, char** argv) {
     float totalH = capCY + capH * 0.5f;
     wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
     wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-lamppost: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-lamppost")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  base       : %.3f square × %.3f tall\n",
@@ -5200,8 +4940,7 @@ int handleTable(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -5224,11 +4963,7 @@ int handleTable(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfD);
     wom.boundMax = glm::vec3( halfW, height,   halfD);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-table: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-table")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  size       : %.3f x %.3f x %.3f\n", width, height, depth);
     std::printf("  legs       : 4 × %.3f square (%.3f tall)\n",
@@ -5263,8 +4998,7 @@ int handleBookshelf(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -5344,11 +5078,7 @@ int handleBookshelf(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfD);
     wom.boundMax = glm::vec3( halfW, height,   halfD);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-bookshelf: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-bookshelf")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  size       : %.3f x %.3f x %.3f\n", width, height, depth);
     std::printf("  shelves    : %d (%d books across all bays)\n",
@@ -5387,8 +5117,7 @@ int handleTent(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
     };
@@ -5468,11 +5197,7 @@ int handleTent(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-L2, 0, -W2);
     wom.boundMax = glm::vec3(+L2, height, +W2);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-tent: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-tent")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  footprint  : %.3f x %.3f\n", length, width);
     std::printf("  height     : %.3f (ridge along X)\n", height);
@@ -5516,8 +5241,7 @@ int handleCrateStack(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float cell = crateSize + gap;
     const float halfBlock = crateSize * 0.5f;
     const float xStart = -(columns - 1) * cell * 0.5f;
@@ -5541,11 +5265,7 @@ int handleCrateStack(int& i, int argc, char** argv) {
     float topY  = (layers - 1) * cell + crateSize;
     wom.boundMin = glm::vec3(-halfX, 0, -halfZ);
     wom.boundMax = glm::vec3(+halfX, topY, +halfZ);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-crate-stack: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-crate-stack")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  layout     : %d × %d × %d (%d crates)\n",
                 columns, rows, layers, total);
@@ -5588,8 +5308,7 @@ int handleWorkbench(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float L2 = length * 0.5f;
     const float D2 = depth  * 0.5f;
     const float legH = height - topT;
@@ -5627,11 +5346,7 @@ int handleWorkbench(int& i, int argc, char** argv) {
     if (trayH > 0)    maxY = std::max(maxY, legH + topT + trayH);
     wom.boundMin = glm::vec3(-L2, 0, -D2);
     wom.boundMax = glm::vec3(+L2, maxY, +D2);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-workbench: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-workbench")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  bench      : %.3f x %.3f x %.3f (top %.3f thick)\n",
                 length, depth, height, topT);
@@ -5669,8 +5384,7 @@ int handleBedroll(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float pi = 3.14159265358979f;
     const float halfL = length * 0.5f;
     // Z-axis cylinder centered at (0, radius, 0). Same end-cap fan
@@ -5744,11 +5458,7 @@ int handleBedroll(int& i, int argc, char** argv) {
     float maxZ = halfL + (pillowSize > 0 ? pillowSize : 0);
     wom.boundMin = glm::vec3(-radius, 0, -halfL);
     wom.boundMax = glm::vec3(+radius, 2.0f * radius, +maxZ);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-bedroll: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-bedroll")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  bedroll    : len=%.3f, R=%.3f, %d sides\n",
                 length, radius, sides);
@@ -5785,8 +5495,7 @@ int handleChimney(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float W2 = width  * 0.5f;
     const float D2 = depth  * 0.5f;
     const float shaftH = height - capH;
@@ -5803,11 +5512,7 @@ int handleChimney(int& i, int argc, char** argv) {
     float maxZ = D2 + (capH > 0 ? capExtra : 0);
     wom.boundMin = glm::vec3(-maxX, 0, -maxZ);
     wom.boundMax = glm::vec3(+maxX, height, +maxZ);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-chimney: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-chimney")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  shaft      : %.3f x %.3f x %.3f\n", width, depth, shaftH);
     if (capH > 0)
@@ -5849,8 +5554,7 @@ int handlePergola(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     const float L2 = length * 0.5f;
     const float W2 = width  * 0.5f;
     // Posts: full height at the 4 corners, inset by postR so the
@@ -5888,11 +5592,7 @@ int handlePergola(int& i, int argc, char** argv) {
     float topY = (crossbeams > 0) ? (postH + 2.0f * beamT) : (postH + beamT);
     wom.boundMin = glm::vec3(-L2, 0, -W2);
     wom.boundMax = glm::vec3(+L2, topY, +W2);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-pergola: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-pergola")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  footprint  : %.3f x %.3f\n", length, width);
     std::printf("  height     : %.3f (post %.3f + beam %.3f)\n",
@@ -5932,8 +5632,7 @@ int handleDock(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -5958,11 +5657,7 @@ int handleDock(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-W2, 0, -L2);
     wom.boundMax = glm::vec3( W2, height + deckT, +L2);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-dock: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-dock")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  deck       : %.3fW x %.3fL x %.3f thick at H=%.3f\n",
                 width, length, deckT, height);
@@ -5997,8 +5692,7 @@ int handleHaystack(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
     };
@@ -6114,11 +5808,7 @@ int handleHaystack(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-baseR, 0, -baseR);
     wom.boundMax = glm::vec3( baseR, height, baseR);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-haystack: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-haystack")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base R     : %.3f, height %.3f\n", baseR, height);
     std::printf("  layers     : %d (%d sides each)\n", layers, sides);
@@ -6155,8 +5845,7 @@ int handleCanopy(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -6192,11 +5881,7 @@ int handleCanopy(int& i, int argc, char** argv) {
     float maxZ = D2 + (drape > 0 ? panelT * 0.5f : 0);
     wom.boundMin = glm::vec3(-maxX, 0, -maxZ);
     wom.boundMax = glm::vec3( maxX, height, +maxZ);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-canopy: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-canopy")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  footprint  : %.3f x %.3f\n", width, depth);
     std::printf("  height     : %.3f (post %.3f + panel %.3f)\n",
@@ -6232,8 +5917,7 @@ int handleWoodpile(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
         return addVertex(wom, p, n, uv);
     };
@@ -6314,11 +5998,7 @@ int handleWoodpile(int& i, int argc, char** argv) {
     float maxY = 2.0f * logR + 2.0f * yStep;
     wom.boundMin = glm::vec3(-maxX, 0, -halfL);
     wom.boundMax = glm::vec3( maxX, maxY, +halfL);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-woodpile: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-woodpile")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  logs       : 6 in 3-2-1 stack (R=%.3f, len=%.3f, sides=%d)\n",
                 logR, logLen, sides);
@@ -6353,8 +6033,7 @@ int handleFirepit(int& i, int argc, char** argv) {
     }
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
-    wom.name = std::filesystem::path(womBase).stem().string();
-    wom.version = 3;
+    initWomDefaults(wom, womBase);
     auto addBox = [&](float cx, float cy, float cz,
                       float hx, float hy, float hz) {
         addFlatBox(wom, cx, cy, cz, hx, hy, hz);
@@ -6381,11 +6060,7 @@ int handleFirepit(int& i, int argc, char** argv) {
     float maxY = std::max(stoneSize * 2.0f, logCY + logThick * 1.5f);
     wom.boundMin = glm::vec3(-maxR, 0, -maxR);
     wom.boundMax = glm::vec3( maxR, maxY, maxR);
-    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
-        std::fprintf(stderr,
-            "gen-mesh-firepit: failed to save %s.wom\n", womBase.c_str());
-        return 1;
-    }
+    if (!saveWomOrError(wom, womBase, "gen-mesh-firepit")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  ring       : R=%.3f, %d stones (%.3f cubes)\n",
                 ringR, stones, stoneSize);

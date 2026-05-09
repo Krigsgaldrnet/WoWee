@@ -3,11 +3,36 @@
 #include "pipeline/wowee_model.hpp"
 #include <glm/glm.hpp>
 #include <cstdint>
+#include <cstdio>
+#include <filesystem>
 #include <string>
 
 namespace wowee {
 namespace editor {
 namespace cli {
+
+// Initialize a fresh WoweeModel with the canonical procedural-
+// primitive defaults: name derived from the base path's stem and
+// version 3 (current). 64 handlers in cli_gen_mesh.cpp open-coded
+// this 3-line block before extraction.
+inline void initWomDefaults(wowee::pipeline::WoweeModel& wom,
+                            const std::string& base) {
+    wom.name = std::filesystem::path(base).stem().string();
+    wom.version = 3;
+}
+
+// Save a WoweeModel and report a stderr message on failure.
+// Returns true on success so the caller can do
+// `if (!saveWomOrError(...)) return 1;`. The cmdName is included
+// in the error message for context.
+inline bool saveWomOrError(const wowee::pipeline::WoweeModel& wom,
+                           const std::string& base,
+                           const char* cmdName) {
+    if (wowee::pipeline::WoweeModelLoader::save(wom, base)) return true;
+    std::fprintf(stderr, "%s: failed to save %s.wom\n",
+                 cmdName, base.c_str());
+    return false;
+}
 
 // Strip a file-extension suffix from a base path if present. Used
 // pervasively by --gen-mesh-* / --bake-* / --info-* handlers that
