@@ -3500,6 +3500,72 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleDunes(int& i, int argc, char** argv) {
+    // Sand dunes / wave-ripple pattern: a stack of parallel
+    // sinusoidal curves spaced verticalSpacing apart. A pixel
+    // falls on a curve if its (y mod spacing) is within lineW
+    // pixels of the sine offset for the current x. Distinct
+    // from --gen-texture-corrugated (uniform parallel lines)
+    // and --gen-texture-zebra (sin-shifted strip fills) — this
+    // is the discrete-curve variant for desert ground textures
+    // and shallow-water sand patterns.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string lineHex = argv[++i];
+    int verticalSpacing = 16;     // pixels between adjacent dunes
+    int period = 64;              // sine period in pixels
+    int amp = 6;                  // sine amplitude in pixels
+    int lineW = 2;                // line thickness
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, verticalSpacing);
+    parseOptInt(i, argc, argv, period);
+    parseOptInt(i, argc, argv, amp);
+    parseOptInt(i, argc, argv, lineW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        verticalSpacing < 4 || verticalSpacing > 1024 ||
+        period < 4 || period > 4096 ||
+        amp < 0 || amp * 2 >= verticalSpacing ||
+        lineW < 1 || lineW * 2 >= verticalSpacing) {
+        std::fprintf(stderr,
+            "gen-texture-dunes: invalid dims (W/H 1..8192, "
+            "spacing 4..1024, period 4..4096, amp*2 < spacing, "
+            "lineW*2 < spacing)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, lr, lg, lb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-dunes")) return 1;
+    if (!parseHexOrError(lineHex, lr, lg, lb_,
+                         "gen-texture-dunes")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float twoPi = 6.28318530717958f;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float sineOffset = amp * std::sin(twoPi * x / period);
+            // The "ideal" curve is at y = N*spacing + sineOffset.
+            // Check distance to the nearest curve.
+            float yShifted = y - sineOffset;
+            int   bandIdx = static_cast<int>(std::round(yShifted / verticalSpacing));
+            float idealY = bandIdx * verticalSpacing + sineOffset;
+            float dist = std::abs(y - idealY);
+            uint8_t r, g, b;
+            if (dist < lineW * 0.5f) {
+                r = lr; g = lg; b = lb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-dunes")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/line    : %s / %s\n", bgHex.c_str(), lineHex.c_str());
+    std::printf("  ripples    : spacing=%d, period=%d, amp=%d, lineW=%d\n",
+                verticalSpacing, period, amp, lineW);
+    return 0;
+}
+
 int handleChevron(int& i, int argc, char** argv) {
     // Chevron: stack of V-shape bands. Within each vertical
     // period, the upper half slopes one way and the lower half
@@ -5012,6 +5078,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-diamond-grid",   3, handleDiamondGrid},
     {"--gen-texture-houndstooth",    3, handleHoundstooth},
     {"--gen-texture-chevron",        3, handleChevron},
+    {"--gen-texture-dunes",          3, handleDunes},
 };
 }  // namespace
 
