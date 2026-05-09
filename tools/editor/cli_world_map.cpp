@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -118,6 +119,141 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Export a .womx to a human-editable JSON sidecar. Tiles
+    // are represented as one '1'/'0' string per row (dense)
+    // because a full 64x64 continent has 4096 tiles — sparse
+    // [[x,y]] arrays would be 4× larger and harder to spot
+    // missing-row patterns visually. The dense string form is
+    // easy to hand-edit ('1' = tile present, '0' = no tile).
+    std::string base = argv[++i];
+    std::string outPath;
+    if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+    base = stripWomxExt(base);
+    if (outPath.empty()) outPath = base + ".womx.json";
+    if (!wowee::pipeline::WoweeWorldMapLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-womx-json: WOMX not found: %s.womx\n",
+            base.c_str());
+        return 1;
+    }
+    auto m = wowee::pipeline::WoweeWorldMapLoader::load(base);
+    nlohmann::json j;
+    j["name"] = m.name;
+    j["worldType"] = m.worldType;
+    j["worldTypeName"] =
+        wowee::pipeline::WoweeWorldMap::worldTypeName(m.worldType);
+    j["gridSize"] = m.gridSize;
+    j["defaultLightId"] = m.defaultLightId;
+    j["defaultWeatherId"] = m.defaultWeatherId;
+    nlohmann::json rows = nlohmann::json::array();
+    for (uint32_t y = 0; y < m.gridSize; ++y) {
+        std::string row;
+        row.reserve(m.gridSize);
+        for (uint32_t x = 0; x < m.gridSize; ++x)
+            row.push_back(m.hasTile(x, y) ? '1' : '0');
+        rows.push_back(row);
+    }
+    j["tiles"] = rows;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-womx-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.womx\n", base.c_str());
+    std::printf("  grid   : %ux%u\n", m.gridSize, m.gridSize);
+    std::printf("  tiles  : %u present\n", m.countTiles());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    // Round-trip pair for --export-womx-json. Accepts the
+    // same dense rows-of-strings layout. Tolerates missing
+    // optional fields by using the WoweeWorldMap defaults.
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (i + 1 < argc && argv[i + 1][0] != '-') outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".womx.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWomxExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-womx-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        in >> j;
+    } catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-womx-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto typeFromName = [](const std::string& s) -> uint8_t {
+        if (s == "continent")    return wowee::pipeline::WoweeWorldMap::Continent;
+        if (s == "instance")     return wowee::pipeline::WoweeWorldMap::Instance;
+        if (s == "battleground") return wowee::pipeline::WoweeWorldMap::Battleground;
+        if (s == "arena")        return wowee::pipeline::WoweeWorldMap::Arena;
+        return wowee::pipeline::WoweeWorldMap::Continent;
+    };
+    wowee::pipeline::WoweeWorldMap m;
+    m.name = j.value("name", std::string{});
+    if (j.contains("worldType") && j["worldType"].is_number_integer()) {
+        m.worldType = static_cast<uint8_t>(j["worldType"].get<int>());
+    } else if (j.contains("worldTypeName") && j["worldTypeName"].is_string()) {
+        m.worldType = typeFromName(j["worldTypeName"].get<std::string>());
+    }
+    m.gridSize = static_cast<uint8_t>(j.value("gridSize", 64));
+    m.defaultLightId = j.value("defaultLightId", 0u);
+    m.defaultWeatherId = j.value("defaultWeatherId", 0u);
+    if (m.gridSize == 0 || m.gridSize > 128) {
+        std::fprintf(stderr,
+            "import-womx-json: gridSize %u out of range 1..128\n",
+            m.gridSize);
+        return 1;
+    }
+    size_t bytes =
+        (static_cast<size_t>(m.gridSize) * m.gridSize + 7) / 8;
+    m.tileBitmap.assign(bytes, 0);
+    if (j.contains("tiles") && j["tiles"].is_array()) {
+        const auto& rows = j["tiles"];
+        for (uint32_t y = 0; y < m.gridSize && y < rows.size(); ++y) {
+            if (!rows[y].is_string()) continue;
+            const std::string& row = rows[y].get_ref<const std::string&>();
+            for (uint32_t x = 0;
+                 x < m.gridSize && x < row.size(); ++x) {
+                if (row[x] == '1') m.setTile(x, y, true);
+            }
+        }
+    }
+    if (!wowee::pipeline::WoweeWorldMapLoader::save(m, outBase)) {
+        std::fprintf(stderr,
+            "import-womx-json: failed to save %s.womx\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.womx\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  grid   : %ux%u\n", m.gridSize, m.gridSize);
+    std::printf("  tiles  : %u present\n", m.countTiles());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = (i + 1 < argc &&
@@ -200,6 +336,12 @@ bool handleWorldMap(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-womx") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-womx-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-womx-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

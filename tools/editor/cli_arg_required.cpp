@@ -24,6 +24,7 @@ const char* const kArgRequired[] = {
     "--gen-world-map", "--gen-world-map-instance",
     "--gen-world-map-arena",
     "--info-womx", "--validate-womx",
+    "--export-womx-json", "--import-womx-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

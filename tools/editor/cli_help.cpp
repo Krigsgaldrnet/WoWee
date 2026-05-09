@@ -827,6 +827,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WOMX manifest (worldType / gridSize / tilesPresent / defaultLightId / defaultWeatherId)\n");
     std::printf("  --validate-womx <womx-base> [--json]\n");
     std::printf("                         Static checks on .womx: gridSize 1..128, worldType in range, tileBitmap matches expected size\n");
+    std::printf("  --export-womx-json <womx-base> [out.json]\n");
+    std::printf("                         Export binary .womx to a human-editable JSON sidecar (rows of '1'/'0' strings, easy to hand-edit)\n");
+    std::printf("  --import-womx-json <json-path> [out-base]\n");
+    std::printf("                         Import a .womx.json sidecar back into binary .womx (round-trip with --export-womx-json)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
