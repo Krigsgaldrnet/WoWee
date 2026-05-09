@@ -4655,6 +4655,123 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleSundial(int& i, int argc, char** argv) {
+    // Sundial: 8-box garden timekeeper — square base plate at
+    // floor, central vertical gnomon slab spanning the diameter
+    // (long axis along Z, simulates the angled blade that casts
+    // a shadow), and 4 small hour-marker nubs at the cardinal
+    // points around the rim. Useful for monastery courtyards,
+    // mage tower observatories, druidic stone circles. The
+    // 55th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float baseSize    = 0.80f;
+    float baseHeight  = 0.06f;
+    float gnomonHeight = 0.35f;
+    float gnomonT     = 0.04f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { gnomonHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { gnomonT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (baseSize <= 0 || baseHeight <= 0 ||
+        gnomonHeight <= 0 || gnomonT <= 0 ||
+        gnomonT * 2 >= baseSize) {
+        std::fprintf(stderr,
+            "gen-mesh-sundial: dims > 0; gnomonT must fit in base\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfBase = baseSize * 0.5f;
+    // Base plate at floor.
+    addBox(0, baseHeight * 0.5f, 0,
+           halfBase, baseHeight * 0.5f, halfBase);
+    // Gnomon: vertical slab centered on the base, spanning the
+    // diameter along Z (the long axis). Sits on top of the base.
+    float halfGnomonT = gnomonT * 0.5f;
+    float halfGnomonZ = baseSize * 0.45f;     // slightly inset from base edges
+    float gnomonCY    = baseHeight + gnomonHeight * 0.5f;
+    addBox(0, gnomonCY, 0,
+           halfGnomonT, gnomonHeight * 0.5f, halfGnomonZ);
+    // 4 hour-marker nubs at cardinal positions (N, S, E, W) on
+    // the base's top face. Small protrusions above the base
+    // plate so they read as raised markers.
+    float markerW = baseSize * 0.06f;
+    float markerH = baseHeight * 1.5f;
+    float halfMW  = markerW * 0.5f;
+    float markerOff = halfBase * 0.85f;
+    float markerCY  = baseHeight + markerH * 0.5f;
+    addBox( markerOff, markerCY, 0,        halfMW, markerH * 0.5f, halfMW); // E
+    addBox(-markerOff, markerCY, 0,        halfMW, markerH * 0.5f, halfMW); // W
+    addBox(0,          markerCY,  markerOff, halfMW, markerH * 0.5f, halfMW); // N
+    addBox(0,          markerCY, -markerOff, halfMW, markerH * 0.5f, halfMW); // S
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = baseHeight + gnomonHeight;
+    wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
+    wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-sundial: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  base       : %.3f square × %.3f thick\n",
+                baseSize, baseHeight);
+    std::printf("  gnomon     : %.3f tall × %.3f thick (along Z)\n",
+                gnomonHeight, gnomonT);
+    std::printf("  markers    : 4 (N/S/E/W cardinal points)\n");
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleScarecrow(int& i, int argc, char** argv) {
     // Scarecrow: 5-box cruciform farm pest deterrent — anchor
     // post into the ground, vertical body, horizontal arm cross,
@@ -6741,6 +6858,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-scarecrow") == 0 && i + 1 < argc) {
         outRc = handleScarecrow(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-sundial") == 0 && i + 1 < argc) {
+        outRc = handleSundial(i, argc, argv); return true;
     }
     return false;
 }
