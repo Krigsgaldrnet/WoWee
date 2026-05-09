@@ -1315,6 +1315,7 @@ add_executable(wowee_editor
     tools/editor/cli_format_info.cpp
     tools/editor/cli_pack.cpp
     tools/editor/cli_content_info.cpp
+    tools/editor/cli_zone_info.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
