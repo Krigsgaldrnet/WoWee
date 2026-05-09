@@ -278,6 +278,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");
     std::printf("                         Convenience: emit forge + anvil + workbench + water-trough + crate-stack + hitching-post into outDir\n");
+    std::printf("  --gen-village-pack <outDir>\n");
+    std::printf("                         Convenience: emit house + outhouse + chimney + hitching-post + well + signpost + haystack into outDir\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
     std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");

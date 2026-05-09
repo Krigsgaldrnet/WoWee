@@ -6663,6 +6663,25 @@ int handleGenBlacksmithPack(int& i, int /*argc*/, char** argv) {
     });
 }
 
+int handleGenVillagePack(int& i, int /*argc*/, char** argv) {
+    // Village square scene: a small house, an outhouse beside it,
+    // a chimney for the house roof piece, a hitching post at the
+    // hitching rail, a well for the village square, a signpost
+    // pointing the way out, and a haystack from the nearby farm.
+    // Together these primitives form a recognizable rural-village
+    // hub when arranged in a zone.
+    std::string outDir = argv[++i];
+    return emitMeshPack(outDir, "village pack", {
+        {"--gen-mesh-house",          handleHouse,         "house"},
+        {"--gen-mesh-outhouse",       handleOuthouse,      "outhouse"},
+        {"--gen-mesh-chimney",        handleChimney,       "chimney"},
+        {"--gen-mesh-hitching-post",  handleHitchingPost,  "hitching"},
+        {"--gen-mesh-well",           handleWell,          "well"},
+        {"--gen-mesh-signpost",       handleSignpost,      "signpost"},
+        {"--gen-mesh-haystack",       handleHaystack,      "haystack"},
+    });
+}
+
 }  // namespace
 
 namespace {
@@ -6736,6 +6755,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-gravel-pile",    1, handleGravelPile},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
+    {"--gen-village-pack",        1, handleGenVillagePack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
