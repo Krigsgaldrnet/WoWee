@@ -167,6 +167,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Plaid: 2 sets of crossed translucent bands; intersections darken via combined half-alpha\n");
     std::printf("  --gen-texture-diamond-grid <out.png> <bgHex> <fillHex> [cellW] [cellH] [fillFrac] [W H]\n");
     std::printf("                         Diamond grid: axis-aligned solid diamonds in cells with bg gaps (clean tile / mosaic / floor inlay)\n");
+    std::printf("  --gen-texture-houndstooth <out.png> <toothHex> <bgHex> [cellSize] [W H]\n");
+    std::printf("                         Houndstooth: classic textile broken-check pattern via seamless 8x8 motif (Scottish weave)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

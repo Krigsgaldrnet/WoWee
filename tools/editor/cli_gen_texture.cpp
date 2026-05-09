@@ -3500,6 +3500,68 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleHoundstooth(int& i, int argc, char** argv) {
+    // Houndstooth: classic textile broken-check pattern. The 8x8
+    // motif stored below tiles seamlessly to produce the
+    // unmistakable 4-pointed tooth shape that 19th-century
+    // Scottish weavers gave us. Each motif cell scales to
+    // `cellSize` pixels (default 4 → 32x32 tile = 4 motifs side-
+    // to-side at 256x256).
+    std::string outPath = argv[++i];
+    std::string aHex    = argv[++i];   // tooth color
+    std::string bHex    = argv[++i];   // background color
+    int cellSize = 4;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cellSize);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellSize < 1 || cellSize > 256) {
+        std::fprintf(stderr,
+            "gen-texture-houndstooth: invalid dims (W/H 1..8192, "
+            "cellSize 1..256)\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br_, bg_, bb_;
+    if (!parseHexOrError(aHex, ar, ag, ab,
+                         "gen-texture-houndstooth")) return 1;
+    if (!parseHexOrError(bHex, br_, bg_, bb_,
+                         "gen-texture-houndstooth")) return 1;
+    // The classic 8x8 houndstooth motif. 1 = tooth color, 0 = bg.
+    // Tiles seamlessly in both axes.
+    static const uint8_t motif[8][8] = {
+        {1, 1, 1, 1, 0, 0, 0, 0},
+        {1, 1, 1, 1, 0, 0, 0, 1},
+        {1, 1, 1, 0, 0, 0, 1, 1},
+        {1, 1, 0, 0, 0, 1, 1, 1},
+        {0, 0, 0, 0, 1, 1, 1, 1},
+        {0, 0, 0, 1, 1, 1, 1, 1},
+        {0, 0, 1, 1, 1, 1, 1, 0},
+        {0, 1, 1, 1, 1, 1, 0, 0},
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int motifY = (y / cellSize) % 8;
+        for (int x = 0; x < W; ++x) {
+            int motifX = (x / cellSize) % 8;
+            uint8_t r, g, b;
+            if (motif[motifY][motifX]) {
+                r = ar; g = ag; b = ab;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-houndstooth")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  tooth/bg   : %s / %s\n", aHex.c_str(), bHex.c_str());
+    std::printf("  cell       : %d px (8x8 motif → %d-px tile)\n",
+                cellSize, cellSize * 8);
+    return 0;
+}
+
 int handleDiamondGrid(int& i, int argc, char** argv) {
     // Axis-aligned grid of solid diamond shapes (no row offset)
     // separated by visible bg gaps. Distinct from
@@ -4882,6 +4944,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-rust-streaks",   3, handleRustStreaks},
     {"--gen-texture-plaid",          3, handlePlaid},
     {"--gen-texture-diamond-grid",   3, handleDiamondGrid},
+    {"--gen-texture-houndstooth",    3, handleHoundstooth},
 };
 }  // namespace
 

@@ -102,6 +102,7 @@ const char* const kArgRequired[] = {
     "--gen-texture-mesh-screen", "--gen-texture-bamboo",
     "--gen-texture-blueprint", "--gen-texture-rust-streaks",
     "--gen-texture-plaid", "--gen-texture-diamond-grid",
+    "--gen-texture-houndstooth",
     "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
     "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
     "--validate-png", "--validate-blp",
