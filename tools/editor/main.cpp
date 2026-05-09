@@ -179,6 +179,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-parquet", "--gen-texture-bubbles",
         "--gen-texture-spider-web", "--gen-texture-gingham",
         "--gen-texture-lattice", "--gen-texture-honeycomb",
+        "--gen-texture-cracked",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",

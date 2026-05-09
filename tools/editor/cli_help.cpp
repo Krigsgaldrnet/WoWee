@@ -119,6 +119,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Lattice: ±45° diagonal grid forming diamond openings (garden trellis / mesh fence)\n");
     std::printf("  --gen-texture-honeycomb <out.png> <fillHex> <borderHex> [hexSide] [W H]\n");
     std::printf("                         Honeycomb: hexagonal cells via Voronoi over a triangular seed lattice\n");
+    std::printf("  --gen-texture-cracked <out.png> <bgHex> <crackHex> [seeds] [maxLength] [W H]\n");
+    std::printf("                         Cracked: branching random walks form fissures (mud / glass / dry earth)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

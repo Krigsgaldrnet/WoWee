@@ -4068,6 +4068,120 @@ int handleHoneycomb(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCracked(int& i, int argc, char** argv) {
+    // Cracked: organic crack network done via recursive random
+    // walks from N seed nuclei. Each seed spawns a crack that
+    // walks in a random direction for some length, then with
+    // 60% chance branches into one or two more cracks of
+    // shorter length. Result: irregular fissures that read as
+    // cracked mud, dry earth, broken glass, weathered stone.
+    std::string outPath  = argv[++i];
+    std::string bgHex    = argv[++i];
+    std::string crackHex = argv[++i];
+    int seedCount = 12;
+    int maxLength = 40;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seedCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { maxLength = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        seedCount < 1 || seedCount > 4096 ||
+        maxLength < 4 || maxLength > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-cracked: invalid dims (W/H 1..8192, seeds 1..4096, maxLen 4..1024)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, cr_, cg_, cb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(crackHex, cr_, cg_, cb_)) {
+        std::fprintf(stderr,
+            "gen-texture-cracked: bg or crack hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (size_t p = 0; p < pixels.size(); p += 3) {
+        pixels[p + 0] = br_;
+        pixels[p + 1] = bg_;
+        pixels[p + 2] = bb_;
+    }
+    // Deterministic LCG so re-runs reproduce the same pattern.
+    uint32_t rng = static_cast<uint32_t>(seedCount) * 0x9E3779B9u +
+                   static_cast<uint32_t>(W) * 0x85EBCA6Bu +
+                   static_cast<uint32_t>(maxLength);
+    auto rngStep = [&]() {
+        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+        return rng;
+    };
+    auto next01 = [&]() { return (rngStep() & 0xFFFFFF) / float(0x1000000); };
+    auto paintPixel = [&](int x, int y) {
+        if (x < 0 || x >= W || y < 0 || y >= H) return;
+        size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+        pixels[idx + 0] = cr_;
+        pixels[idx + 1] = cg_;
+        pixels[idx + 2] = cb_;
+    };
+    constexpr float kPi = 3.14159265358979323846f;
+    // Iterative DFS instead of true recursion so we don't blow
+    // the stack on long branching chains.
+    struct Crack { float x, y; int remaining; };
+    std::vector<Crack> stack;
+    for (int s = 0; s < seedCount; ++s) {
+        Crack seed;
+        seed.x = next01() * W;
+        seed.y = next01() * H;
+        seed.remaining = maxLength;
+        stack.push_back(seed);
+    }
+    while (!stack.empty()) {
+        Crack c = stack.back();
+        stack.pop_back();
+        if (c.remaining <= 0) continue;
+        // Pick a random direction (any angle) and a per-segment
+        // length up to remaining.
+        float angle = next01() * 2.0f * kPi;
+        float dx = std::cos(angle);
+        float dy = std::sin(angle);
+        int segLen = 4 + static_cast<int>(next01() * (c.remaining - 4));
+        float fx = c.x, fy = c.y;
+        for (int t = 0; t < segLen; ++t) {
+            paintPixel(static_cast<int>(fx), static_cast<int>(fy));
+            fx += dx;
+            fy += dy;
+        }
+        // Branching: 60% chance the segment endpoint spawns 1
+        // more crack of half-remaining length, 25% chance it
+        // spawns 2 (so most cracks die out, a few network).
+        float branchRoll = next01();
+        int branches = (branchRoll < 0.25f) ? 2 :
+                       (branchRoll < 0.85f) ? 1 : 0;
+        for (int b = 0; b < branches; ++b) {
+            stack.push_back({fx, fy, c.remaining / 2});
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-cracked: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg / crack : %s / %s\n", bgHex.c_str(), crackHex.c_str());
+    std::printf("  seeds      : %d (max length %d, branching DFS)\n",
+                seedCount, maxLength);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -4198,6 +4312,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-honeycomb") == 0 && i + 3 < argc) {
         outRc = handleHoneycomb(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-cracked") == 0 && i + 3 < argc) {
+        outRc = handleCracked(i, argc, argv); return true;
     }
     return false;
 }
