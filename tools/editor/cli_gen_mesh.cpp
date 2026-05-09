@@ -7127,28 +7127,27 @@ int handleTent(int& i, int argc, char** argv) {
     }
     // +X gable: B=(+L2,0,-W2), C=(+L2,0,+W2), R1=(+L2,H,0). Faces +X.
     // If doorH>0 we carve out a tapered notch — bottom edge of width
-    // doorW, apex on the centerline at height doorH — and replace the
-    // single gable triangle with a 4-triangle fan around the door.
+    // doorW, apex on the centerline at height doorH. The remaining
+    // polygon (B → bl → dt → br → C → R1, going CCW from -X view to
+    // match the existing gable winding) is triangulated as a fan
+    // from R1: 4 triangles, no overlap with the door area, every
+    // vertex referenced by at least one triangle.
     {
         glm::vec3 n(+1, 0, 0);
         if (doorH > 0 && doorW > 0) {
+            uint32_t r1 = addV({+L2, height, 0}, n, {0.5f, 1});
             uint32_t b  = addV({+L2, 0, -W2}, n, {0, 0});
             uint32_t bl = addV({+L2, 0, -doorW * 0.5f}, n,
                                {0.5f - doorW / (2 * width), 0});
+            uint32_t dt = addV({+L2, doorH, 0}, n,
+                               {0.5f, doorH / height});
             uint32_t br = addV({+L2, 0, +doorW * 0.5f}, n,
                                {0.5f + doorW / (2 * width), 0});
             uint32_t c  = addV({+L2, 0, +W2}, n, {1, 0});
-            uint32_t r1 = addV({+L2, height, 0}, n, {0.5f, 1});
-            uint32_t dt = addV({+L2, doorH, 0}, n,
-                               {0.5f, doorH / height});
-            // Slab right of the door, slab left of the door, then the
-            // peak triangle bridging door-top to ridge.
-            wom.indices.insert(wom.indices.end(), {b, c, br});
-            wom.indices.insert(wom.indices.end(), {b, br, dt});
-            wom.indices.insert(wom.indices.end(), {b, dt, r1});
-            wom.indices.insert(wom.indices.end(), {c, r1, dt});
-            wom.indices.insert(wom.indices.end(), {c, dt, br});
-            (void)bl;  // left-base slot reserved for symmetric door variant
+            wom.indices.insert(wom.indices.end(), {r1, b,  bl});
+            wom.indices.insert(wom.indices.end(), {r1, bl, dt});
+            wom.indices.insert(wom.indices.end(), {r1, dt, br});
+            wom.indices.insert(wom.indices.end(), {r1, br, c});
         } else {
             uint32_t b = addV({+L2, 0, -W2}, n, {0, 0});
             uint32_t c = addV({+L2, 0, +W2}, n, {1, 0});
