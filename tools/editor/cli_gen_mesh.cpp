@@ -47,10 +47,7 @@ int handleRock(int& i, int argc, char** argv) {
             "gen-mesh-rock: radius>0, roughness 0..1, subdiv 0..4\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     // Build sphere via octahedron subdivision. Vertices are
     // accumulated in unit-length form first, then displaced.
     std::vector<glm::vec3> sv;  // sphere verts (unit)
@@ -188,10 +185,7 @@ int handlePillar(int& i, int argc, char** argv) {
             "gen-mesh-pillar: radius>0, height>0, flutes 4..64, capScale 1..4\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     const float pi = 3.14159265358979f;
     // We use 8 segments per flute so the cosine-modulated
     // groove resolves smoothly. Vertical: 2 rings (top/bot
@@ -319,10 +313,7 @@ int handleBridge(int& i, int argc, char** argv) {
             "gen-mesh-bridge: length>0, width>0, planks 1..64, rail 0..4\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -416,10 +407,7 @@ int handleTower(int& i, int argc, char** argv) {
             "gen-mesh-tower: radius>0, height>0, battlements 4..64, bH 0..4\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -557,10 +545,7 @@ int handleHouse(int& i, int argc, char** argv) {
             "gen-mesh-house: width/depth/height>0, roof 0..20\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -663,10 +648,7 @@ int handleFountain(int& i, int argc, char** argv) {
             "gen-mesh-fountain: all dims > 0; spoutR must be < basinR\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -760,10 +742,7 @@ int handleStatue(int& i, int argc, char** argv) {
             "gen-mesh-statue: all dims must be positive\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -904,10 +883,7 @@ int handleAltar(int& i, int argc, char** argv) {
             "gen-mesh-altar: topR/topH > 0, steps 0..16, stride 0..5\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -1019,10 +995,7 @@ int handlePortal(int& i, int argc, char** argv) {
             "gen-mesh-portal: posts must fit inside width; lintel <= height\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -1095,10 +1068,7 @@ int handleArchway(int& i, int argc, char** argv) {
             "gen-mesh-archway: thickness×4 < width, archSegs 4..64\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -1263,10 +1233,7 @@ int handleBarrel(int& i, int argc, char** argv) {
             "gen-mesh-barrel: radii/height > 0, hoopThick 0..0.5\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -1366,10 +1333,7 @@ int handleChest(int& i, int argc, char** argv) {
             "gen-mesh-chest: width/depth/bodyH > 0, lidH >= 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -1453,10 +1417,7 @@ int handleAnvil(int& i, int argc, char** argv) {
             "gen-mesh-anvil: length/width/bodyH > 0, hornLen >= 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -1588,10 +1549,7 @@ int handleStairs(int& i, int argc, char** argv) {
             "gen-mesh-stairs: dimensions must be positive\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -1697,10 +1655,7 @@ int handleGrid(int& i, int argc, char** argv) {
             "gen-mesh-grid: size must be positive\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -1777,10 +1732,7 @@ int handleDisc(int& i, int argc, char** argv) {
             "gen-mesh-disc: radius must be positive, segments 3..1024\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -1857,10 +1809,7 @@ int handleTube(int& i, int argc, char** argv) {
             "gen-mesh-tube: 0 < innerR < outerR, height > 0, segments 3..1024\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -2022,10 +1971,7 @@ int handleCapsule(int& i, int argc, char** argv) {
             "gen-mesh-capsule: radius > 0, cylHeight >= 0, segments 3..1024, stacks 1..256\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -2173,10 +2119,7 @@ int handleArch(int& i, int argc, char** argv) {
             "gen-mesh-arch: dimensions must be positive, segments 2..256\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -2288,10 +2231,7 @@ int handlePyramid(int& i, int argc, char** argv) {
             "gen-mesh-pyramid: sides 3..256, baseR > 0, height > 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -2392,10 +2332,7 @@ int handleFence(int& i, int argc, char** argv) {
             "gen-mesh-fence: posts 2..256, spacing/height/thick > 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -2477,10 +2414,7 @@ int handleTree(int& i, int argc, char** argv) {
             "gen-mesh-tree: trunkR / trunkH / foliR must be positive\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -2598,10 +2532,7 @@ int handleMeshDispatch(int& i, int argc, char** argv) {
         return 1;
     }
     // Strip .wom if user passed a full filename — saver expects base.
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -2989,10 +2920,7 @@ int handleTextured(int& i, int argc, char** argv) {
     std::string sizeArg;
     if (i + 1 < argc && argv[i + 1][0] != '-') sizeArg = argv[++i];
     // Strip .wom if user passed full filename.
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     std::string self = argv[0];
     // 1) Mesh.
     std::string meshCmd = "\"" + self + "\" --gen-mesh \"" + womBase +
@@ -3062,10 +2990,7 @@ int handleMushroom(int& i, int argc, char** argv) {
             "gen-mesh-mushroom: all dims must be positive\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -3187,10 +3112,7 @@ int handleCart(int& i, int argc, char** argv) {
             "gen-mesh-cart: all dims must be positive\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -3307,10 +3229,7 @@ int handleBanner(int& i, int argc, char** argv) {
             "gen-mesh-banner: all dims > 0; flagH must be <= poleH\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -3415,10 +3334,7 @@ int handleGrave(int& i, int argc, char** argv) {
             "gen-mesh-grave: all dims > 0; baseW must be >= tabletW\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -3482,10 +3398,7 @@ int handleBench(int& i, int argc, char** argv) {
             "gen-mesh-bench: all dims > 0; seatT must be <= seatY\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -3548,10 +3461,7 @@ int handleShrine(int& i, int argc, char** argv) {
             "gen-mesh-shrine: dims > 0; pillarR×2 must fit inside size\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -3651,10 +3561,7 @@ int handleTotem(int& i, int argc, char** argv) {
             "gen-mesh-totem: dims > 0, segments 1..32\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -3713,10 +3620,7 @@ int handleCage(int& i, int argc, char** argv) {
             "gen-mesh-cage: dims > 0, barsPerSide 0..64\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -3800,10 +3704,7 @@ int handleThrone(int& i, int argc, char** argv) {
             "gen-mesh-throne: dims > 0; pedSize must be >= seatW\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -3878,10 +3779,7 @@ int handleCoffin(int& i, int argc, char** argv) {
             "gen-mesh-coffin: length/width/height must be > 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4011,10 +3909,7 @@ int handleArchwayDouble(int& i, int argc, char** argv) {
             "gen-mesh-archway-double: all dims must be > 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4091,10 +3986,7 @@ int handleBrazier(int& i, int argc, char** argv) {
             "gen-mesh-brazier: dims > 0; stem must fit in base & bowl\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4180,10 +4072,7 @@ int handlePodium(int& i, int argc, char** argv) {
             "gen-mesh-podium: dims > 0; stepCount 2..8\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4260,10 +4149,7 @@ int handleSundial(int& i, int argc, char** argv) {
             "gen-mesh-sundial: dims > 0; gnomonT must fit in base\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4343,10 +4229,7 @@ int handleScarecrow(int& i, int argc, char** argv) {
         std::fprintf(stderr, "gen-mesh-scarecrow: all dims must be > 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4432,10 +4315,7 @@ int handleWeathervane(int& i, int argc, char** argv) {
             "gen-mesh-weathervane: dims > 0; post must fit in base\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4519,10 +4399,7 @@ int handleBeehive(int& i, int argc, char** argv) {
             "gen-mesh-beehive: baseWidth/height > 0; plateH >= 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4605,10 +4482,7 @@ int handleGate(int& i, int argc, char** argv) {
             "gen-mesh-gate: dims > 0; railT < postHeight/4\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4680,10 +4554,7 @@ int handleCauldron(int& i, int argc, char** argv) {
             "gen-mesh-cauldron: all dims must be > 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4765,10 +4636,7 @@ int handleStool(int& i, int argc, char** argv) {
             "gen-mesh-stool: dims > 0; legT must fit in seatSize\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4829,10 +4697,7 @@ int handleCrate(int& i, int argc, char** argv) {
             "gen-mesh-crate: size/postRadius > 0; postRadius < size/4\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4899,10 +4764,7 @@ int handleTombstone(int& i, int argc, char** argv) {
             "gen-mesh-tombstone: dims > 0; baseScale 1.0..5.0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -4980,10 +4842,7 @@ int handleMailbox(int& i, int argc, char** argv) {
             "gen-mesh-mailbox: all dims must be > 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5074,10 +4933,7 @@ int handleSignpost(int& i, int argc, char** argv) {
             "gen-mesh-signpost: dims > 0; post must fit in base\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5162,10 +5018,7 @@ int handleWell(int& i, int argc, char** argv) {
             "gen-mesh-well: dims > 0; wallT must fit in outerSize\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5257,10 +5110,7 @@ int handleLadder(int& i, int argc, char** argv) {
             "gen-mesh-ladder: dims > 0; rungs 2..64; rails must fit in width\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5334,10 +5184,7 @@ int handleBed(int& i, int argc, char** argv) {
         std::fprintf(stderr, "gen-mesh-bed: all dims must be > 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5429,10 +5276,7 @@ int handleLamppost(int& i, int argc, char** argv) {
             "gen-mesh-lamppost: dims > 0; post must fit in base & lantern\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5518,10 +5362,7 @@ int handleTable(int& i, int argc, char** argv) {
             "gen-mesh-table: dims > 0; legT must fit in width/depth; topT < height\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5588,10 +5429,7 @@ int handleBookshelf(int& i, int argc, char** argv) {
             "gen-mesh-bookshelf: dims > 0; shelves must be 2..12\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5719,10 +5557,7 @@ int handleTent(int& i, int argc, char** argv) {
             "gen-mesh-tent: dims > 0; doorH < height; doorW < width\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5857,10 +5692,7 @@ int handleWorkbench(int& i, int argc, char** argv) {
             "gen-mesh-workbench: dims > 0; legR*2 < length/depth\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -5945,10 +5777,7 @@ int handleBedroll(int& i, int argc, char** argv) {
             "gen-mesh-bedroll: dims > 0; sides 6..64; pillow < length/2\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -6068,10 +5897,7 @@ int handleChimney(int& i, int argc, char** argv) {
             "gen-mesh-chimney: dims > 0; capH < height; capExtra >= 0\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -6139,10 +5965,7 @@ int handlePergola(int& i, int argc, char** argv) {
             "crossbeams 0..32\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -6229,10 +6052,7 @@ int handleDock(int& i, int argc, char** argv) {
             "gen-mesh-dock: dims > 0; pilingW*2 < width; pilings 1..16\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -6301,10 +6121,7 @@ int handleHaystack(int& i, int argc, char** argv) {
             "gen-mesh-haystack: dims > 0; layers 2..16; sides 6..64\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -6466,10 +6283,7 @@ int handleCanopy(int& i, int argc, char** argv) {
             "gen-mesh-canopy: dims > 0; postR*2 < width/depth; drape < height\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -6550,10 +6364,7 @@ int handleWoodpile(int& i, int argc, char** argv) {
             "gen-mesh-woodpile: dims > 0; sides 6..64\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;
@@ -6678,10 +6489,7 @@ int handleFirepit(int& i, int argc, char** argv) {
             "gen-mesh-firepit: dims > 0; stones must be 3..64\n");
         return 1;
     }
-    if (womBase.size() >= 4 &&
-        womBase.substr(womBase.size() - 4) == ".wom") {
-        womBase = womBase.substr(0, womBase.size() - 4);
-    }
+    stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     wom.name = std::filesystem::path(womBase).stem().string();
     wom.version = 3;

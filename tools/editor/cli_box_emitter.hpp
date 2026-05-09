@@ -3,10 +3,28 @@
 #include "pipeline/wowee_model.hpp"
 #include <glm/glm.hpp>
 #include <cstdint>
+#include <string>
 
 namespace wowee {
 namespace editor {
 namespace cli {
+
+// Strip a file-extension suffix from a base path if present. Used
+// pervasively by --gen-mesh-* / --bake-* / --info-* handlers that
+// accept either `path/foo` or `path/foo.ext` as input — the loader
+// expects the bare base, so the trailing ".wom" / ".wob" / ".woc"
+// must be removed if the user typed it.
+//
+// Pattern was open-coded as a 4-line if-block in 64+ sites
+// across cli_gen_mesh.cpp; hoisted here for one-line callers.
+inline void stripExt(std::string& base, const char* ext) {
+    std::size_t extLen = 0;
+    while (ext[extLen]) ++extLen;
+    if (base.size() >= extLen &&
+        base.compare(base.size() - extLen, extLen, ext) == 0) {
+        base.resize(base.size() - extLen);
+    }
+}
 
 // Append one vertex (position, normal, UV) to a WoweeModel and
 // return its newly-assigned index. Inline because the procedural
