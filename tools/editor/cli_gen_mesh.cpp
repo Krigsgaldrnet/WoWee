@@ -6906,70 +6906,9 @@ int handleWoodpile(int& i, int argc, char** argv) {
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     initWomDefaults(wom, womBase);
-    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
-        return addVertex(wom, p, n, uv);
-    };
-    // Add a log: z-axis cylinder centered at (cx, cy, 0) with
-    // length logLen along Z. Each log gets unique vertices for
-    // both the side and the two end caps so flat shading works
-    // across the disc/cylinder transition.
-    const float pi = 3.14159265358979f;
     const float halfL = logLen * 0.5f;
     auto addLog = [&](float cx, float cy) {
-        // Side wall: ring at z=-halfL, ring at z=+halfL.
-        uint32_t back = static_cast<uint32_t>(wom.vertices.size());
-        for (int s = 0; s <= sides; ++s) {
-            float u = static_cast<float>(s) / sides;
-            float ang = u * 2.0f * pi;
-            glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
-            glm::vec3 p(cx + logR * dir.x, cy + logR * dir.y, -halfL);
-            addV(p, dir, {u, 0});
-        }
-        uint32_t front = static_cast<uint32_t>(wom.vertices.size());
-        for (int s = 0; s <= sides; ++s) {
-            float u = static_cast<float>(s) / sides;
-            float ang = u * 2.0f * pi;
-            glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
-            glm::vec3 p(cx + logR * dir.x, cy + logR * dir.y, +halfL);
-            addV(p, dir, {u, 1});
-        }
-        for (int s = 0; s < sides; ++s) {
-            wom.indices.insert(wom.indices.end(), {
-                back + s, front + s, back + s + 1,
-                back + s + 1, front + s, front + s + 1
-            });
-        }
-        // End caps: -Z and +Z fans.
-        uint32_t backCenter = addV({cx, cy, -halfL}, {0, 0, -1}, {0.5f, 0.5f});
-        uint32_t backRing = static_cast<uint32_t>(wom.vertices.size());
-        for (int s = 0; s <= sides; ++s) {
-            float u = static_cast<float>(s) / sides;
-            float ang = u * 2.0f * pi;
-            glm::vec3 p(cx + logR * std::cos(ang),
-                        cy + logR * std::sin(ang), -halfL);
-            addV(p, {0, 0, -1},
-                 {0.5f + 0.5f * std::cos(ang),
-                  0.5f + 0.5f * std::sin(ang)});
-        }
-        for (int s = 0; s < sides; ++s) {
-            wom.indices.insert(wom.indices.end(),
-                {backCenter, backRing + s + 1, backRing + s});
-        }
-        uint32_t frontCenter = addV({cx, cy, +halfL}, {0, 0, +1}, {0.5f, 0.5f});
-        uint32_t frontRing = static_cast<uint32_t>(wom.vertices.size());
-        for (int s = 0; s <= sides; ++s) {
-            float u = static_cast<float>(s) / sides;
-            float ang = u * 2.0f * pi;
-            glm::vec3 p(cx + logR * std::cos(ang),
-                        cy + logR * std::sin(ang), +halfL);
-            addV(p, {0, 0, +1},
-                 {0.5f + 0.5f * std::cos(ang),
-                  0.5f + 0.5f * std::sin(ang)});
-        }
-        for (int s = 0; s < sides; ++s) {
-            wom.indices.insert(wom.indices.end(),
-                {frontCenter, frontRing + s, frontRing + s + 1});
-        }
+        addClosedCylinderZ(wom, cx, cy, logR, -halfL, +halfL, sides);
     };
     // 3-2-1 stack: bottom row of 3 logs sitting on the ground,
     // middle row of 2 nestled in their gaps, top single log

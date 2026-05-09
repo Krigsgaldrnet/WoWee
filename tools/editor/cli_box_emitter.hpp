@@ -120,6 +120,69 @@ inline uint32_t addVertex(wowee::pipeline::WoweeModel& wom,
                       glm::vec2(u, v));
 }
 
+// Append a closed Z-axis cylinder (side wall + ±Z end caps) to a
+// WoweeModel, centered at (cx, cy) on the XY plane and spanning
+// z=z0 to z=z1 with radius R. Used by primitives whose tubes lie
+// horizontally rather than vertically — woodpile logs, bedroll,
+// archery-target face, etc.
+inline void addClosedCylinderZ(wowee::pipeline::WoweeModel& wom,
+                               float cx, float cy,
+                               float R, float z0, float z1, int sides) {
+    constexpr float pi = 3.14159265358979f;
+    uint32_t back = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+        addVertex(wom, {cx + R * dir.x, cy + R * dir.y, z0}, dir, {u, 0});
+    }
+    uint32_t front = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+        addVertex(wom, {cx + R * dir.x, cy + R * dir.y, z1}, dir, {u, 1});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(), {
+            back + s, front + s, back + s + 1,
+            back + s + 1, front + s, front + s + 1
+        });
+    }
+    // -Z cap fan.
+    uint32_t backCenter = addVertex(wom, {cx, cy, z0},
+                                     {0.0f, 0.0f, -1.0f}, {0.5f, 0.5f});
+    uint32_t backRing = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        addVertex(wom, {cx + R * std::cos(ang), cy + R * std::sin(ang), z0},
+                  {0.0f, 0.0f, -1.0f},
+                  {0.5f + 0.5f * std::cos(ang),
+                   0.5f + 0.5f * std::sin(ang)});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(),
+            {backCenter, backRing + s + 1, backRing + s});
+    }
+    // +Z cap fan.
+    uint32_t frontCenter = addVertex(wom, {cx, cy, z1},
+                                      {0.0f, 0.0f, 1.0f}, {0.5f, 0.5f});
+    uint32_t frontRing = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        addVertex(wom, {cx + R * std::cos(ang), cy + R * std::sin(ang), z1},
+                  {0.0f, 0.0f, 1.0f},
+                  {0.5f + 0.5f * std::cos(ang),
+                   0.5f + 0.5f * std::sin(ang)});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(),
+            {frontCenter, frontRing + s, frontRing + s + 1});
+    }
+}
+
 // Append a closed Y-axis cylinder (side wall + ±Y end caps) to a
 // WoweeModel. The cylinder spans from y=y0 to y=y1 with radius R
 // and `sides` segments around the circumference. Side wall faces
