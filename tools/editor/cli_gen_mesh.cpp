@@ -143,7 +143,7 @@ int handleRock(int& i, int argc, char** argv) {
     wom.boundMax = glm::vec3( bound);
     finalizeAsSingleBatch(wom);
     if (!saveWomOrError(wom, womBase, "gen-mesh-rock")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  radius    : %.3f\n", radius);
     std::printf("  roughness : %.3f\n", roughness);
     std::printf("  subdiv    : %d\n", subdiv);
@@ -261,7 +261,7 @@ int handlePillar(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     setCenteredBoundsXZ(wom, capR, capR, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-pillar")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  radius    : %.3f\n", radius);
     std::printf("  height    : %.3f\n", height);
     std::printf("  flutes    : %d\n", flutes);
@@ -343,7 +343,7 @@ int handleBridge(int& i, int argc, char** argv) {
     float maxY = plankThickness + railHeight;
     setCenteredBoundsXZ(wom, length * 0.5f, width * 0.5f, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-bridge")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  length    : %.3f\n", length);
     std::printf("  width     : %.3f\n", width);
     std::printf("  planks    : %d\n", planks);
@@ -473,7 +473,7 @@ int handleTower(int& i, int argc, char** argv) {
     float maxR = radius * 1.05f;
     setCenteredBoundsXZ(wom, maxR, maxR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-tower")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  radius      : %.3f\n", radius);
     std::printf("  height      : %.3f\n", height);
     std::printf("  battlements : %d (%.3fm tall)\n",
@@ -566,13 +566,12 @@ int handleHouse(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     setCenteredBoundsXZ(wom, hx, hz, apexY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-house")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  width      : %.3f\n", width);
     std::printf("  depth      : %.3f\n", depth);
     std::printf("  wall H     : %.3f\n", height);
     std::printf("  roof H     : %.3f (apex %.3f)\n", roofH, apexY);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -654,7 +653,7 @@ int handleFountain(int& i, int argc, char** argv) {
     float maxY = basinH + spoutH;
     setCenteredBoundsXZ(wom, basinR, basinR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-fountain")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  basin    : R=%.3f H=%.3f\n", basinR, basinH);
     std::printf("  spout    : R=%.3f H=%.3f\n", spoutR, spoutH);
     std::printf("  total H  : %.3f\n", maxY);
@@ -780,7 +779,7 @@ int handleStatue(int& i, int argc, char** argv) {
     float maxY = headY + headR;
     setCenteredBoundsXZ(wom, hp, hp, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-statue")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  pedestal  : %.3f × %.3f × %.3f\n", pedSize, pedH, pedSize);
     std::printf("  body      : R=%.3f H=%.3f\n", bodyR, bodyH);
     std::printf("  head      : R=%.3f\n", headR);
@@ -882,7 +881,7 @@ int handleAltar(int& i, int argc, char** argv) {
     float maxR = topR + steps * stepStride;
     setCenteredBoundsXZ(wom, maxR, maxR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-altar")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  top      : R=%.3f H=%.3f\n", topR, topH);
     std::printf("  steps    : %d (stride %.3f)\n", steps, stepStride);
     std::printf("  base R   : %.3f\n", maxR);
@@ -943,14 +942,13 @@ int handlePortal(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     setCenteredBoundsXZ(wom, postHt, width * 0.5f, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-portal")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  width      : %.3f\n", width);
     std::printf("  height     : %.3f\n", height);
     std::printf("  post thick : %.3f\n", postThick);
     std::printf("  lintel H   : %.3f%s\n", lintelH,
                 lintelH > 0 ? "" : " (no lintel)");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -1102,14 +1100,13 @@ int handleArchway(int& i, int argc, char** argv) {
     float maxY = pillarH + arcOuter;
     setCenteredBoundsXZ(wom, thickness, width * 0.5f, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-archway")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  width      : %.3f\n", width);
     std::printf("  pillar H   : %.3f\n", pillarH);
     std::printf("  thickness  : %.3f\n", thickness);
     std::printf("  arch segs  : %d (radius %.3f)\n", archSegs, arcOuter);
     std::printf("  apex Y     : %.3f\n", maxY);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -1194,7 +1191,7 @@ int handleBarrel(int& i, int argc, char** argv) {
     float maxR = midR + hoopThick;
     setCenteredBoundsXZ(wom, maxR, maxR, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-barrel")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  rim R     : %.3f\n", topR);
     std::printf("  bulge R   : %.3f\n", midR);
     std::printf("  height    : %.3f\n", height);
@@ -1270,7 +1267,7 @@ int handleChest(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-hx, 0, -hz - 0.012f);
     wom.boundMax = glm::vec3( hx, maxY, hz + 0.012f);
     if (!saveWomOrError(wom, womBase, "gen-mesh-chest")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  width × depth : %.3f × %.3f\n", width, depth);
     std::printf("  body H        : %.3f\n", bodyH);
     std::printf("  lid H         : %.3f\n", lidH);
@@ -1376,7 +1373,7 @@ int handleAnvil(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-faceHx, 0, -maxZ);
     wom.boundMax = glm::vec3( maxX, bodyH, maxZ);
     if (!saveWomOrError(wom, womBase, "gen-mesh-anvil")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  length × width : %.3f × %.3f\n", length, width);
     std::printf("  body H         : %.3f\n", bodyH);
     std::printf("  horn length    : %.3f\n", hornLen);
@@ -1484,7 +1481,7 @@ int handleStairs(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh-stairs")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  steps     : %d\n", steps);
     std::printf("  stepHt    : %.3f\n", stepHeight);
     std::printf("  stepDep   : %.3f\n", stepDepth);
@@ -1571,7 +1568,7 @@ int handleGrid(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh-grid")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  subdivisions : %d (%dx%d cells)\n", N, N, N);
     std::printf("  size         : %.3f\n", size);
     std::printf("  vertices     : %zu = (N+1)²\n", wom.vertices.size());
@@ -1637,7 +1634,7 @@ int handleDisc(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh-disc")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  radius    : %.3f\n", radius);
     std::printf("  segments  : %d\n", segments);
     std::printf("  vertices  : %zu (1 center + %d ring)\n",
@@ -1792,7 +1789,7 @@ int handleTube(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh-tube")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  outer R   : %.3f\n", outerR);
     std::printf("  inner R   : %.3f\n", innerR);
     std::printf("  height    : %.3f\n", height);
@@ -1929,14 +1926,13 @@ int handleCapsule(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh-capsule")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  radius     : %.3f\n", radius);
     std::printf("  cylHeight  : %.3f\n", cylHeight);
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  segments   : %d\n", segments);
     std::printf("  stacks     : %d (per hemisphere)\n", stacks);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -2041,12 +2037,11 @@ int handleArch(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh-arch")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  opening    : %.3f W × %.3f H\n", openingW, openingH);
     std::printf("  thickness  : %.3f (column), depth %.3f (Y)\n", thickness, depth);
     std::printf("  segments   : %d (arch curve)\n", segments);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     std::printf("  bounds     : (%.2f, %.2f, %.2f) - (%.2f, %.2f, %.2f)\n",
                 wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
                 wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
@@ -2134,7 +2129,7 @@ int handlePyramid(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh-pyramid")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  sides     : %d\n", sides);
     std::printf("  base R    : %.3f\n", baseR);
     std::printf("  height    : %.3f\n", height);
@@ -2212,7 +2207,7 @@ int handleFence(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh-fence")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  posts     : %d\n", posts);
     std::printf("  spacing   : %.3f\n", spacing);
     std::printf("  height    : %.3f\n", postH);
@@ -2328,7 +2323,7 @@ int handleTree(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh-tree")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  trunk R   : %.3f\n", trunkR);
     std::printf("  trunk H   : %.3f\n", trunkH);
     std::printf("  foliage R : %.3f\n", foliR);
@@ -2709,7 +2704,7 @@ int handleMeshDispatch(int& i, int argc, char** argv) {
     std::filesystem::path womPath(womBase);
     std::filesystem::create_directories(womPath.parent_path());
     if (!saveWomOrError(wom, womBase, "gen-mesh")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  shape    : %s\n", s.c_str());
     std::printf("  size     : %.3f\n", size);
     std::printf("  vertices : %zu\n", wom.vertices.size());
@@ -2889,7 +2884,7 @@ int handleMushroom(int& i, int argc, char** argv) {
     float maxY = stalkH + capR;
     setCenteredBoundsXZ(wom, capR, capR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-mushroom")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  stalk     : R=%.3f H=%.3f\n", stalkR, stalkH);
     std::printf("  cap       : R=%.3f\n", capR);
     std::printf("  total H   : %.3f\n", maxY);
@@ -2995,7 +2990,7 @@ int handleCart(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-bedLen * 0.5f, 0, -maxZ);
     wom.boundMax = glm::vec3( bedLen * 0.5f, std::max(maxY, 2 * wheelR), maxZ);
     if (!saveWomOrError(wom, womBase, "gen-mesh-cart")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  bed       : %.3f × %.3f × %.3f\n",
                 bedLen, bedWidth, bedH);
     std::printf("  wheels    : 2 × R=%.3f thickness=%.3f\n",
@@ -3092,12 +3087,11 @@ int handleBanner(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-poleR, 0, fz1);
     wom.boundMax = glm::vec3(fx + poleR, poleH, poleR);
     if (!saveWomOrError(wom, womBase, "gen-mesh-banner")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  pole       : R=%.3f H=%.3f\n", poleR, poleH);
     std::printf("  flag       : W=%.3f H=%.3f (drapes -Z)\n",
                 flagW, flagH);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3143,14 +3137,13 @@ int handleGrave(int& i, int argc, char** argv) {
     float maxXZ = std::max(baseW * 0.5f, tabletW * 0.5f);
     setCenteredBoundsXZ(wom, maxXZ, baseDepth * 0.5f, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-grave")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  base       : %.3f × %.3f (h=%.3f)\n",
                 baseW, baseDepth, baseH);
     std::printf("  tablet     : %.3f × %.3f × %.3f\n",
                 tabletW, tabletH, tabletT);
     std::printf("  total H    : %.3f\n", maxY);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3199,7 +3192,7 @@ int handleBench(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     setCenteredBoundsXZ(wom, length * 0.5f, seatW * 0.5f, seatY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-bench")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  length    : %.3f\n", length);
     std::printf("  seat Y    : %.3f (thickness %.3f)\n", seatY, seatT);
     std::printf("  seat W    : %.3f\n", seatW);
@@ -3290,14 +3283,13 @@ int handleShrine(int& i, int argc, char** argv) {
     float maxY = roofY + roofT;
     setCenteredBoundsXZ(wom, roofHalfSize, roofHalfSize, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-shrine")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  size       : %.3f × %.3f\n", size, size);
     std::printf("  pillars    : 4 × R=%.3f H=%.3f\n", pillarR, pillarH);
     std::printf("  roof       : %.3f thick (%.3f overhang)\n",
                 roofT, halfSize * 0.05f);
     std::printf("  total H    : %.3f\n", maxY);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3338,12 +3330,11 @@ int handleTotem(int& i, int argc, char** argv) {
     float maxXZ = baseW * 0.5f;
     setCenteredBoundsXZ(wom, maxXZ, maxXZ, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-totem")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  base width : %.3f\n", baseW);
     std::printf("  segments   : %d (each %.3f tall)\n", segments, segH);
     std::printf("  total H    : %.3f\n", maxY);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3413,7 +3404,7 @@ int handleCage(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     setCenteredBoundsXZ(wom, halfW, halfW, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-cage")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  width × height : %.3f × %.3f\n", width, height);
     std::printf("  bars per side  : %d (%d total)\n",
                 barsPerSide, barTotal);
@@ -3476,14 +3467,13 @@ int handleThrone(int& i, int argc, char** argv) {
     float maxY = pedH + seatT + backH;
     setCenteredBoundsXZ(wom, halfPed, halfPed, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-throne")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  pedestal   : %.3f × %.3f (h=%.3f)\n",
                 pedSize, pedSize, pedH);
     std::printf("  seat       : %.3f × %.3f\n", seatW, seatT);
     std::printf("  backrest   : H=%.3f\n", backH);
     std::printf("  total H    : %.3f\n", maxY);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3597,12 +3587,11 @@ int handleCoffin(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-hW, 0.0f,    -hL);
     wom.boundMax = glm::vec3( hW, height,   hL);
     if (!saveWomOrError(wom, womBase, "gen-mesh-coffin")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  length     : %.3f\n", length);
     std::printf("  width      : %.3f (shoulder)\n", width);
     std::printf("  height     : %.3f\n", height);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3663,14 +3652,13 @@ int handleArchwayDouble(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfTotalX, 0.0f,    -halfPost);
     wom.boundMax = glm::vec3( halfTotalX, totalH,   halfPost);
     if (!saveWomOrError(wom, womBase, "gen-mesh-archway-double")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  total W    : %.3f (2 openings × %.3f + 3 posts × %.3f)\n",
                 halfTotalX * 2, openingWidth, postT);
     std::printf("  height     : %.3f opening + %.3f lintel\n",
                 openingHeight, lintelT);
     std::printf("  total H    : %.3f\n", totalH);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3739,7 +3727,7 @@ int handleBrazier(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfBowl, 0.0f,    -halfBowl);
     wom.boundMax = glm::vec3( halfBowl, totalH,   halfBowl);
     if (!saveWomOrError(wom, womBase, "gen-mesh-brazier")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  base       : %.3f square × %.3f thick\n",
                 baseSize, baseHeight);
     std::printf("  stem       : %.3f square × %.3f tall\n",
@@ -3747,8 +3735,7 @@ int handleBrazier(int& i, int argc, char** argv) {
     std::printf("  bowl       : %.3f wide × %.3f thick\n", bowlSize, bowlH);
     std::printf("  flames     : 3 (varied heights)\n");
     std::printf("  total H    : %.3f\n", totalH);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3806,14 +3793,13 @@ int handlePodium(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
     wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
     if (!saveWomOrError(wom, womBase, "gen-mesh-podium")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  base       : %.3f square × %.3f thick\n",
                 baseSize, baseHeight);
     std::printf("  steps      : %d (top %.3f square)\n", stepCount, topSize);
     std::printf("  lectern    : %.3f wide (at back)\n", lecternSize);
     std::printf("  total H    : %.3f\n", totalH);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3876,15 +3862,14 @@ int handleSundial(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
     wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
     if (!saveWomOrError(wom, womBase, "gen-mesh-sundial")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  base       : %.3f square × %.3f thick\n",
                 baseSize, baseHeight);
     std::printf("  gnomon     : %.3f tall × %.3f thick (along Z)\n",
                 gnomonHeight, gnomonT);
     std::printf("  markers    : 4 (N/S/E/W cardinal points)\n");
     std::printf("  total H    : %.3f\n", totalH);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -3953,14 +3938,13 @@ int handleScarecrow(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfArm, 0.0f,    -halfHead);
     wom.boundMax = glm::vec3( halfArm, totalH,   halfHead);
     if (!saveWomOrError(wom, womBase, "gen-mesh-scarecrow")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  body       : %.3f tall (%.3f square post)\n",
                 bodyHeight, postT);
     std::printf("  arm span   : %.3f wide\n", armSpan);
     std::printf("  head/hat   : %.3f / %.3f\n", headSize, hatSize);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4032,7 +4016,7 @@ int handleWeathervane(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-maxX,    0.0f,    -armLen);
     wom.boundMax = glm::vec3( maxX,    totalH,   armLen);
     if (!saveWomOrError(wom, womBase, "gen-mesh-weathervane")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  base       : %.3f square × %.3f tall\n",
                 baseSize, baseHeight);
@@ -4041,8 +4025,7 @@ int handleWeathervane(int& i, int argc, char** argv) {
     std::printf("  cross arms : 2 × %.3f half-length (N-S + E-W)\n", armLen);
     std::printf("  arrow      : %.3f half-length (with tail at -X)\n",
                 arrowLen);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4104,14 +4087,13 @@ int handleBeehive(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfPlateW, 0.0f,    -halfPlateW);
     wom.boundMax = glm::vec3( halfPlateW, totalH,   halfBaseW + entryT);
     if (!saveWomOrError(wom, womBase, "gen-mesh-beehive")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  base width : %.3f (plate %.3f thick)\n", baseWidth, plateH);
     std::printf("  height     : %.3f dome (4 tapered tiers)\n", height);
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  entrance   : %.3f wide × %.3f tall on +Z face\n",
                 entryW, entryH);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4170,14 +4152,13 @@ int handleGate(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfTotalX, 0.0f,        -halfPost);
     wom.boundMax = glm::vec3( halfTotalX, postHeight,   halfPost);
     if (!saveWomOrError(wom, womBase, "gen-mesh-gate")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  total W    : %.3f (opening %.3f + 2 posts)\n",
                 openingWidth + postT * 2, openingWidth);
     std::printf("  posts      : 2 × %.3f square × %.3f tall\n",
                 postT, postHeight);
     std::printf("  rails      : 3 × %.3f square (top/mid/bottom)\n", railT);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4242,14 +4223,13 @@ int handleCauldron(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfRim, 0.0f,    -halfRim);
     wom.boundMax = glm::vec3( halfRim, totalH,   halfRim);
     if (!saveWomOrError(wom, womBase, "gen-mesh-cauldron")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  rim width  : %.3f (widest)\n", rimWidth);
     std::printf("  body H     : %.3f (legs %.3f tall)\n", bodyHeight, legHeight);
     std::printf("  tiers      : bottom %.3f / mid %.3f / rim %.3f\n",
                 bottomW, midW, rimWidth);
     std::printf("  total H    : %.3f\n", totalH);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4299,13 +4279,12 @@ int handleStool(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfSeat, 0.0f,    -halfSeat);
     wom.boundMax = glm::vec3( halfSeat, seatTopY, halfSeat);
     if (!saveWomOrError(wom, womBase, "gen-mesh-stool")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  seat       : %.3f square × %.3f thick\n", seatSize, seatT);
     std::printf("  legs       : 4 × %.3f square (%.3f tall)\n",
                 legT, legHeight);
     std::printf("  total H    : %.3f\n", seatTopY);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4354,12 +4333,11 @@ int handleCrate(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfTotal, 0.0f,    -halfTotal);
     wom.boundMax = glm::vec3( halfTotal, size,     halfTotal);
     if (!saveWomOrError(wom, womBase, "gen-mesh-crate")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  size       : %.3f cube\n", size);
     std::printf("  posts      : 4 × %.3f square (full height)\n",
                 postRadius * 2);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4419,14 +4397,13 @@ int handleTombstone(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfBaseW, 0.0f,    -halfBaseD);
     wom.boundMax = glm::vec3( halfBaseW, height,   halfBaseD);
     if (!saveWomOrError(wom, womBase, "gen-mesh-tombstone")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  total H    : %.3f (base %.3f + slab %.3f + crown %.3f)\n",
                 height, baseH, slabH, crownH);
     std::printf("  slab       : %.3f wide × %.3f deep\n", width, depth);
     std::printf("  base scale : %.2fx (base %.3f wide × %.3f deep)\n",
                 baseScale, halfBaseW * 2, halfBaseD * 2);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4499,15 +4476,14 @@ int handleMailbox(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfBoxW, 0.0f,    -halfBoxL);
     wom.boundMax = glm::vec3( maxX,     totalH,   halfBoxL);
     if (!saveWomOrError(wom, womBase, "gen-mesh-mailbox")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  post       : %.3f square × %.3f tall\n",
                 postThickness, postHeight);
     std::printf("  box body   : %.3f L × %.3f W × %.3f H\n",
                 boxLength, boxWidth, boxHeight);
     std::printf("  flag       : pole + plate on +X side near front\n");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4574,7 +4550,7 @@ int handleSignpost(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-std::max(halfBase, halfSignZ), 0.0f,    -halfSignZ);
     wom.boundMax = glm::vec3( std::max(halfBase, halfSignZ), totalH,   halfSignZ);
     if (!saveWomOrError(wom, womBase, "gen-mesh-signpost")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  base       : %.3f square × %.3f tall\n",
                 baseSize, baseHeight);
@@ -4582,8 +4558,7 @@ int handleSignpost(int& i, int argc, char** argv) {
                 postThickness, postHeight);
     std::printf("  sign board : %.3f × %.3f (wide × tall)\n",
                 signWidth, signHeight);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4661,13 +4636,12 @@ int handleWell(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfOuter, 0.0f,    -halfOuter);
     wom.boundMax = glm::vec3( halfOuter, totalH,   halfOuter);
     if (!saveWomOrError(wom, womBase, "gen-mesh-well")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  outerSize  : %.3f square\n", outerSize);
     std::printf("  wall       : %.3f tall, %.3f thick\n", wallH, wallT);
     std::printf("  roof posts : 2 × %.3f tall\n", postH);
     std::printf("  total H    : %.3f (with cross beam)\n", totalH);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4724,13 +4698,12 @@ int handleLadder(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfRail);
     wom.boundMax = glm::vec3( halfW, height,   halfRail);
     if (!saveWomOrError(wom, womBase, "gen-mesh-ladder")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  size       : %.3f wide × %.3f tall\n", width, height);
     std::printf("  rails      : 2 × %.3f square (full height)\n", railT);
     std::printf("  rungs      : %d × %.3f (spacing %.3f)\n",
                 rungs, rungT, rungSpacing);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4806,15 +4779,14 @@ int handleBed(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfL);
     wom.boundMax = glm::vec3( halfW, totalH,   halfL);
     if (!saveWomOrError(wom, womBase, "gen-mesh-bed")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  size       : %.3f x %.3f x %.3f (W x H x L)\n",
                 width, totalH, length);
     std::printf("  mattress   : %.3f thick at y=%.3f\n",
                 matThick, matBottomY);
     std::printf("  headboard  : %.3f tall (foot %.3f tall)\n",
                 headH, footH);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4882,7 +4854,7 @@ int handleLamppost(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
     wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
     if (!saveWomOrError(wom, womBase, "gen-mesh-lamppost")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  total H    : %.3f\n", totalH);
     std::printf("  base       : %.3f square × %.3f tall\n",
                 baseSize, baseHeight);
@@ -4890,8 +4862,7 @@ int handleLamppost(int& i, int argc, char** argv) {
                 postThickness, postHeight);
     std::printf("  lantern    : %.3f square × %.3f tall (with cap)\n",
                 lanternSize, lanternHeight);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -4945,13 +4916,12 @@ int handleTable(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfD);
     wom.boundMax = glm::vec3( halfW, height,   halfD);
     if (!saveWomOrError(wom, womBase, "gen-mesh-table")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  size       : %.3f x %.3f x %.3f\n", width, height, depth);
     std::printf("  legs       : 4 × %.3f square (%.3f tall)\n",
                 legT, legHeight);
     std::printf("  top thick  : %.3f\n", topT);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5060,12 +5030,11 @@ int handleBookshelf(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfD);
     wom.boundMax = glm::vec3( halfW, height,   halfD);
     if (!saveWomOrError(wom, womBase, "gen-mesh-bookshelf")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  size       : %.3f x %.3f x %.3f\n", width, height, depth);
     std::printf("  shelves    : %d (%d books across all bays)\n",
                 shelves, totalBooks);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5179,7 +5148,7 @@ int handleTent(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-L2, 0, -W2);
     wom.boundMax = glm::vec3(+L2, height, +W2);
     if (!saveWomOrError(wom, womBase, "gen-mesh-tent")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  footprint  : %.3f x %.3f\n", length, width);
     std::printf("  height     : %.3f (ridge along X)\n", height);
     if (doorH > 0 && doorW > 0) {
@@ -5188,8 +5157,7 @@ int handleTent(int& i, int argc, char** argv) {
     } else {
         std::printf("  door       : (none)\n");
     }
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5304,13 +5272,12 @@ int handleArcheryTarget(int& i, int argc, char** argv) {
     setCenteredBoundsXZ(wom, halfStanceX + postW * 0.5f, halfT,
                          postH + faceR);
     if (!saveWomOrError(wom, womBase, "gen-mesh-archery-target")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  face       : R=%.3f x %.3f deep, %d sides\n",
                 faceR, faceT, sides);
     std::printf("  stand      : posts at ±%.3f, beam %.3f thick\n",
                 halfStanceX, beamT);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5367,7 +5334,7 @@ int handleForge(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     setCenteredBoundsXZ(wom, W2, D2, topY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-forge")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  hearth     : %.3f x %.3f x %.3f\n", width, depth, baseH);
     std::printf("  hood       : %.3f x %.3f x %.3f (inset %.3f)\n",
                 width - 2 * hoodInset, depth - 2 * hoodInset, hoodH,
@@ -5377,8 +5344,7 @@ int handleForge(int& i, int argc, char** argv) {
                     ? (std::to_string(chimneyW) + " x " +
                        std::to_string(chimneyH) + " tall").c_str()
                     : "(none)");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5436,13 +5402,12 @@ int handleOuthouse(int& i, int argc, char** argv) {
     setCenteredBoundsXZ(wom, std::max(W2, rofW2),
                         std::max(D2 + doorT, rofD2), height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-outhouse")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  body       : %.3f x %.3f x %.3f\n", width, depth, bodyH);
     std::printf("  door       : %.3f x %.3f on +Z face\n", doorW, doorH);
     std::printf("  roof       : %.3f thick, %.3f overhang\n",
                 roofT, roofOverhang);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5502,14 +5467,13 @@ int handleHitchingPost(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfX, 0, -halfZ);
     wom.boundMax = glm::vec3(+halfX, topY, +halfZ);
     if (!saveWomOrError(wom, womBase, "gen-mesh-hitching-post")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  posts      : 2 separated by %.3f, %.3f tall\n",
                 span, height);
     std::printf("  cross-bar  : %.3f thick at upper post height\n", barT);
     std::printf("  caps       : %s\n",
                 capH > 0 ? std::to_string(capH).c_str() : "(none)");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5570,14 +5534,13 @@ int handleTrainingDummy(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfX, 0, -halfZ);
     wom.boundMax = glm::vec3(+halfX, topY, +halfZ);
     if (!saveWomOrError(wom, womBase, "gen-mesh-training-dummy")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  post       : %.3f tall, %.3f square\n", baseH, postW);
     std::printf("  torso      : %.3f cube at y=%.3f\n", torsoSize, torsoCY);
     std::printf("  arms       : %.3f span x %.3f thick\n", armSpan, armT);
     std::printf("  head       : %s\n",
                 headSize > 0 ? std::to_string(headSize).c_str() : "(none)");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5631,13 +5594,12 @@ int handleWaterTrough(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-L2, 0, -W2);
     wom.boundMax = glm::vec3(+L2, height, +W2);
     if (!saveWomOrError(wom, womBase, "gen-mesh-water-trough")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  basin      : %.3f x %.3f x %.3f (wallT %.3f)\n",
                 length, width, height, wallT);
     std::printf("  cavity     : %.3f x %.3f x %.3f\n",
                 length - 2 * wallT, height - wallT, width - 2 * wallT);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5699,14 +5661,13 @@ int handleWatchpost(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfPlat, 0, -halfPlat);
     wom.boundMax = glm::vec3(+halfPlat, topY, +halfPlat);
     if (!saveWomOrError(wom, womBase, "gen-mesh-watchpost")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  post       : %.3f tall, %.3f square\n", postH, postW);
     std::printf("  platform   : %.3f square, %.3f thick\n",
                 platformSize, platformT);
     std::printf("  railing    : %s\n",
                 railingH > 0 ? std::to_string(railingH).c_str() : "(none)");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5764,14 +5725,13 @@ int handleCrateStack(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-halfX, 0, -halfZ);
     wom.boundMax = glm::vec3(+halfX, topY, +halfZ);
     if (!saveWomOrError(wom, womBase, "gen-mesh-crate-stack")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  layout     : %d × %d × %d (%d crates)\n",
                 columns, rows, layers, total);
     std::printf("  crate      : %.3f cube, gap %.3f\n", crateSize, gap);
     std::printf("  span       : %.3f × %.3f × %.3f\n",
                 halfX * 2.0f, topY, halfZ * 2.0f);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5845,7 +5805,7 @@ int handleWorkbench(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-L2, 0, -D2);
     wom.boundMax = glm::vec3(+L2, maxY, +D2);
     if (!saveWomOrError(wom, womBase, "gen-mesh-workbench")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  bench      : %.3f x %.3f x %.3f (top %.3f thick)\n",
                 length, depth, height, topT);
     std::printf("  legs       : 4 corners (R=%.3f)\n", legR);
@@ -5853,8 +5813,7 @@ int handleWorkbench(int& i, int argc, char** argv) {
                 viseSize > 0 ? std::to_string(viseSize).c_str() : "(none)");
     std::printf("  tray       : %s\n",
                 trayH > 0 ? std::to_string(trayH).c_str() : "(none)");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -5957,15 +5916,14 @@ int handleBedroll(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-radius, 0, -halfL);
     wom.boundMax = glm::vec3(+radius, 2.0f * radius, +maxZ);
     if (!saveWomOrError(wom, womBase, "gen-mesh-bedroll")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  bedroll    : len=%.3f, R=%.3f, %d sides\n",
                 length, radius, sides);
     if (pillowSize > 0)
         std::printf("  pillow     : %.3f cube at +Z end\n", pillowSize);
     else
         std::printf("  pillow     : (none)\n");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -6011,14 +5969,13 @@ int handleChimney(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-maxX, 0, -maxZ);
     wom.boundMax = glm::vec3(+maxX, height, +maxZ);
     if (!saveWomOrError(wom, womBase, "gen-mesh-chimney")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  shaft      : %.3f x %.3f x %.3f\n", width, depth, shaftH);
     if (capH > 0)
         std::printf("  cap        : %.3f thick, %.3f wider\n", capH, capExtra);
     else
         std::printf("  cap        : (none)\n");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -6091,14 +6048,13 @@ int handlePergola(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-L2, 0, -W2);
     wom.boundMax = glm::vec3(+L2, topY, +W2);
     if (!saveWomOrError(wom, womBase, "gen-mesh-pergola")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  footprint  : %.3f x %.3f\n", length, width);
     std::printf("  height     : %.3f (post %.3f + beam %.3f)\n",
                 height, postH, beamT);
     std::printf("  posts      : 4 corners (R=%.3f)\n", postR);
     std::printf("  cross beams: %d\n", crossbeams);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -6156,13 +6112,12 @@ int handleDock(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-W2, 0, -L2);
     wom.boundMax = glm::vec3( W2, height + deckT, +L2);
     if (!saveWomOrError(wom, womBase, "gen-mesh-dock")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  deck       : %.3fW x %.3fL x %.3f thick at H=%.3f\n",
                 width, length, deckT, height);
     std::printf("  pilings    : %d per side × 2 (W=%.3f)\n",
                 pilingsPerSide, pilingW);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -6306,11 +6261,10 @@ int handleHaystack(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     setCenteredBoundsXZ(wom, baseR, baseR, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-haystack")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  base R     : %.3f, height %.3f\n", baseR, height);
     std::printf("  layers     : %d (%d sides each)\n", layers, sides);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -6379,7 +6333,7 @@ int handleCanopy(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-maxX, 0, -maxZ);
     wom.boundMax = glm::vec3( maxX, height, +maxZ);
     if (!saveWomOrError(wom, womBase, "gen-mesh-canopy")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  footprint  : %.3f x %.3f\n", width, depth);
     std::printf("  height     : %.3f (post %.3f + panel %.3f)\n",
                 height, postH, panelT);
@@ -6388,8 +6342,7 @@ int handleCanopy(int& i, int argc, char** argv) {
         std::printf("  drape      : %.3f hanging from each edge\n", drape);
     else
         std::printf("  drape      : (none)\n");
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -6496,13 +6449,12 @@ int handleWoodpile(int& i, int argc, char** argv) {
     wom.boundMin = glm::vec3(-maxX, 0, -halfL);
     wom.boundMax = glm::vec3( maxX, maxY, +halfL);
     if (!saveWomOrError(wom, womBase, "gen-mesh-woodpile")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  logs       : 6 in 3-2-1 stack (R=%.3f, len=%.3f, sides=%d)\n",
                 logR, logLen, sides);
     std::printf("  span       : %.3fW x %.3fH x %.3fL\n",
                 maxX * 2.0f, maxY, logLen);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 
@@ -6557,13 +6509,12 @@ int handleFirepit(int& i, int argc, char** argv) {
     float maxY = std::max(stoneSize * 2.0f, logCY + logThick * 1.5f);
     setCenteredBoundsXZ(wom, maxR, maxR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-firepit")) return 1;
-    std::printf("Wrote %s.wom\n", womBase.c_str());
+    printWomWrote(womBase);
     std::printf("  ring       : R=%.3f, %d stones (%.3f cubes)\n",
                 ringR, stones, stoneSize);
     std::printf("  logs       : 2 crossed (len %.3f, thick %.3f)\n",
                 logLen, logThick);
-    std::printf("  vertices   : %zu\n", wom.vertices.size());
-    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    printWomMeshStats(wom);
     return 0;
 }
 

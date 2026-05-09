@@ -31,6 +31,23 @@ inline void setCenteredBoundsXZ(wowee::pipeline::WoweeModel& wom,
     wom.boundMax = glm::vec3( halfX, maxY,  halfZ);
 }
 
+// Print the canonical "Wrote <base>.wom" success line shown at
+// the start of every --gen-mesh-* handler's stat report. 72 sites
+// each ran the same printf — hoisting collapses each to one call.
+inline void printWomWrote(const std::string& base) {
+    std::printf("Wrote %s.wom\n", base.c_str());
+}
+
+// Print the standard final two stat lines shown at the end of
+// every --gen-mesh-* handler's report:
+//   vertices   : N
+//   triangles  : T
+// 49+ handlers used this exact pair before extraction.
+inline void printWomMeshStats(const wowee::pipeline::WoweeModel& wom) {
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+}
+
 // Save a WoweeModel and report a stderr message on failure.
 // Returns true on success so the caller can do
 // `if (!saveWomOrError(...)) return 1;`. The cmdName is included
