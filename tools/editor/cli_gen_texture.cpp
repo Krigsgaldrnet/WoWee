@@ -4235,6 +4235,89 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleWoodgrain(int& i, int argc, char** argv) {
+    // Wood-end grain: concentric annual rings centered slightly
+    // outside the image (so the texture shows arcs sweeping across
+    // it, not a bullseye like --gen-texture-rings). Ring spacing
+    // and per-ring darkness are jittered per ring index so
+    // adjacent rings don't read as a perfect modulus, mimicking
+    // real annual growth variation. Useful for tabletops, log-
+    // end caps, barrel lids, beam cross-sections.
+    std::string outPath = argv[++i];
+    std::string lightHex = argv[++i];
+    std::string darkHex  = argv[++i];
+    int spacing = 14;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, spacing);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        spacing < 2 || spacing > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-woodgrain: invalid dims (W/H 1..8192, "
+            "spacing 2..1024)\n");
+        return 1;
+    }
+    uint8_t lr, lg, lb, dr, dg, db;
+    if (!parseHex(lightHex, lr, lg, lb) ||
+        !parseHex(darkHex, dr, dg, db)) {
+        std::fprintf(stderr,
+            "gen-texture-woodgrain: hex color is invalid\n");
+        return 1;
+    }
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Center the rings off the upper-left corner so the texture
+    // shows sweeping arcs across most of its area. Distance from
+    // (cx, cy) determines the ring index.
+    const float cx = -W * 0.2f;
+    const float cy =  H * 0.5f;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float dx = x - cx;
+            float dy = y - cy;
+            float r = std::sqrt(dx * dx + dy * dy);
+            // Ring index + position within the ring [0, 1).
+            float ringF = r / spacing;
+            int ringIdx = static_cast<int>(ringF);
+            float frac = ringF - ringIdx;
+            // Per-ring jitter on darkness peak position (so dark
+            // rings don't repeat at exact intervals).
+            float jitter = ((hash32(ringIdx + seed) % 1000) / 1000.0f) - 0.5f;
+            // Dark ring is a thin band centered at frac=0.5+jitter
+            // with width 0.18. Brightness = 1.0 (light) outside,
+            // dropping to 0.0 (full dark color) at the band center.
+            float dist = std::abs(frac - (0.5f + jitter * 0.4f));
+            float t = std::max(0.0f, 1.0f - dist / 0.18f);
+            uint8_t r8 = static_cast<uint8_t>(lr + t * (dr - lr));
+            uint8_t g8 = static_cast<uint8_t>(lg + t * (dg - lg));
+            uint8_t b8 = static_cast<uint8_t>(lb + t * (db - lb));
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r8;
+            pixels[idx + 1] = g8;
+            pixels[idx + 2] = b8;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-woodgrain: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  light/dark : %s / %s\n", lightHex.c_str(), darkHex.c_str());
+    std::printf("  rings      : spacing=%d, seed=%u\n", spacing, seed);
+    return 0;
+}
+
 int handleMoss(int& i, int argc, char** argv) {
     // Moss: irregular spots scattered on a jittered grid. Each
     // grid cell has a hashed (x, y, presence, radius) so the
@@ -4974,6 +5057,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-starburst",      3, handleStarburst},
     {"--gen-texture-studs",          3, handleStuds},
     {"--gen-texture-moss",           3, handleMoss},
+    {"--gen-texture-woodgrain",      3, handleWoodgrain},
 };
 }  // namespace
 
