@@ -7191,6 +7191,178 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleHaystack(int& i, int argc, char** argv) {
+    // Layered farm haystack: 3+ stacked frustums, each smaller than
+    // the one below, with the topmost layer tapering to a point.
+    // The terraced silhouette reads as bound straw shocks rather
+    // than a smooth cone (which is what --gen-mesh-pyramid produces).
+    // The 57th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float baseR  = 0.6f;
+    float height = 0.9f;
+    int   layers = 3;
+    int   sides  = 12;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { layers = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { sides = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (baseR <= 0 || height <= 0 ||
+        layers < 2 || layers > 16 ||
+        sides < 6 || sides > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-haystack: dims > 0; layers 2..16; sides 6..64\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+        wowee::pipeline::WoweeModel::Vertex vtx;
+        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+        wom.vertices.push_back(vtx);
+        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    };
+    const float pi = 3.14159265358979f;
+    const float layerH = height / layers;
+    // Per-layer radii: outer = base * (1 - i/(layers+1)) so the top
+    // layer still has visible thickness and only the FINAL apex
+    // collapses to a point. Without the +1 the top frustum would
+    // already have radius 0.
+    auto rOf = [&](int li) {
+        return baseR * (1.0f - static_cast<float>(li) / (layers + 1));
+    };
+    // Each layer i: outer ring at y=i*layerH, inner ring at
+    // y=i*layerH (smaller, just inside the layer above's overhang),
+    // and side wall + top "shelf" annulus.
+    for (int li = 0; li < layers - 1; ++li) {
+        float y0 = li * layerH;
+        float y1 = (li + 1) * layerH;
+        float r0 = rOf(li);
+        float r1 = rOf(li + 1);
+        // Outer side wall: ring at (y0, r0) → ring at (y1, r0).
+        // Slope normal points outward. Vertical sides give the
+        // "stacked layer" look (no taper within a layer).
+        uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+            addV({r0 * std::cos(ang), y0, r0 * std::sin(ang)},
+                 n, {u, 0});
+        }
+        uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+            addV({r0 * std::cos(ang), y1, r0 * std::sin(ang)},
+                 n, {u, 1});
+        }
+        for (int s = 0; s < sides; ++s) {
+            wom.indices.insert(wom.indices.end(),
+                {bot + s, top + s, bot + s + 1,
+                 bot + s + 1, top + s, top + s + 1});
+        }
+        // Top shelf annulus: this is what makes the terraced look —
+        // the visible step where this layer meets the smaller
+        // layer above. Faces +Y.
+        uint32_t shelfOuter = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            addV({r0 * std::cos(ang), y1, r0 * std::sin(ang)},
+                 {0, 1, 0}, {0.5f + 0.5f * std::cos(ang),
+                              0.5f + 0.5f * std::sin(ang)});
+        }
+        uint32_t shelfInner = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            float ratio = r1 / r0;
+            addV({r1 * std::cos(ang), y1, r1 * std::sin(ang)},
+                 {0, 1, 0},
+                 {0.5f + 0.5f * ratio * std::cos(ang),
+                  0.5f + 0.5f * ratio * std::sin(ang)});
+        }
+        for (int s = 0; s < sides; ++s) {
+            wom.indices.insert(wom.indices.end(),
+                {shelfOuter + s, shelfOuter + s + 1, shelfInner + s,
+                 shelfInner + s, shelfOuter + s + 1, shelfInner + s + 1});
+        }
+    }
+    // Top layer: cone from the top frustum's inner radius to a
+    // single apex point.
+    {
+        int li = layers - 1;
+        float y0 = li * layerH;
+        float y1 = height;
+        float r0 = rOf(li);
+        glm::vec3 apex(0, y1, 0);
+        // Side cone fan.
+        for (int s = 0; s < sides; ++s) {
+            float u0 = static_cast<float>(s) / sides;
+            float u1 = static_cast<float>(s + 1) / sides;
+            float ang0 = u0 * 2.0f * pi;
+            float ang1 = u1 * 2.0f * pi;
+            glm::vec3 b0(r0 * std::cos(ang0), y0, r0 * std::sin(ang0));
+            glm::vec3 b1(r0 * std::cos(ang1), y0, r0 * std::sin(ang1));
+            // Per-triangle normal so each face is flat-shaded.
+            glm::vec3 n = glm::normalize(glm::cross(b1 - b0, apex - b0));
+            uint32_t i0 = addV(b0, n, {u0, 0});
+            uint32_t i1 = addV(b1, n, {u1, 0});
+            uint32_t i2 = addV(apex, n, {(u0 + u1) * 0.5f, 1});
+            wom.indices.insert(wom.indices.end(), {i0, i1, i2});
+        }
+    }
+    // Bottom disc faces -Y so the haystack is closed at ground level.
+    {
+        uint32_t center = addV({0, 0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+        uint32_t ring = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            addV({baseR * std::cos(ang), 0, baseR * std::sin(ang)},
+                 {0, -1, 0},
+                 {0.5f + 0.5f * std::cos(ang),
+                  0.5f + 0.5f * std::sin(ang)});
+        }
+        for (int s = 0; s < sides; ++s) {
+            wom.indices.insert(wom.indices.end(),
+                {center, ring + s + 1, ring + s});
+        }
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-baseR, 0, -baseR);
+    wom.boundMax = glm::vec3( baseR, height, baseR);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-haystack: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  base R     : %.3f, height %.3f\n", baseR, height);
+    std::printf("  layers     : %d (%d sides each)\n", layers, sides);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleCanopy(int& i, int argc, char** argv) {
     // Market-stall canopy: 4 corner posts holding a flat fabric
     // panel overhead. Optional drape lip hanging down from each
@@ -7622,6 +7794,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-firepit",        1, handleFirepit},
     {"--gen-mesh-woodpile",       1, handleWoodpile},
     {"--gen-mesh-canopy",         1, handleCanopy},
+    {"--gen-mesh-haystack",       1, handleHaystack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},

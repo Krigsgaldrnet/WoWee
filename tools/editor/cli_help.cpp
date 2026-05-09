@@ -216,6 +216,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Woodpile: 6 cylindrical logs in a 3-2-1 pyramid stack along Z axis (default 0.10/0.80/12)\n");
     std::printf("  --gen-mesh-canopy <wom-base> [width] [depth] [height] [postR] [panelT] [drape]\n");
     std::printf("                         Canopy: 4-post awning with flat top panel and optional drape lips (default 1.6/1.2/2.0/0.05/0.03/0.15)\n");
+    std::printf("  --gen-mesh-haystack <wom-base> [baseR] [height] [layers] [sides]\n");
+    std::printf("                         Haystack: terraced stack of N frustums tapering to an apex point (default 0.6/0.9/3/12)\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
     std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");
