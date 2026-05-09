@@ -1033,6 +1033,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGSP entries (menuId / title / per-option kind / target / cost / flags)\n");
     std::printf("  --validate-wgsp <wgsp-base> [--json]\n");
     std::printf("                         Static checks: menuId>0+unique, options non-empty, Submenu actionTarget exists, Coinpouch needs cost, faction conflict\n");
+    std::printf("  --gen-taxi <wtax-base> [name]\n");
+    std::printf("                         Emit .wtax starter: 2 nodes (Stormwind / Goldshire) + 2 paths (round-trip, 50s each, 3 waypoints)\n");
+    std::printf("  --gen-taxi-region <wtax-base> [name]\n");
+    std::printf("                         Emit .wtax 4-node region: NW/NE/SE/SW outposts on a 500m square + 4-path directed ring\n");
+    std::printf("  --gen-taxi-continent <wtax-base> [name]\n");
+    std::printf("                         Emit .wtax 6-node hub-spoke continent: central crossroads + 5 outliers + 3 perimeter shortcuts (8 paths)\n");
+    std::printf("  --info-wtax <wtax-base> [--json]\n");
+    std::printf("                         Print WTAX nodes (id / map / position / name) + paths (id / from->to / cost / waypoint count)\n");
+    std::printf("  --validate-wtax <wtax-base> [--json]\n");
+    std::printf("                         Static checks: ids>0+unique, finite positions, paths reference real nodes, no self-loop, non-negative delays\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

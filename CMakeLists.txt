@@ -611,6 +611,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_achievements.cpp
     src/pipeline/wowee_trainers.cpp
     src/pipeline/wowee_gossip.cpp
+    src/pipeline/wowee_taxi.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1368,6 +1369,7 @@ add_executable(wowee_editor
     tools/editor/cli_achievements_catalog.cpp
     tools/editor/cli_trainers_catalog.cpp
     tools/editor/cli_gossip_catalog.cpp
+    tools/editor/cli_taxi_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1457,6 +1459,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_achievements.cpp
     src/pipeline/wowee_trainers.cpp
     src/pipeline/wowee_gossip.cpp
+    src/pipeline/wowee_taxi.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
