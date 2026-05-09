@@ -7191,6 +7191,121 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleDock(int& i, int argc, char** argv) {
+    // Wooden dock / pier: a flat plank deck supported by N pairs
+    // of square pilings. Distinct from --gen-mesh-bridge which
+    // arcs OVER an obstacle — a dock walks straight out from a
+    // shoreline on stilts to the water. The 58th procedural mesh
+    // primitive.
+    std::string womBase = argv[++i];
+    float length = 3.0f;
+    float width  = 1.0f;
+    float height = 0.6f;
+    int   pilingsPerSide = 3;
+    float pilingW = 0.10f;
+    float deckT  = 0.10f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { length = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { pilingsPerSide = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { pilingW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { deckT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (length <= 0 || width <= 0 || height <= 0 ||
+        deckT <= 0 || pilingW <= 0 || pilingW * 2 >= width ||
+        pilingsPerSide < 1 || pilingsPerSide > 16) {
+        std::fprintf(stderr,
+            "gen-mesh-dock: dims > 0; pilingW*2 < width; pilings 1..16\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        const Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base+1, base+2, base, base+2, base+3});
+        }
+    };
+    const float W2 = width * 0.5f;
+    const float L2 = length * 0.5f;
+    // Deck slab spans the full footprint at the top.
+    addBox(0, height + deckT * 0.5f, 0, W2, deckT * 0.5f, L2);
+    // N pairs of pilings: pilingsPerSide along each long edge,
+    // evenly spaced. Outer face of each piling sits inside the deck
+    // outline by pilingW so the deck overhangs the pilings slightly
+    // — the standard "boards rest ON TOP of the posts" look.
+    const float pilingHY = height * 0.5f;
+    const float pilingX = W2 - pilingW;
+    for (int p = 0; p < pilingsPerSide; ++p) {
+        float t = (pilingsPerSide == 1) ? 0.5f
+                   : static_cast<float>(p) / (pilingsPerSide - 1);
+        float cz = -L2 + pilingW + t * (length - 2.0f * pilingW);
+        addBox(+pilingX, pilingHY, cz, pilingW, pilingHY, pilingW);
+        addBox(-pilingX, pilingHY, cz, pilingW, pilingHY, pilingW);
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-W2, 0, -L2);
+    wom.boundMax = glm::vec3( W2, height + deckT, +L2);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-dock: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  deck       : %.3fW x %.3fL x %.3f thick at H=%.3f\n",
+                width, length, deckT, height);
+    std::printf("  pilings    : %d per side × 2 (W=%.3f)\n",
+                pilingsPerSide, pilingW);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleHaystack(int& i, int argc, char** argv) {
     // Layered farm haystack: 3+ stacked frustums, each smaller than
     // the one below, with the topmost layer tapering to a point.
@@ -7795,6 +7910,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-woodpile",       1, handleWoodpile},
     {"--gen-mesh-canopy",         1, handleCanopy},
     {"--gen-mesh-haystack",       1, handleHaystack},
+    {"--gen-mesh-dock",           1, handleDock},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
