@@ -4655,6 +4655,117 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleLadder(int& i, int argc, char** argv) {
+    // Ladder: 2 vertical rails + N horizontal rungs evenly
+    // spaced between them. Sits flat against +Z (the climbing
+    // face) so it can be parented to walls / wagons / ship
+    // hulls. The 43rd procedural mesh primitive — useful for
+    // attics, ship rigging, dungeons, mage towers.
+    std::string womBase = argv[++i];
+    float height = 3.0f;
+    float width  = 0.6f;
+    int   rungs  = 8;
+    float railT  = 0.06f;
+    float rungT  = 0.04f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { rungs = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { railT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { rungT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (height <= 0 || width <= 0 || railT <= 0 || rungT <= 0 ||
+        rungs < 2 || rungs > 64 || railT * 2 >= width) {
+        std::fprintf(stderr,
+            "gen-mesh-ladder: dims > 0; rungs 2..64; rails must fit in width\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfW = width  * 0.5f;
+    float halfRail = railT * 0.5f;
+    float halfRung = rungT * 0.5f;
+    // 2 rails: full-height vertical boxes at x = ±(halfW - halfRail).
+    float railX = halfW - halfRail;
+    float railCY = height * 0.5f;
+    addBox( railX, railCY, 0, halfRail, height * 0.5f, halfRail);
+    addBox(-railX, railCY, 0, halfRail, height * 0.5f, halfRail);
+    // N rungs: horizontal boxes between rails, evenly spaced.
+    // First rung is rungSpacing/2 from the bottom; last is the
+    // same distance from the top — keeps the ladder symmetric.
+    // Rung interior length is width - 2*railT (between the rails).
+    float rungLen = width - 2 * railT;
+    float halfRungLen = rungLen * 0.5f;
+    float rungSpacing = height / static_cast<float>(rungs + 1);
+    for (int r = 0; r < rungs; ++r) {
+        float rungCY = (r + 1) * rungSpacing;
+        addBox(0, rungCY, 0, halfRungLen, halfRung, halfRung);
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfRail);
+    wom.boundMax = glm::vec3( halfW, height,   halfRail);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-ladder: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  size       : %.3f wide × %.3f tall\n", width, height);
+    std::printf("  rails      : 2 × %.3f square (full height)\n", railT);
+    std::printf("  rungs      : %d × %.3f (spacing %.3f)\n",
+                rungs, rungT, rungSpacing);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleBed(int& i, int argc, char** argv) {
     // Bed: 7-box bedroom prop — flat mattress slab, tall
     // headboard at one end, short shorter footboard at the
@@ -5303,6 +5414,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-bed") == 0 && i + 1 < argc) {
         outRc = handleBed(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-ladder") == 0 && i + 1 < argc) {
+        outRc = handleLadder(i, argc, argv); return true;
     }
     return false;
 }
