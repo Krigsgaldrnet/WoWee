@@ -1875,6 +1875,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSPR entries (id / spellId / kind / used slot count / item x count list / name)\n");
     std::printf("  --validate-wspr <wspr-base> [--json]\n");
     std::printf("                         Static checks: id+name+spellId required, reagentKind 0..4, no duplicate ids; warns on slot id/count mismatch, SoulShard kind with non-canonical reagent, FocusedItem kind with no slots, duplicate spellId\n");
+    std::printf("  --export-wspr-json <wspr-base> [out.json]\n");
+    std::printf("                         Export binary .wspr to a human-editable JSON sidecar (defaults to <base>.wspr.json). Reagent slot arrays exported as JSON arrays\n");
+    std::printf("  --import-wspr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wspr.json sidecar back into binary .wspr (accepts reagentKind int OR reagentKindName string; reagent arrays pad with zeros if shorter than 8)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

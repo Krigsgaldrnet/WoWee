@@ -5,6 +5,7 @@
 #include "pipeline/wowee_spell_reagents.hpp"
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -132,6 +133,165 @@ int handleInfo(int& i, int argc, char** argv) {
                     wowee::pipeline::WoweeSpellReagent::reagentKindName(e.reagentKind),
                     used, slots.c_str(), e.name.c_str());
     }
+    return 0;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWsprExt(base);
+    if (!wowee::pipeline::WoweeSpellReagentLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wspr-json: WSPR not found: %s.wspr\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellReagentLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wspr.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json items = nlohmann::json::array();
+        nlohmann::json counts = nlohmann::json::array();
+        for (int s = 0; s < wowee::pipeline::WoweeSpellReagent::kMaxReagentSlots; ++s) {
+            items.push_back(e.reagentItemId[s]);
+            counts.push_back(e.reagentCount[s]);
+        }
+        nlohmann::json je;
+        je["reagentSetId"] = e.reagentSetId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["spellId"] = e.spellId;
+        je["reagentItemId"] = items;
+        je["reagentCount"] = counts;
+        je["reagentKind"] = e.reagentKind;
+        je["reagentKindName"] =
+            wowee::pipeline::WoweeSpellReagent::reagentKindName(e.reagentKind);
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wspr-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  sets    : %zu\n", c.entries.size());
+    return 0;
+}
+
+uint8_t parseReagentKindToken(const nlohmann::json& jv,
+                              uint8_t fallback) {
+    if (jv.is_number_integer() || jv.is_number_unsigned()) {
+        int v = jv.get<int>();
+        if (v < 0 || v > wowee::pipeline::WoweeSpellReagent::Tradeable)
+            return fallback;
+        return static_cast<uint8_t>(v);
+    }
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        for (auto& ch : s) ch = static_cast<char>(std::tolower(ch));
+        if (s == "standard")     return wowee::pipeline::WoweeSpellReagent::Standard;
+        if (s == "soul-shard" ||
+            s == "soulshard")    return wowee::pipeline::WoweeSpellReagent::SoulShard;
+        if (s == "focused-item" ||
+            s == "focuseditem")  return wowee::pipeline::WoweeSpellReagent::FocusedItem;
+        if (s == "catalyst")     return wowee::pipeline::WoweeSpellReagent::Catalyst;
+        if (s == "tradeable")    return wowee::pipeline::WoweeSpellReagent::Tradeable;
+    }
+    return fallback;
+}
+
+// Read the reagentItemId / reagentCount fixed-length array
+// fields from the JSON sidecar. Pads with zeros if the
+// JSON array is shorter than kMaxReagentSlots, truncates
+// silently if longer (extra entries dropped).
+void readReagentSlotArray(const nlohmann::json& arr,
+                           uint32_t out[wowee::pipeline::WoweeSpellReagent::kMaxReagentSlots]) {
+    for (int s = 0; s < wowee::pipeline::WoweeSpellReagent::kMaxReagentSlots; ++s)
+        out[s] = 0;
+    if (!arr.is_array()) return;
+    int n = std::min<int>(arr.size(),
+        wowee::pipeline::WoweeSpellReagent::kMaxReagentSlots);
+    for (int s = 0; s < n; ++s)
+        out[s] = arr[s].get<uint32_t>();
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wspr-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wspr-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSpellReagent c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSpellReagent::Entry e;
+            if (je.contains("reagentSetId")) e.reagentSetId = je["reagentSetId"].get<uint32_t>();
+            if (je.contains("name"))         e.name = je["name"].get<std::string>();
+            if (je.contains("description"))  e.description = je["description"].get<std::string>();
+            if (je.contains("spellId"))      e.spellId = je["spellId"].get<uint32_t>();
+            if (je.contains("reagentItemId"))
+                readReagentSlotArray(je["reagentItemId"], e.reagentItemId);
+            if (je.contains("reagentCount"))
+                readReagentSlotArray(je["reagentCount"], e.reagentCount);
+            uint8_t kind = wowee::pipeline::WoweeSpellReagent::Standard;
+            if (je.contains("reagentKind"))
+                kind = parseReagentKindToken(je["reagentKind"], kind);
+            else if (je.contains("reagentKindName"))
+                kind = parseReagentKindToken(je["reagentKindName"], kind);
+            e.reagentKind = kind;
+            if (je.contains("iconColorRGBA"))
+                e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wspr.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWsprExt(outBase);
+    if (!wowee::pipeline::WoweeSpellReagentLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wspr-json: failed to save %s.wspr\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wspr\n", outBase.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  sets    : %zu\n", c.entries.size());
     return 0;
 }
 
@@ -274,6 +434,12 @@ bool handleSpellReagentsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wspr") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wspr-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wspr-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
