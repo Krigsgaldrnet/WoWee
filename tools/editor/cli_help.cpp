@@ -1245,6 +1245,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPET families (id / petType / atkSpd / dmg+arm mult / diet) + minions (id / summon / creatureId)\n");
     std::printf("  --validate-wpet <wpet-base> [--json]\n");
     std::printf("                         Static checks: ids>0+unique, name not empty, petType 0..2, atkSpeed>0, minion needs summon+creatureId\n");
+    std::printf("  --gen-auction <wauc-base> [name]\n");
+    std::printf("                         Emit .wauc starter: 1 neutral house with stock 12h/24h/48h tiers and 5%% house cut\n");
+    std::printf("  --gen-auction-pair <wauc-base> [name]\n");
+    std::printf("                         Emit .wauc 3 houses (Stormwind / Orgrimmar / Booty Bay) — faction 5%% cut vs neutral 15%% asymmetry\n");
+    std::printf("  --gen-auction-restricted <wauc-base> [name]\n");
+    std::printf("                         Emit .wauc 1 house with disallowedClassMask (no Containers/Quest/Keys) + tighter durations + bid cap\n");
+    std::printf("  --info-wauc <wauc-base> [--json]\n");
+    std::printf("                         Print WAUC houses (id / faction / deposit + cut percent / 3 duration tiers / disallow mask / npc)\n");
+    std::printf("  --validate-wauc <wauc-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, faction 0..3, durations short<=medium<=long, cut < 100%%\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
