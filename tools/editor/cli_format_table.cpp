@@ -131,6 +131,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','S','P','K'}, ".wspk",  "spells",    "--info-wspk",      "Spell pack catalog"},
     {{'W','P','H','M'}, ".wphm",  "anim",      "--info-wphm",      "Player movement-to-animation map"},
     {{'W','T','S','C'}, ".wtsc",  "transit",   "--info-wtsc",      "Transit schedule catalog"},
+    {{'W','P','R','T'}, ".wprt",  "portals",   "--info-wprt",      "Mage portal destinations catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

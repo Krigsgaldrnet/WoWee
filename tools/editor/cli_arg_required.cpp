@@ -395,6 +395,8 @@ const char* const kArgRequired[] = {
     "--gen-trn-zeppelins", "--gen-trn-boats", "--gen-trn-taxis",
     "--info-wtsc", "--validate-wtsc",
     "--export-wtsc-json", "--import-wtsc-json",
+    "--gen-prt-alliance", "--gen-prt-horde", "--gen-prt-teleports",
+    "--info-wprt", "--validate-wprt",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

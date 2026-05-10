@@ -153,6 +153,7 @@ constexpr FormatRow kFormats[] = {
     {"WSPK", ".wspk",  "spells",    "SkillLineAbility + per-spec tab order","Spell pack catalog (per-class spellbook tab layout)"},
     {"WPHM", ".wphm",  "anim",      "implicit M2 movementState->anim map","Player movement-to-animation map (per race/gender/state)"},
     {"WTSC", ".wtsc",  "transit",   "TaxiNodes + zeppelin GO scripts",   "Transit schedule catalog (taxi/zeppelin/boat scheduled departures)"},
+    {"WPRT", ".wprt",  "portals",   "SpellEffect TELEPORT_UNITS + AreaTrigger","Mage portal destinations catalog (spellId -> coords binding)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

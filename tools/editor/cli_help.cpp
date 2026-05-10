@@ -2559,6 +2559,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtsc to a human-editable JSON sidecar (defaults to <base>.wtsc.json; emits both vehicleType and factionAccess as int + name string; floats preserved bit-for-bit)\n");
     std::printf("  --import-wtsc-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtsc.json sidecar back into binary .wtsc (vehicleType int OR \"taxi\"/\"zeppelin\"/\"boat\"/\"mount\"; factionAccess int OR \"both\"/\"alliance\"/\"horde\"/\"neutral\")\n");
+    std::printf("  --gen-prt-alliance <wprt-base> [name]\n");
+    std::printf("                         Emit .wprt 4 Alliance city portals (Stormwind/Ironforge/Darnassus/Theramore) with Rune of Portals reagent (itemId 17032), level 40\n");
+    std::printf("  --gen-prt-horde <wprt-base> [name]\n");
+    std::printf("                         Emit .wprt 3 Horde city portals (Orgrimmar/Undercity/Thunder Bluff) with Rune of Portals, level 40\n");
+    std::printf("  --gen-prt-teleports <wprt-base> [name]\n");
+    std::printf("                         Emit .wprt 3 self-teleport spells (Teleport: Stormwind/Ironforge/Orgrimmar) — Teleport kind, costs Rune of Teleportation (itemId 17031), level 20\n");
+    std::printf("  --info-wprt <wprt-base> [--json]\n");
+    std::printf("                         Print WPRT entries (id / spellId / portalKind / factionAccess / levelRequirement / reagentItemId / destination)\n");
+    std::printf("  --validate-wprt <wprt-base> [--json]\n");
+    std::printf("                         Static checks: id+spellId+destination required, factionAccess 0..3, portalKind 0..1, no duplicate portalIds, no duplicate spellIds (would conflict on cast); warns on levelRequirement < 20 (vanilla mage cannot unlock), Portal kind without Rune of Portals (17032), Teleport kind without Rune of Teleportation (17031), and duplicate destination names (likely Teleport+Portal pair OR copy-paste bug)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
