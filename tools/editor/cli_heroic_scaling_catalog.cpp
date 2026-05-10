@@ -127,6 +127,134 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWhrdExt(base);
+    if (out.empty()) out = base + ".whrd.json";
+    if (!wowee::pipeline::WoweeHeroicScalingLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-whrd-json: WHRD not found: %s.whrd\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeHeroicScalingLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WHRD";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"scalingId", e.scalingId},
+            {"name", e.name},
+            {"description", e.description},
+            {"mapId", e.mapId},
+            {"difficultyId", e.difficultyId},
+            {"itemLevelDelta", e.itemLevelDelta},
+            {"bonusQualityChance", e.bonusQualityChance},
+            {"bonusQualityPct",
+                e.bonusQualityChance / 100.0},
+            {"dropChanceMultiplier", e.dropChanceMultiplier},
+            {"heroicTokenItemId", e.heroicTokenItemId},
+            {"bonusEmblemCount", e.bonusEmblemCount},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-whrd-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu scalings)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".whrd.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".whrd");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-whrd-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-whrd-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeHeroicScaling c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-whrd-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeHeroicScaling::Entry e;
+        e.scalingId = je.value("scalingId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.mapId = je.value("mapId", 0u);
+        e.difficultyId = je.value("difficultyId", 0u);
+        e.itemLevelDelta = static_cast<int16_t>(
+            je.value("itemLevelDelta", 0));
+        // bonusQualityChance: accept the basis-points int
+        // form (preferred) OR the bonusQualityPct float
+        // form (convenience for hand-edited JSON).
+        if (je.contains("bonusQualityChance") &&
+            je["bonusQualityChance"].is_number_integer()) {
+            e.bonusQualityChance = static_cast<uint16_t>(
+                je["bonusQualityChance"].get<int>());
+        } else if (je.contains("bonusQualityPct") &&
+                   je["bonusQualityPct"].is_number()) {
+            // pct → basis points (× 100, rounded)
+            double pct = je["bonusQualityPct"].get<double>();
+            int bp = static_cast<int>(pct * 100.0 + 0.5);
+            if (bp < 0) bp = 0;
+            if (bp > 65535) bp = 65535;
+            e.bonusQualityChance = static_cast<uint16_t>(bp);
+        }
+        e.dropChanceMultiplier = je.value(
+            "dropChanceMultiplier", 1.0f);
+        e.heroicTokenItemId = je.value("heroicTokenItemId", 0u);
+        e.bonusEmblemCount = static_cast<uint8_t>(
+            je.value("bonusEmblemCount", 0u));
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeHeroicScalingLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-whrd-json: failed to save %s.whrd\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.whrd (%zu scalings)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -271,6 +399,12 @@ bool handleHeroicScalingCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-whrd") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-whrd-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-whrd-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

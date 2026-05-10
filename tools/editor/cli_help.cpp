@@ -2275,6 +2275,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WHRD entries (id / map / difficulty / +ilvl / bonus quality %% / drop multiplier / token id / extra emblems / name)\n");
     std::printf("  --validate-whrd <whrd-base> [--json]\n");
     std::printf("                         Static checks: id+name required, difficultyId>0 (Normal=0 by convention), bonusQualityChance<=10000 basis points, dropChanceMultiplier>0, no duplicate scalingIds, no two scalings binding the same (mapId,difficultyId) tuple unless mapId=0 wildcard; warns on negative ilvlDelta (Heroic worse than Normal?), ilvl>50 (beyond canonical range), drop multiplier>10x\n");
+    std::printf("  --export-whrd-json <whrd-base> [out.json]\n");
+    std::printf("                         Export binary .whrd to a human-editable JSON sidecar (defaults to <base>.whrd.json; emits bonusQualityChance as both raw basis points AND derived bonusQualityPct float convenience field)\n");
+    std::printf("  --import-whrd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .whrd.json sidecar back into binary .whrd (bonusQualityChance accepts raw basis points int OR bonusQualityPct float — converts pct *100 -> basis points; itemLevelDelta is signed int16; dropChanceMultiplier is float)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
