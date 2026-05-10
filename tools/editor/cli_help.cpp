@@ -1355,6 +1355,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Recursively walk a directory; report per-format file count, total entries, and bytes for every Wowee open format found\n");
     std::printf("  --rename-by-magic <file> [--dry-run] [--force]\n");
     std::printf("                         Recover the correct .w* extension on a file by reading its 4-byte magic. --dry-run prints the planned move; --force overwrites\n");
+    std::printf("  --bulk-rename-by-magic <dir> [--dry-run] [--force]\n");
+    std::printf("                         Apply --rename-by-magic recursively to every file in <dir>. Conflicts are skipped without --force; exits 1 if any rename failed\n");
     std::printf("  --gen-animations <wani-base> [name]\n");
     std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
     std::printf("  --gen-animations-combat <wani-base> [name]\n");
