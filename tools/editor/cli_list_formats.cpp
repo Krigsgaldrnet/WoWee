@@ -162,6 +162,7 @@ constexpr FormatRow kFormats[] = {
     {"WBND", ".wbnd",  "loot",      "ItemTemplate.bondingType + LootMgr",  "Soulbind rules catalog (BoP/BoE/BoU/BoA + raid-trade window)"},
     {"WBHV", ".wbhv",  "ai",        "creature_template.AIName + ScriptMgr","Creature behavior catalog (combat AI archetypes + special abilities)"},
     {"WIRC", ".wirc",  "loot",      "ItemRandomProperties.dbc + LootMgr",  "Item random-property pool catalog (weighted suffix enchants)"},
+    {"WPRC", ".wprc",  "spells",    "SpellProcEvents + per-spell procFlags","Spell proc rules catalog (event triggers + ICD + self-loop guard)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

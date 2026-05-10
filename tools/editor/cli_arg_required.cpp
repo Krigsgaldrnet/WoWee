@@ -422,6 +422,8 @@ const char* const kArgRequired[] = {
     "--gen-irc-bear", "--gen-irc-eagle", "--gen-irc-tiger",
     "--info-wirc", "--validate-wirc",
     "--export-wirc-json", "--import-wirc-json",
+    "--gen-prc-weapon", "--gen-prc-ret", "--gen-prc-rage",
+    "--info-wprc", "--validate-wprc",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

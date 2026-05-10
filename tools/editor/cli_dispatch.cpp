@@ -182,6 +182,7 @@
 #include "cli_soulbind_rules_catalog.hpp"
 #include "cli_creature_behavior_catalog.hpp"
 #include "cli_random_property_catalog.hpp"
+#include "cli_spell_proc_rules_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -409,6 +410,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSoulbindRulesCatalog,
     handleCreatureBehaviorCatalog,
     handleRandomPropertyCatalog,
+    handleSpellProcRulesCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

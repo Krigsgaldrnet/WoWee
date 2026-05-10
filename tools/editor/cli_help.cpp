@@ -2685,6 +2685,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wirc to a human-editable JSON sidecar (defaults to <base>.wirc.json; allowedSlotsMask emitted as int + readable string; enchants as JSON object array of {enchantId, weight})\n");
     std::printf("  --import-wirc-json <json-path> [out-base]\n");
     std::printf("                         Import a .wirc.json sidecar back into binary .wirc (allowedSlotsMask uint8 bitmask of Helm=0x01..Belt=0x80; enchants accept JSON object array — round-trips weighted pools byte-identical)\n");
+    std::printf("  --gen-prc-weapon <wprc-base> [name]\n");
+    std::printf("                         Emit .wprc 3 vanilla weapon-enchant procs (Crusader OnHit 2%% / Lifestealing 5%% / Fiery Weapon 7%% with 1.5s ICD)\n");
+    std::printf("  --gen-prc-ret <wprc-base> [name]\n");
+    std::printf("                         Emit .wprc 4 Retribution Paladin procs (Vengeance OnCrit 5-stack / Seal of Justice OnHit 25%% with 60s per-target ICD / Reckoning OnBlock 10%% / Sanctity Aura OnCast bookkeeping)\n");
+    std::printf("  --gen-prc-rage <wprc-base> [name]\n");
+    std::printf("                         Emit .wprc 3 Warrior Rage-generation procs (Bloodrage OnCast / Berserker Rage OnCast immunity / Anger Mgmt OnDodge passive)\n");
+    std::printf("  --info-wprc <wprc-base> [--json]\n");
+    std::printf("                         Print WPRC entries (id / sourceSpellId / procEffectSpellId / triggerEvent / procChancePct / ICD ms / max stacks / flags / name)\n");
+    std::printf("  --validate-wprc <wprc-base> [--json]\n");
+    std::printf("                         Static checks: id+name+sourceSpellId+procEffectSpellId required, triggerEvent 0..8, procChancePct in 1..10000 (basis points; 0 = never fires, > 10000 = > 100%%); CRITICAL: sourceSpellId == procEffectSpellId on OnCast trigger errors (infinite proc loop — effect re-casts itself). Warns on 100%% chance + 0ms ICD on high-frequency event (OnHit/OnCrit/OnTakeDamage) — would spam every swing without rate limiting (performance footgun)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
