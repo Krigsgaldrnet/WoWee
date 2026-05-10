@@ -2023,6 +2023,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCMR entries (id / creatureGuid / pathKind / moveType / waypoint count / total path length yards / name)\n");
     std::printf("  --validate-wcmr <wcmr-base> [--json]\n");
     std::printf("                         Static checks: id+name+creatureGuid+waypoints required, pathKind 0..3, moveType 0..3, no duplicate ids; warns on 1-waypoint paths (idle), Loop with <3 waypoints (degenerate)\n");
+    std::printf("  --export-wcmr-json <wcmr-base> [out.json]\n");
+    std::printf("                         Export binary .wcmr to a human-editable JSON sidecar (defaults to <base>.wcmr.json). Waypoints exported as JSON arrays for variable-length editing\n");
+    std::printf("  --import-wcmr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcmr.json sidecar back into binary .wcmr (accepts pathKind/moveType int OR name; waypoint arrays length-preserving)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
