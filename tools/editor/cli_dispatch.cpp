@@ -72,6 +72,7 @@
 #include "cli_glyphs_catalog.hpp"
 #include "cli_vehicles_catalog.hpp"
 #include "cli_holidays_catalog.hpp"
+#include "cli_liquids_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -185,6 +186,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleGlyphsCatalog,
     handleVehiclesCatalog,
     handleHolidaysCatalog,
+    handleLiquidsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

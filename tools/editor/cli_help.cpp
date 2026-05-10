@@ -1333,6 +1333,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .whol to a human-editable JSON sidecar (defaults to <base>.whol.json)\n");
     std::printf("  --import-whol-json <json-path> [out-base]\n");
     std::printf("                         Import a .whol.json sidecar back into binary .whol (accepts holidayKind/recurrence int OR name string)\n");
+    std::printf("  --gen-liquids <wliq-base> [name]\n");
+    std::printf("                         Emit .wliq starter: 3 stock liquids (Fresh Water / Lava / Sludge Slime) with shaders+sounds+DPS\n");
+    std::printf("  --gen-liquids-magical <wliq-base> [name]\n");
+    std::printf("                         Emit .wliq 4 magical liquids (Fel Fire / Holy Light / Underworld / Cosmic) with damage spell IDs\n");
+    std::printf("  --gen-liquids-hazardous <wliq-base> [name]\n");
+    std::printf("                         Emit .wliq 3 high-damage liquids (Naxx Slime / Acid Bog / Fel Lava) with WSPL cross-refs\n");
+    std::printf("  --info-wliq <wliq-base> [--json]\n");
+    std::printf("                         Print WLIQ entries (id / kind / fog RGB / density / viscosity / DPS / spell+sound IDs / name)\n");
+    std::printf("  --validate-wliq <wliq-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name+shader+material not empty, kind 0..9, fog/visc 0..1, hazardous-no-damage warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

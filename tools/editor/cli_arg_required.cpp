@@ -131,6 +131,8 @@ const char* const kArgRequired[] = {
     "--gen-holidays", "--gen-holidays-weekly", "--gen-holidays-special",
     "--info-whol", "--validate-whol",
     "--export-whol-json", "--import-whol-json",
+    "--gen-liquids", "--gen-liquids-magical", "--gen-liquids-hazardous",
+    "--info-wliq", "--validate-wliq",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

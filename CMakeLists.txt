@@ -632,6 +632,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_glyphs.cpp
     src/pipeline/wowee_vehicles.cpp
     src/pipeline/wowee_holidays.cpp
+    src/pipeline/wowee_liquids.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1410,6 +1411,7 @@ add_executable(wowee_editor
     tools/editor/cli_glyphs_catalog.cpp
     tools/editor/cli_vehicles_catalog.cpp
     tools/editor/cli_holidays_catalog.cpp
+    tools/editor/cli_liquids_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1520,6 +1522,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_glyphs.cpp
     src/pipeline/wowee_vehicles.cpp
     src/pipeline/wowee_holidays.cpp
+    src/pipeline/wowee_liquids.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
