@@ -129,6 +129,7 @@ constexpr FormatRow kFormats[] = {
     {"WBAB", ".wbab",  "spells",    "Spell.dbc nextRank/prevRank ptrs",  "Buff & Aura book — long-duration class buffs with rank chains"},
     {"WTBD", ".wtbd",  "guilds",    "guild_member tabard config blob",   "Tabard design / heraldry catalog (3-color)"},
     {"WSPM", ".wspm",  "spellfx",   "AreaTrigger.dbc + decal blob",      "Spell persistent marker catalog (AoE ground decals)"},
+    {"WLDN", ".wldn",  "server",    "TutorialPopup + LevelMilestone msgs","Learning notification catalog (level-up milestones)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

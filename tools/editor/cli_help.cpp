@@ -2223,6 +2223,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wspm to a human-editable JSON sidecar (defaults to <base>.wspm.json; emits edgeFadeMode as both int AND name string; radius+duration as floats; decalColor as 0xAARRGGBB uint32)\n");
     std::printf("  --import-wspm-json <json-path> [out-base]\n");
     std::printf("                         Import a .wspm.json sidecar back into binary .wspm (edgeFadeMode int OR \"hard\"/\"softedge\"/\"pulse\"; stackable/destroyOnCancel bool OR int)\n");
+    std::printf("  --gen-ldn <wldn-base> [name]\n");
+    std::printf("                         Emit .wldn 5 LevelReach milestone notifications (level 20 mounts / 30 talent reset / 40 epic mount / 60 flying / 80 endgame)\n");
+    std::printf("  --gen-ldn-account <wldn-base> [name]\n");
+    std::printf("                         Emit .wldn 4 ItemAcquired/ZoneEntered/SpellLearned/QuestComplete notifications (first mail tutorial / Stormwind auction tip / dual-spec activation / transmog vendor unlock)\n");
+    std::printf("  --gen-ldn-rep <wldn-base> [name]\n");
+    std::printf("                         Emit .wldn 3 FactionStanding milestone notifications (Honored 9000 / Revered 21000 / Exalted 42000 with the Argent Crusade)\n");
+    std::printf("  --info-wldn <wldn-base> [--json]\n");
+    std::printf("                         Print WLDN entries (id / triggerKind / triggerValue / channel / faction filter / minTimePlayed / name)\n");
+    std::printf("  --validate-wldn <wldn-base> [--json]\n");
+    std::printf("                         Static checks: id+name+messageText required, triggerKind 0..5, channelKind 0..4, factionFilter 1..3, no duplicate ids; per-trigger triggerValue ranges (LevelReach 1-80, FactionStanding +-42000, ItemAcquired/QuestComplete/SpellLearned/ZoneEntered > 0)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
