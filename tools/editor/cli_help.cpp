@@ -1161,6 +1161,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMOU entries (id / kind / speed / required riding rank / faction / category / name)\n");
     std::printf("  --validate-wmou <wmou-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, summonSpellId>0, flying needs rank>=150, racial needs raceMask\n");
+    std::printf("  --gen-bg <wbgd-base> [name]\n");
+    std::printf("                         Emit .wbgd starter: 1 king-of-hill BG (10v10, 3-cap to win, 30 min limit)\n");
+    std::printf("  --gen-bg-classic <wbgd-base> [name]\n");
+    std::printf("                         Emit .wbgd 3 classic BGs: Warsong Gulch (CTF) + Arathi Basin (nodes) + Alterac Valley (resource race)\n");
+    std::printf("  --gen-bg-arena <wbgd-base> [name]\n");
+    std::printf("                         Emit .wbgd 3 arena formats: Nagrand 2v2 + Blade's Edge 3v3 + Lordaeron 5v5 (annihilation)\n");
+    std::printf("  --info-wbgd <wbgd-base> [--json]\n");
+    std::printf("                         Print WBGD entries (id / map / objective / player counts / level range / score / token reward)\n");
+    std::printf("  --validate-wbgd <wbgd-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name not empty, player counts>0+min<=max, level range valid, scoreToWin>0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

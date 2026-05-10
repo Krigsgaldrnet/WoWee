@@ -620,6 +620,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_titles.cpp
     src/pipeline/wowee_events.cpp
     src/pipeline/wowee_mounts.cpp
+    src/pipeline/wowee_battlegrounds.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1386,6 +1387,7 @@ add_executable(wowee_editor
     tools/editor/cli_titles_catalog.cpp
     tools/editor/cli_events_catalog.cpp
     tools/editor/cli_mounts_catalog.cpp
+    tools/editor/cli_battlegrounds_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1484,6 +1486,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_titles.cpp
     src/pipeline/wowee_events.cpp
     src/pipeline/wowee_mounts.cpp
+    src/pipeline/wowee_battlegrounds.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
