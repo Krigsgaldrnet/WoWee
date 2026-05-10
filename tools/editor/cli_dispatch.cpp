@@ -168,6 +168,7 @@
 #include "cli_anniversary_events_catalog.hpp"
 #include "cli_pvp_ranks_catalog.hpp"
 #include "cli_localization_catalog.hpp"
+#include "cli_global_channels_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -381,6 +382,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleAnniversaryEventsCatalog,
     handlePvPRanksCatalog,
     handleLocalizationCatalog,
+    handleGlobalChannelsCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

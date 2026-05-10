@@ -2489,6 +2489,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wlan to a human-editable JSON sidecar (defaults to <base>.wlan.json; emits both languageCode and namespace as int + name string; UTF-8 multibyte strings preserved)\n");
     std::printf("  --import-wlan-json <json-path> [out-base]\n");
     std::printf("                         Import a .wlan.json sidecar back into binary .wlan (languageCode int OR \"enUS\"/\"enGB\"/\"deDE\"/\"esES\"/\"frFR\"/\"itIT\"/\"koKR\"/\"ptBR\"/\"ruRU\"/\"zhCN\"/\"zhTW\"; namespace int OR \"ui\"/\"quest\"/\"item\"/\"spell\"/\"creature\"/\"tooltip\"/\"gossip\"/\"system\")\n");
+    std::printf("  --gen-gch <wgch-base> [name]\n");
+    std::printf("                         Emit .wgch 4 standard server channels (LookingForGroup/World/General Global PublicJoin + Trade RealmZone AutoJoinOnZone Stormwind)\n");
+    std::printf("  --gen-gch-rp <wgch-base> [name]\n");
+    std::printf("                         Emit .wgch 4 RP server channels (RP_OOC PublicJoin + RP_IC Moderated 200-cap + RP_Forum InviteOnly 50-cap + RP_Events password-protected)\n");
+    std::printf("  --gen-gch-admin <wgch-base> [name]\n");
+    std::printf("                         Emit .wgch 3 moderator-only channels (GMTraffic invite + AuditLog moderated + Backstage invite — all password-gated, no logging on Backstage)\n");
+    std::printf("  --info-wgch <wgch-base> [--json]\n");
+    std::printf("                         Print WGCH entries (id / channelKind / accessKind / passwordRequired / levelMin / maxMembers / zoneDefaultMapId / name)\n");
+    std::printf("  --validate-wgch <wgch-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, channelKind 0..3, accessKind 0..3, no duplicate channelIds, no duplicate channel names (chat /join routing collision), AutoJoinOnZone REQUIRES zoneDefaultMapId; warns on dead zoneDefaultMapId set with non-AutoJoin kind\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

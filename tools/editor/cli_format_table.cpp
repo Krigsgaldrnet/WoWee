@@ -126,6 +126,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','A','N','V'}, ".wanv",  "events",    "--info-wanv",      "Anniversary & recurring event catalog"},
     {{'W','P','R','G'}, ".wprg",  "pvp",       "--info-wprg",      "PvP ranking grades catalog"},
     {{'W','L','A','N'}, ".wlan",  "i18n",      "--info-wlan",      "Localization catalog"},
+    {{'W','G','C','H'}, ".wgch",  "chat",      "--info-wgch",      "Global chat channel catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},
