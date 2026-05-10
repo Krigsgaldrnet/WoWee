@@ -1865,6 +1865,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wctr to a human-editable JSON sidecar (defaults to <base>.wctr.json)\n");
     std::printf("  --import-wctr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wctr.json sidecar back into binary .wctr (accepts currencyKind int OR currencyKindName string; isAccountWide bool OR int)\n");
+    std::printf("  --gen-spr <wspr-base> [name]\n");
+    std::printf("                         Emit .wspr 4 mage portal/teleport reagents (Stormwind/Ironforge/Darnassus/Theramore) consuming Rune of Teleportation\n");
+    std::printf("  --gen-spr-warlock <wspr-base> [name]\n");
+    std::printf("                         Emit .wspr 4 warlock summons (Imp / Voidwalker / Succubus / Felhunter) each consuming 1 Soul Shard\n");
+    std::printf("  --gen-spr-rez <wspr-base> [name]\n");
+    std::printf("                         Emit .wspr 3 resurrection variants (Shaman Reincarnation / Priest Resurrection focused / Druid Rebirth no-cost) demonstrating each ReagentKind\n");
+    std::printf("  --info-wspr <wspr-base> [--json]\n");
+    std::printf("                         Print WSPR entries (id / spellId / kind / used slot count / item x count list / name)\n");
+    std::printf("  --validate-wspr <wspr-base> [--json]\n");
+    std::printf("                         Static checks: id+name+spellId required, reagentKind 0..4, no duplicate ids; warns on slot id/count mismatch, SoulShard kind with non-canonical reagent, FocusedItem kind with no slots, duplicate spellId\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

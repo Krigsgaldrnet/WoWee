@@ -120,6 +120,7 @@
 #include "cli_player_spawn_profiles_catalog.hpp"
 #include "cli_talent_tabs_catalog.hpp"
 #include "cli_currency_types_catalog.hpp"
+#include "cli_spell_reagents_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -281,6 +282,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handlePlayerSpawnProfilesCatalog,
     handleTalentTabsCatalog,
     handleCurrencyTypesCatalog,
+    handleSpellReagentsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
