@@ -2009,6 +2009,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSPS entries (id / triggerSpellId / fromSpellId / chance%% / PPM / ICD / charges / proc flags)\n");
     std::printf("  --validate-wsps <wsps-base> [--json]\n");
     std::printf("                         Static checks: id+name+triggerSpellId+procFlags required, no duplicate ids; warns on chance outside [0,1], procPpm<0, both chance+ppm set (PPM wins), neither set (never fires)\n");
+    std::printf("  --export-wsps-json <wsps-base> [out.json]\n");
+    std::printf("                         Export binary .wsps to a human-editable JSON sidecar (defaults to <base>.wsps.json)\n");
+    std::printf("  --import-wsps-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsps.json sidecar back into binary .wsps (procFlags accepts int OR pipe-separated label string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

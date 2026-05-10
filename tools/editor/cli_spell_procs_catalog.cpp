@@ -5,6 +5,7 @@
 #include "pipeline/wowee_spell_procs.hpp"
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -151,6 +152,157 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWspsExt(base);
+    if (!wowee::pipeline::WoweeSpellProcLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wsps-json: WSPS not found: %s.wsps\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellProcLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wsps.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        std::string flagNames;
+        appendProcFlagNames(e.procFlags, flagNames);
+        nlohmann::json je;
+        je["procId"] = e.procId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["triggerSpellId"] = e.triggerSpellId;
+        je["procFromSpellId"] = e.procFromSpellId;
+        je["procChance"] = e.procChance;
+        je["procPpm"] = e.procPpm;
+        je["procFlags"] = e.procFlags;
+        je["procFlagsLabels"] = flagNames;
+        je["internalCooldownMs"] = e.internalCooldownMs;
+        je["charges"] = e.charges;
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wsps-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  procs   : %zu\n", c.entries.size());
+    return 0;
+}
+
+uint32_t parseProcFlagsField(const nlohmann::json& jv) {
+    using F = wowee::pipeline::WoweeSpellProc;
+    if (jv.is_number_integer() || jv.is_number_unsigned())
+        return jv.get<uint32_t>();
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        uint32_t out = 0;
+        size_t pos = 0;
+        while (pos < s.size()) {
+            size_t end = s.find('|', pos);
+            if (end == std::string::npos) end = s.size();
+            std::string tok = s.substr(pos, end - pos);
+            for (auto& ch : tok) ch = static_cast<char>(std::tolower(ch));
+            if (tok == "dealtmeleeautoattack")  out |= F::DealtMeleeAutoAttack;
+            else if (tok == "dealtmeleespell")  out |= F::DealtMeleeSpell;
+            else if (tok == "takenmeleeautoattack") out |= F::TakenMeleeAutoAttack;
+            else if (tok == "takenmeleespell")  out |= F::TakenMeleeSpell;
+            else if (tok == "dealtrangedautoattack") out |= F::DealtRangedAutoAttack;
+            else if (tok == "dealtrangedspell") out |= F::DealtRangedSpell;
+            else if (tok == "dealtspell")       out |= F::DealtSpell;
+            else if (tok == "dealtspellheal")   out |= F::DealtSpellHeal;
+            else if (tok == "takenspell")       out |= F::TakenSpell;
+            else if (tok == "onkill")           out |= F::OnKill;
+            else if (tok == "ondeath")          out |= F::OnDeath;
+            else if (tok == "oncastfinished")   out |= F::OnCastFinished;
+            else if (tok == "critical")         out |= F::Critical;
+            pos = end + 1;
+        }
+        return out;
+    }
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wsps-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wsps-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSpellProc c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSpellProc::Entry e;
+            if (je.contains("procId"))             e.procId = je["procId"].get<uint32_t>();
+            if (je.contains("name"))               e.name = je["name"].get<std::string>();
+            if (je.contains("description"))        e.description = je["description"].get<std::string>();
+            if (je.contains("triggerSpellId"))     e.triggerSpellId = je["triggerSpellId"].get<uint32_t>();
+            if (je.contains("procFromSpellId"))    e.procFromSpellId = je["procFromSpellId"].get<uint32_t>();
+            if (je.contains("procChance"))         e.procChance = je["procChance"].get<float>();
+            if (je.contains("procPpm"))            e.procPpm = je["procPpm"].get<float>();
+            if (je.contains("procFlags"))
+                e.procFlags = parseProcFlagsField(je["procFlags"]);
+            else if (je.contains("procFlagsLabels"))
+                e.procFlags = parseProcFlagsField(je["procFlagsLabels"]);
+            if (je.contains("internalCooldownMs")) e.internalCooldownMs = je["internalCooldownMs"].get<uint32_t>();
+            if (je.contains("charges"))            e.charges = je["charges"].get<uint8_t>();
+            if (je.contains("iconColorRGBA"))      e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wsps.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWspsExt(outBase);
+    if (!wowee::pipeline::WoweeSpellProcLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wsps-json: failed to save %s.wsps\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wsps\n", outBase.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  procs   : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -285,6 +437,12 @@ bool handleSpellProcsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wsps") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wsps-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wsps-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
