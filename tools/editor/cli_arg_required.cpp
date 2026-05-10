@@ -254,6 +254,8 @@ const char* const kArgRequired[] = {
     "--gen-sef", "--gen-sef-healing", "--gen-sef-aura",
     "--info-wsef", "--validate-wsef",
     "--export-wsef-json", "--import-wsef-json",
+    "--gen-aur", "--gen-aur-stats", "--gen-aur-movement",
+    "--info-waur", "--validate-waur",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

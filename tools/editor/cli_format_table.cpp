@@ -85,6 +85,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','S','P','R'}, ".wspr",  "spells",    "--info-wspr",      "Spell reagent set catalog"},
     {{'W','A','C','R'}, ".wacr",  "achieve",   "--info-wacr",      "Achievement criteria catalog"},
     {{'W','S','E','F'}, ".wsef",  "spells",    "--info-wsef",      "Spell effect type catalog"},
+    {{'W','A','U','R'}, ".waur",  "spells",    "--info-waur",      "Spell aura type catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

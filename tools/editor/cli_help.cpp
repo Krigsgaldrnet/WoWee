@@ -1909,6 +1909,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsef to a human-editable JSON sidecar (defaults to <base>.wsef.json)\n");
     std::printf("  --import-wsef-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsef.json sidecar back into binary .wsef (accepts effectKind int OR effectKindName string; behaviorFlags int OR pipe-separated label string)\n");
+    std::printf("  --gen-aur <waur-base> [name]\n");
+    std::printf("                         Emit .waur 5 periodic auras (PeriodicDamage / PeriodicHeal / PeriodicEnergize / PeriodicLeech / PeriodicTriggerSpell) at canonical 3s tick\n");
+    std::printf("  --gen-aur-stats <waur-base> [name]\n");
+    std::printf("                         Emit .waur 5 stat-modifier auras (ModStat / ModResistance / ModDamageDone / ModHaste / ModCritPercent) — non-periodic, instantly applied\n");
+    std::printf("  --gen-aur-movement <waur-base> [name]\n");
+    std::printf("                         Emit .waur 4 movement-impairing auras (Stun / ModDecreaseSpeed / ModConfuse / Root) typically applied by CC spells\n");
+    std::printf("  --info-waur <waur-base> [--json]\n");
+    std::printf("                         Print WAUR entries (id / kind / targeting / stack flag / max stack / tick interval / name)\n");
+    std::printf("  --validate-waur <waur-base> [--json]\n");
+    std::printf("                         Static checks: name required, auraKind 0..8, targetingHint 0..3, no duplicate ids; errors on Periodic without tick interval; warns on non-periodic with tick interval, maxStackCount without isStackable\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

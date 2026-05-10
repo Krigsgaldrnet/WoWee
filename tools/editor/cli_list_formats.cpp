@@ -107,6 +107,7 @@ constexpr FormatRow kFormats[] = {
     {"WSPR", ".wspr",  "spells",    "Spell.dbc Reagent[8]+Count[8]",    "Spell reagent set catalog"},
     {"WACR", ".wacr",  "achieve",   "Achievement_Criteria.dbc",         "Achievement criteria catalog"},
     {"WSEF", ".wsef",  "spells",    "SpellEffect.Effect dispatch",      "Spell effect type catalog"},
+    {"WAUR", ".waur",  "spells",    "SpellEffect.EffectAuraType",       "Spell aura type catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

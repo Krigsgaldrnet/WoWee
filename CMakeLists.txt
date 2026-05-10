@@ -671,6 +671,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_spell_reagents.cpp
     src/pipeline/wowee_achievement_criteria.cpp
     src/pipeline/wowee_spell_effect_types.cpp
+    src/pipeline/wowee_spell_aura_types.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1502,6 +1503,7 @@ add_executable(wowee_editor
     tools/editor/cli_spell_reagents_catalog.cpp
     tools/editor/cli_achievement_criteria_catalog.cpp
     tools/editor/cli_spell_effect_types_catalog.cpp
+    tools/editor/cli_spell_aura_types_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1651,6 +1653,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_spell_reagents.cpp
     src/pipeline/wowee_achievement_criteria.cpp
     src/pipeline/wowee_spell_effect_types.cpp
+    src/pipeline/wowee_spell_aura_types.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
