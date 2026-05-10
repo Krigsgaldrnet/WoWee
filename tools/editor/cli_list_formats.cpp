@@ -69,6 +69,7 @@ constexpr FormatRow kFormats[] = {
     {"WVHC", ".wvhc",  "vehicles",  "Vehicle.dbc + VehicleSeat.dbc",   "Vehicle + seat-layout catalog"},
     {"WHOL", ".whol",  "holiday",   "Holidays.dbc + game_event",       "Calendar holiday + event catalog"},
     {"WLIQ", ".wliq",  "liquids",   "LiquidType.dbc",                  "Liquid material catalog (water/lava/slime)"},
+    {"WANI", ".wani",  "anim",      "AnimationData.dbc",               "Animation ID + fallback + weapon-flag catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

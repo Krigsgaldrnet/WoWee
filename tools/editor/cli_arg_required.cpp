@@ -135,6 +135,8 @@ const char* const kArgRequired[] = {
     "--info-wliq", "--validate-wliq",
     "--export-wliq-json", "--import-wliq-json",
     "--info-magic",
+    "--gen-animations", "--gen-animations-combat", "--gen-animations-movement",
+    "--info-wani", "--validate-wani",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

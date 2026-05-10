@@ -1351,6 +1351,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print the catalog of all novel open formats (magic / extension / category / replaces / description)\n");
     std::printf("  --info-magic <path> [--json]\n");
     std::printf("                         Auto-detect any .w* file by 4-byte magic; report format / version / catalog name / entry count + suggest --info-* flag\n");
+    std::printf("  --gen-animations <wani-base> [name]\n");
+    std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
+    std::printf("  --gen-animations-combat <wani-base> [name]\n");
+    std::printf("                         Emit .wani 8 combat anims (1H/2H/dual-wield/bow/rifle/thrown + parry + channel) with weapon-flag bitmasks\n");
+    std::printf("  --gen-animations-movement <wani-base> [name]\n");
+    std::printf("                         Emit .wani 6 movement anims (Walk/Run/Sprint/Swim/Mount/Fly) with behavior-tier transitions (default/aerial/swim)\n");
+    std::printf("  --info-wani <wani-base> [--json]\n");
+    std::printf("                         Print WANI entries (id / tier / flags / weapon mask / loop duration / fallback / name)\n");
+    std::printf("  --validate-wani <wani-base> [--json]\n");
+    std::printf("                         Static checks: id-unique, name not empty, tier 0..4, fallback != self, loop+oneshot exclusivity, looped requires duration\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
