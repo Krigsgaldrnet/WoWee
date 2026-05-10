@@ -2611,6 +2611,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WQGR entries (questId / minLevel / maxLevel / questType / factionAccess / zoneId / chainHead / prereq + followup counts / name)\n");
     std::printf("  --validate-wqgr <wqgr-base> [--json]\n");
     std::printf("                         Static checks: id+name required, questType 0..4, factionAccess 0..3, maxLevel >= minLevel, no self-prereq (catch-22), no missing prereq questId, DFS cycle detection on prevQuestIds (progression deadlock — quests would be unreachable). Warns on followup hint to self/missing-id (advisory only) and on chainHeadHint=1 with non-empty prereqs (contradicts chain-head semantics)\n");
+    std::printf("  --export-wqgr-json <wqgr-base> [out.json]\n");
+    std::printf("                         Export binary .wqgr to a human-editable JSON sidecar (defaults to <base>.wqgr.json; emits both questType and factionAccess as int + name string; prevQuestIds/followupQuestIds as JSON int arrays)\n");
+    std::printf("  --import-wqgr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wqgr.json sidecar back into binary .wqgr (questType int OR \"normal\"/\"daily\"/\"repeatable\"/\"group\"/\"raid\"; factionAccess int OR \"both\"/\"alliance\"/\"horde\"/\"neutral\"; prereq + followup arrays accept JSON int arrays)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
