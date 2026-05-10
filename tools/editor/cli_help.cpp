@@ -1625,6 +1625,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WLDS entries (id / mapId / level range / display weight / expansion / animated+wide flags / name)\n");
     std::printf("  --validate-wlds <wlds-base> [--json]\n");
     std::printf("                         Static checks: id+name+texture required, expansion 0..3, level range valid, weight=0 warning, catch-all overlap\n");
+    std::printf("  --export-wlds-json <wlds-base> [out.json]\n");
+    std::printf("                         Export binary .wlds to a human-editable JSON sidecar (defaults to <base>.wlds.json)\n");
+    std::printf("  --import-wlds-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wlds.json sidecar back into binary .wlds (accepts expansionRequired int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

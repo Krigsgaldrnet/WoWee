@@ -193,6 +193,7 @@ const char* const kArgRequired[] = {
     "--export-wrun-json", "--import-wrun-json",
     "--gen-lds", "--gen-lds-instances", "--gen-lds-raid",
     "--info-wlds", "--validate-wlds",
+    "--export-wlds-json", "--import-wlds-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
