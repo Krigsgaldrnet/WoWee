@@ -208,6 +208,7 @@ const char* const kArgRequired[] = {
     "--export-wqso-json", "--import-wqso-json",
     "--gen-srg", "--gen-srg-ranged", "--gen-srg-friendly",
     "--info-wsrg", "--validate-wsrg",
+    "--export-wsrg-json", "--import-wsrg-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

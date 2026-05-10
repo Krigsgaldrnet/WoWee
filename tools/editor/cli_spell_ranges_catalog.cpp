@@ -5,6 +5,7 @@
 #include "pipeline/wowee_spell_ranges.hpp"
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -119,6 +120,151 @@ int handleInfo(int& i, int argc, char** argv) {
                     e.minRangeFriendly, e.maxRangeFriendly,
                     e.iconColorRGBA, e.name.c_str());
     }
+    return 0;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWsrgExt(base);
+    if (!wowee::pipeline::WoweeSpellRangeLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wsrg-json: WSRG not found: %s.wsrg\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellRangeLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wsrg.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["rangeId"] = e.rangeId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["rangeKind"] = e.rangeKind;
+        je["rangeKindName"] =
+            wowee::pipeline::WoweeSpellRange::rangeKindName(e.rangeKind);
+        je["minRange"] = e.minRange;
+        je["maxRange"] = e.maxRange;
+        je["minRangeFriendly"] = e.minRangeFriendly;
+        je["maxRangeFriendly"] = e.maxRangeFriendly;
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wsrg-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  ranges  : %zu\n", c.entries.size());
+    return 0;
+}
+
+uint8_t parseRangeKindToken(const nlohmann::json& jv,
+                            uint8_t fallback) {
+    if (jv.is_number_integer() || jv.is_number_unsigned()) {
+        int v = jv.get<int>();
+        if (v < 0 || v > wowee::pipeline::WoweeSpellRange::Unlimited)
+            return fallback;
+        return static_cast<uint8_t>(v);
+    }
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        for (auto& ch : s) ch = static_cast<char>(std::tolower(ch));
+        if (s == "self")        return wowee::pipeline::WoweeSpellRange::Self;
+        if (s == "melee")       return wowee::pipeline::WoweeSpellRange::Melee;
+        if (s == "short" ||
+            s == "shortranged") return wowee::pipeline::WoweeSpellRange::ShortRanged;
+        if (s == "ranged")      return wowee::pipeline::WoweeSpellRange::Ranged;
+        if (s == "long" ||
+            s == "longranged")  return wowee::pipeline::WoweeSpellRange::LongRanged;
+        if (s == "very-long" ||
+            s == "verylong")    return wowee::pipeline::WoweeSpellRange::VeryLong;
+        if (s == "unlimited")   return wowee::pipeline::WoweeSpellRange::Unlimited;
+    }
+    return fallback;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wsrg-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wsrg-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSpellRange c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSpellRange::Entry e;
+            if (je.contains("rangeId"))     e.rangeId = je["rangeId"].get<uint32_t>();
+            if (je.contains("name"))        e.name = je["name"].get<std::string>();
+            if (je.contains("description")) e.description = je["description"].get<std::string>();
+            // Accept both rangeKind (int) and rangeKindName
+            // (string) — falling back to the other when only
+            // one form is present, mirroring the dual int+name
+            // shape the export emits.
+            uint8_t kind = wowee::pipeline::WoweeSpellRange::Ranged;
+            if (je.contains("rangeKind"))
+                kind = parseRangeKindToken(je["rangeKind"], kind);
+            else if (je.contains("rangeKindName"))
+                kind = parseRangeKindToken(je["rangeKindName"], kind);
+            e.rangeKind = kind;
+            if (je.contains("minRange"))         e.minRange = je["minRange"].get<float>();
+            if (je.contains("maxRange"))         e.maxRange = je["maxRange"].get<float>();
+            if (je.contains("minRangeFriendly")) e.minRangeFriendly = je["minRangeFriendly"].get<float>();
+            if (je.contains("maxRangeFriendly")) e.maxRangeFriendly = je["maxRangeFriendly"].get<float>();
+            if (je.contains("iconColorRGBA"))    e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        // strip trailing ".json" or ".wsrg.json"
+        const std::string suffix1 = ".wsrg.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWsrgExt(outBase);
+    if (!wowee::pipeline::WoweeSpellRangeLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wsrg-json: failed to save %s.wsrg\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wsrg\n", outBase.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  ranges  : %zu\n", c.entries.size());
     return 0;
 }
 
@@ -240,6 +386,12 @@ bool handleSpellRangesCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wsrg") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wsrg-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wsrg-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

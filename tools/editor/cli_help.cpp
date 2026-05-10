@@ -1697,6 +1697,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSRG entries (id / kind / hostile + friendly min-max yards / icon color / name)\n");
     std::printf("  --validate-wsrg <wsrg-base> [--json]\n");
     std::printf("                         Static checks: id+name required, rangeKind 0..6, min<=max, no negatives, no duplicate ids; warns on Self+nonzero range and Melee>8y\n");
+    std::printf("  --export-wsrg-json <wsrg-base> [out.json]\n");
+    std::printf("                         Export binary .wsrg to a human-editable JSON sidecar (defaults to <base>.wsrg.json)\n");
+    std::printf("  --import-wsrg-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsrg.json sidecar back into binary .wsrg (accepts rangeKind int OR rangeKindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
