@@ -1175,6 +1175,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WBGD entries (id / map / objective / player counts / level range / score / token reward)\n");
     std::printf("  --validate-wbgd <wbgd-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, player counts>0+min<=max, level range valid, scoreToWin>0\n");
+    std::printf("  --gen-mail <wmal-base> [name]\n");
+    std::printf("                         Emit .wmal starter: 3 templates (quest overflow / auction won / GM gift) covering main mail categories\n");
+    std::printf("  --gen-mail-holiday <wmal-base> [name]\n");
+    std::printf("                         Emit .wmal 4 holiday samples (Tricky Treats / Brewfest / Lunar / Winter's Veil) with WTKN cross-refs\n");
+    std::printf("  --gen-mail-auction <wmal-base> [name]\n");
+    std::printf("                         Emit .wmal 5-template auction-house family (outbid / won / sold / expired / cancelled)\n");
+    std::printf("  --info-wmal <wmal-base> [--json]\n");
+    std::printf("                         Print WMAL templates (id / category / sender / subject + body / money + items / cod / expiry)\n");
+    std::printf("  --validate-wmal <wmal-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, subject not empty, sender set, attachments valid, no money+no items info-only\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
