@@ -2107,6 +2107,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGRP entries (id / map / diff / required tanks/heals/dps / min/max party / spec gate / name)\n");
     std::printf("  --validate-wgrp <wgrp-base>\n");
     std::printf("                         Static checks: id+name+mapId required, min<=max, role sum<=maxParty (else unfulfillable), no duplicate ids; warns on non-standard size, role sum<minParty, requiredTanks=0 (tank-immune fights)\n");
+    std::printf("  --export-wgrp-json <wgrp-base> [out.json]\n");
+    std::printf("                         Export binary .wgrp to a human-editable JSON sidecar (defaults to <base>.wgrp.json; sizeCategory string is informational, ignored on import)\n");
+    std::printf("  --import-wgrp-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wgrp.json sidecar back into binary .wgrp (requireSpec accepts bool OR int)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

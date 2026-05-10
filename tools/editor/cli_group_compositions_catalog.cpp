@@ -125,6 +125,144 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+// "5man"/"10man"/"25man"/"40man" form derived from
+// maxPartySize for human-readable JSON. Round-trip is
+// driven by maxPartySize itself; sizeCategory is purely
+// informational on export and ignored on import.
+const char* sizeCategoryName(uint8_t maxParty) {
+    switch (maxParty) {
+        case 5:  return "5man";
+        case 10: return "10man";
+        case 25: return "25man";
+        case 40: return "40man";
+        default: return "custom";
+    }
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWgrpExt(base);
+    if (out.empty()) out = base + ".wgrp.json";
+    if (!wowee::pipeline::WoweeGroupCompositionLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wgrp-json: WGRP not found: %s.wgrp\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeGroupCompositionLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WGRP";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"compId", e.compId},
+            {"name", e.name},
+            {"description", e.description},
+            {"mapId", e.mapId},
+            {"difficultyId", e.difficultyId},
+            {"requiredTanks", e.requiredTanks},
+            {"requiredHealers", e.requiredHealers},
+            {"requiredDamageDealers", e.requiredDamageDealers},
+            {"minPartySize", e.minPartySize},
+            {"maxPartySize", e.maxPartySize},
+            {"sizeCategory", sizeCategoryName(e.maxPartySize)},
+            {"requireSpec", e.requireSpec != 0},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wgrp-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu compositions)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wgrp.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wgrp");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wgrp-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wgrp-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeGroupComposition c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wgrp-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeGroupComposition::Entry e;
+        e.compId = je.value("compId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.mapId = je.value("mapId", 0u);
+        e.difficultyId = je.value("difficultyId", 0u);
+        e.requiredTanks = static_cast<uint8_t>(
+            je.value("requiredTanks", 0u));
+        e.requiredHealers = static_cast<uint8_t>(
+            je.value("requiredHealers", 0u));
+        e.requiredDamageDealers = static_cast<uint8_t>(
+            je.value("requiredDamageDealers", 0u));
+        e.minPartySize = static_cast<uint8_t>(
+            je.value("minPartySize", 5u));
+        e.maxPartySize = static_cast<uint8_t>(
+            je.value("maxPartySize", 5u));
+        // requireSpec accepts bool OR int.
+        if (je.contains("requireSpec")) {
+            const auto& rs = je["requireSpec"];
+            if (rs.is_boolean())
+                e.requireSpec = rs.get<bool>() ? 1 : 0;
+            else if (rs.is_number_integer())
+                e.requireSpec = static_cast<uint8_t>(
+                    rs.get<int>() != 0 ? 1 : 0);
+        }
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeGroupCompositionLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wgrp-json: failed to save %s.wgrp\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wgrp (%zu compositions)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -249,6 +387,12 @@ bool handleGroupCompositionsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wgrp") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wgrp-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wgrp-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
