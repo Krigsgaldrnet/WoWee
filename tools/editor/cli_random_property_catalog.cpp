@@ -277,6 +277,127 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWircExt(base);
+    if (out.empty()) out = base + ".wirc.json";
+    if (!wowee::pipeline::WoweeRandomPropertyLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wirc-json: WIRC not found: %s.wirc\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeRandomPropertyLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WIRC";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json enchants = nlohmann::json::array();
+        for (const auto& en : e.enchants) {
+            enchants.push_back({
+                {"enchantId", en.enchantId},
+                {"weight", en.weight},
+            });
+        }
+        arr.push_back({
+            {"poolId", e.poolId},
+            {"name", e.name},
+            {"scaleLevel", e.scaleLevel},
+            {"allowedSlotsMask", e.allowedSlotsMask},
+            {"allowedSlotsString",
+                slotsMaskString(e.allowedSlotsMask)},
+            {"allowedClassesMask", e.allowedClassesMask},
+            {"totalWeight", e.totalWeight},
+            {"enchants", enchants},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wirc-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu pools)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wirc.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wirc");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wirc-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wirc-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeRandomProperty c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wirc-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeRandomProperty::Entry e;
+        e.poolId = je.value("poolId", 0u);
+        e.name = je.value("name", std::string{});
+        e.scaleLevel = static_cast<uint8_t>(
+            je.value("scaleLevel", 0));
+        e.allowedSlotsMask = static_cast<uint8_t>(
+            je.value("allowedSlotsMask", 0));
+        e.allowedClassesMask = static_cast<uint16_t>(
+            je.value("allowedClassesMask", 0));
+        e.totalWeight = je.value("totalWeight", 0u);
+        if (je.contains("enchants") &&
+            je["enchants"].is_array()) {
+            for (const auto& enj : je["enchants"]) {
+                wowee::pipeline::WoweeRandomProperty::
+                    EnchantEntry en;
+                en.enchantId = enj.value("enchantId", 0u);
+                en.weight = enj.value("weight", 0u);
+                e.enchants.push_back(en);
+            }
+        }
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeRandomPropertyLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wirc-json: failed to save %s.wirc\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wirc (%zu pools)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleRandomPropertyCatalog(int& i, int argc, char** argv,
@@ -299,6 +420,14 @@ bool handleRandomPropertyCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wirc") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wirc-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wirc-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

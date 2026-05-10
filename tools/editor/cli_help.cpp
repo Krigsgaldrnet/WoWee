@@ -2681,6 +2681,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WIRC entries (poolId / scaleLevel / allowedSlots-mask-as-string / classes-bitmask / totalWeight / enchant count / name)\n");
     std::printf("  --validate-wirc <wirc-base> [--json]\n");
     std::printf("                         Static checks: id+name required, allowedSlotsMask != 0 (else pool is unreachable — no slot would ever roll it), non-empty enchant array (loot generator needs something to pick), no zero-id enchants, no duplicate enchantIds within same pool (should be merged with summed weight), no duplicate poolIds; CRITICAL: totalWeight MUST equal sum of enchant weights (else loot generator's denormalized roll mis-picks the distribution). Warns on enchant weight=0 (never picked, dead entry)\n");
+    std::printf("  --export-wirc-json <wirc-base> [out.json]\n");
+    std::printf("                         Export binary .wirc to a human-editable JSON sidecar (defaults to <base>.wirc.json; allowedSlotsMask emitted as int + readable string; enchants as JSON object array of {enchantId, weight})\n");
+    std::printf("  --import-wirc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wirc.json sidecar back into binary .wirc (allowedSlotsMask uint8 bitmask of Helm=0x01..Belt=0x80; enchants accept JSON object array — round-trips weighted pools byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
