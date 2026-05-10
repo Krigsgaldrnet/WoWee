@@ -154,6 +154,8 @@ const char* const kArgRequired[] = {
     "--gen-ceq", "--gen-ceq-bosses", "--gen-ceq-ranged",
     "--info-wceq", "--validate-wceq",
     "--export-wceq-json", "--import-wceq-json",
+    "--gen-itset", "--gen-itset-tier", "--gen-itset-pvp",
+    "--info-wset", "--validate-wset",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

@@ -1441,6 +1441,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wceq to a human-editable JSON sidecar (defaults to <base>.wceq.json)\n");
     std::printf("  --import-wceq-json <json-path> [out-base]\n");
     std::printf("                         Import a .wceq.json sidecar back into binary .wceq (slot fields default to canonical 16/17/18 if omitted)\n");
+    std::printf("  --gen-itset <wset-base> [name]\n");
+    std::printf("                         Emit .wset starter: 2 raid sets (Battlegear of Wrath / Stormrage Raiment) — 8-piece tier-2 layouts\n");
+    std::printf("  --gen-itset-tier <wset-base> [name]\n");
+    std::printf("                         Emit .wset 4 progression tier-1 sets (warrior plate / mage cloth / rogue leather / paladin holy plate) with 2/4/6 bonuses\n");
+    std::printf("  --gen-itset-pvp <wset-base> [name]\n");
+    std::printf("                         Emit .wset 3 PvP gladiator sets (5-piece) with 2/4 bonuses and honor-rank skill thresholds\n");
+    std::printf("  --info-wset <wset-base> [--json]\n");
+    std::printf("                         Print WSET entries (id / pieces / bonuses / classMask / skill+rank gates / first item ID / name)\n");
+    std::printf("  --validate-wset <wset-base> [--json]\n");
+    std::printf("                         Static checks: id+name+pieceCount required, piece/bonus arrays match counts, monotonic bonus thresholds within pieceCount\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

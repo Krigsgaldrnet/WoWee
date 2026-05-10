@@ -75,6 +75,7 @@ constexpr FormatRow kFormats[] = {
     {"WPCN", ".wpcn",  "logic",     "PlayerCondition.dbc + conditions", "Player condition (gates, AND/OR/NOT chains)"},
     {"WTSK", ".wtsk",  "crafting",  "SkillLineAbility.dbc + recipes",   "Trade skill recipes (per-profession crafts)"},
     {"WCEQ", ".wceq",  "creatures", "creature_equip_template",          "Creature equipment loadout (visible weapons)"},
+    {"WSET", ".wset",  "items",     "ItemSet.dbc + ItemSetSpell.dbc",   "Item set + tier-bonus catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
