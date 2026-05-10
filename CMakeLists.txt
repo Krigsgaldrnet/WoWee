@@ -690,6 +690,50 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_combat_maneuvers.cpp
     src/pipeline/wowee_realm_list.cpp
     src/pipeline/wowee_emotes.cpp
+    src/pipeline/wowee_buff_book.cpp
+    src/pipeline/wowee_tabards.cpp
+    src/pipeline/wowee_spell_markers.cpp
+    src/pipeline/wowee_learning_notifications.cpp
+    src/pipeline/wowee_creature_resists.cpp
+    src/pipeline/wowee_pet_talents.cpp
+    src/pipeline/wowee_heroic_scaling.cpp
+    src/pipeline/wowee_reputation_rewards.cpp
+    src/pipeline/wowee_minimap_levels.cpp
+    src/pipeline/wowee_pet_care.cpp
+    src/pipeline/wowee_movie_credits.cpp
+    src/pipeline/wowee_spell_variants.cpp
+    src/pipeline/wowee_voiceovers.cpp
+    src/pipeline/wowee_trade_rules.cpp
+    src/pipeline/wowee_word_filters.cpp
+    src/pipeline/wowee_raid_markers.cpp
+    src/pipeline/wowee_loot_modes.cpp
+    src/pipeline/wowee_sky_params.cpp
+    src/pipeline/wowee_server_config.cpp
+    src/pipeline/wowee_anniversary_events.cpp
+    src/pipeline/wowee_pvp_ranks.cpp
+    src/pipeline/wowee_localization.cpp
+    src/pipeline/wowee_global_channels.cpp
+    src/pipeline/wowee_addon_manifest.cpp
+    src/pipeline/wowee_spell_pack.cpp
+    src/pipeline/wowee_player_movement_anim.cpp
+    src/pipeline/wowee_transit_schedule.cpp
+    src/pipeline/wowee_mage_portals.cpp
+    src/pipeline/wowee_combat_stats.cpp
+    src/pipeline/wowee_guild_bank.cpp
+    src/pipeline/wowee_quest_graph.cpp
+    src/pipeline/wowee_crafting_recipes.cpp
+    src/pipeline/wowee_world_locations.cpp
+    src/pipeline/wowee_soulbind_rules.cpp
+    src/pipeline/wowee_creature_behavior.cpp
+    src/pipeline/wowee_random_property.cpp
+    src/pipeline/wowee_spell_proc_rules.cpp
+    src/pipeline/wowee_auction_houses.cpp
+    src/pipeline/wowee_battleground_rewards.cpp
+    src/pipeline/wowee_sound_swap.cpp
+    src/pipeline/wowee_tutorial_steps.cpp
+    src/pipeline/wowee_chat_commands.cpp
+    src/pipeline/wowee_camera_presets.cpp
+    src/pipeline/wowee_combat_formulas.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1543,7 +1587,54 @@ add_executable(wowee_editor
     tools/editor/cli_combat_maneuvers_catalog.cpp
     tools/editor/cli_realm_list_catalog.cpp
     tools/editor/cli_emotes_catalog.cpp
+    tools/editor/cli_buff_book_catalog.cpp
+    tools/editor/cli_tabards_catalog.cpp
+    tools/editor/cli_spell_markers_catalog.cpp
+    tools/editor/cli_learning_notifications_catalog.cpp
+    tools/editor/cli_creature_resists_catalog.cpp
+    tools/editor/cli_pet_talents_catalog.cpp
+    tools/editor/cli_heroic_scaling_catalog.cpp
+    tools/editor/cli_reputation_rewards_catalog.cpp
+    tools/editor/cli_minimap_levels_catalog.cpp
+    tools/editor/cli_pet_care_catalog.cpp
+    tools/editor/cli_movie_credits_catalog.cpp
+    tools/editor/cli_spell_variants_catalog.cpp
+    tools/editor/cli_voiceovers_catalog.cpp
+    tools/editor/cli_trade_rules_catalog.cpp
+    tools/editor/cli_word_filters_catalog.cpp
+    tools/editor/cli_raid_markers_catalog.cpp
+    tools/editor/cli_loot_modes_catalog.cpp
+    tools/editor/cli_sky_params_catalog.cpp
+    tools/editor/cli_server_config_catalog.cpp
+    tools/editor/cli_anniversary_events_catalog.cpp
+    tools/editor/cli_pvp_ranks_catalog.cpp
+    tools/editor/cli_localization_catalog.cpp
+    tools/editor/cli_global_channels_catalog.cpp
+    tools/editor/cli_addon_manifest_catalog.cpp
+    tools/editor/cli_spell_pack_catalog.cpp
+    tools/editor/cli_player_movement_anim_catalog.cpp
+    tools/editor/cli_transit_schedule_catalog.cpp
+    tools/editor/cli_mage_portals_catalog.cpp
+    tools/editor/cli_combat_stats_catalog.cpp
+    tools/editor/cli_guild_bank_catalog.cpp
+    tools/editor/cli_quest_graph_catalog.cpp
+    tools/editor/cli_crafting_recipes_catalog.cpp
+    tools/editor/cli_world_locations_catalog.cpp
+    tools/editor/cli_soulbind_rules_catalog.cpp
+    tools/editor/cli_creature_behavior_catalog.cpp
+    tools/editor/cli_random_property_catalog.cpp
+    tools/editor/cli_spell_proc_rules_catalog.cpp
+    tools/editor/cli_auction_houses_catalog.cpp
+    tools/editor/cli_battleground_rewards_catalog.cpp
+    tools/editor/cli_sound_swap_catalog.cpp
+    tools/editor/cli_tutorial_steps_catalog.cpp
+    tools/editor/cli_chat_commands_catalog.cpp
+    tools/editor/cli_camera_presets_catalog.cpp
+    tools/editor/cli_combat_formulas_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
+    tools/editor/cli_catalog_find.cpp
+    tools/editor/cli_catalog_by_name.cpp
+    tools/editor/cli_catalog_id_range.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1712,6 +1803,50 @@ add_executable(wowee_editor
     src/pipeline/wowee_combat_maneuvers.cpp
     src/pipeline/wowee_realm_list.cpp
     src/pipeline/wowee_emotes.cpp
+    src/pipeline/wowee_buff_book.cpp
+    src/pipeline/wowee_tabards.cpp
+    src/pipeline/wowee_spell_markers.cpp
+    src/pipeline/wowee_learning_notifications.cpp
+    src/pipeline/wowee_creature_resists.cpp
+    src/pipeline/wowee_pet_talents.cpp
+    src/pipeline/wowee_heroic_scaling.cpp
+    src/pipeline/wowee_reputation_rewards.cpp
+    src/pipeline/wowee_minimap_levels.cpp
+    src/pipeline/wowee_pet_care.cpp
+    src/pipeline/wowee_movie_credits.cpp
+    src/pipeline/wowee_spell_variants.cpp
+    src/pipeline/wowee_voiceovers.cpp
+    src/pipeline/wowee_trade_rules.cpp
+    src/pipeline/wowee_word_filters.cpp
+    src/pipeline/wowee_raid_markers.cpp
+    src/pipeline/wowee_loot_modes.cpp
+    src/pipeline/wowee_sky_params.cpp
+    src/pipeline/wowee_server_config.cpp
+    src/pipeline/wowee_anniversary_events.cpp
+    src/pipeline/wowee_pvp_ranks.cpp
+    src/pipeline/wowee_localization.cpp
+    src/pipeline/wowee_global_channels.cpp
+    src/pipeline/wowee_addon_manifest.cpp
+    src/pipeline/wowee_spell_pack.cpp
+    src/pipeline/wowee_player_movement_anim.cpp
+    src/pipeline/wowee_transit_schedule.cpp
+    src/pipeline/wowee_mage_portals.cpp
+    src/pipeline/wowee_combat_stats.cpp
+    src/pipeline/wowee_guild_bank.cpp
+    src/pipeline/wowee_quest_graph.cpp
+    src/pipeline/wowee_crafting_recipes.cpp
+    src/pipeline/wowee_world_locations.cpp
+    src/pipeline/wowee_soulbind_rules.cpp
+    src/pipeline/wowee_creature_behavior.cpp
+    src/pipeline/wowee_random_property.cpp
+    src/pipeline/wowee_spell_proc_rules.cpp
+    src/pipeline/wowee_auction_houses.cpp
+    src/pipeline/wowee_battleground_rewards.cpp
+    src/pipeline/wowee_sound_swap.cpp
+    src/pipeline/wowee_tutorial_steps.cpp
+    src/pipeline/wowee_chat_commands.cpp
+    src/pipeline/wowee_camera_presets.cpp
+    src/pipeline/wowee_combat_formulas.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

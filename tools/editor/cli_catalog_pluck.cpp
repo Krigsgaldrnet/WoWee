@@ -104,6 +104,17 @@ bool isExternalRefField(const std::string& k) {
         "animationId", "particleId", "ribbonId",
         "vehicleId", "seatId", "currencyId",
         "trainerId", "vendorId", "mailTemplateId",
+        // Player references — these are player profile
+        // references, not primary keys of the catalog
+        // they appear in.
+        "playerId", "characterId", "creatorPlayerId",
+        "ownerId", "ownerCharacterId", "leaderId",
+        // Glyph / emblem indexes — refer to art-asset
+        // glyph tables, not catalog primary keys.
+        "emblemId", "glyphId", "decalId",
+        // Rank-chain references in graph-shaped catalogs
+        // (WBAB next/previous edges).
+        "previousRankId", "nextRankId",
     };
     for (const char* ref : kExternals) {
         if (k == ref) return true;
@@ -118,6 +129,27 @@ bool isExternalRefField(const std::string& k) {
 // alphabetically, so we filter foreign keys before
 // picking. Falls back to first numeric field if no *Id
 // remains.
+
+// Per-magic explicit primary-key override. Used for
+// catalogs where the heuristic picks the wrong field
+// because too many foreign-key *Id fields sort before
+// the primary key, AND filtering them globally would
+// break other catalogs that legitimately use those
+// names as primary keys (e.g. WGLD has guildId as
+// primary key, so we can't filter guildId globally —
+// but WTBD has guildId as a foreign reference and needs
+// tabardId picked instead).
+const char* findExplicitPrimaryKey(const char magic[4]) {
+    static const struct { char magic[4]; const char* pk; }
+    kOverrides[] = {
+        {{'W','T','B','D'}, "tabardId"},
+    };
+    for (const auto& m : kOverrides) {
+        if (std::memcmp(m.magic, magic, 4) == 0) return m.pk;
+    }
+    return nullptr;
+}
+
 std::pair<bool, uint64_t>
 findEntryPrimaryKey(const nlohmann::json& entry) {
     if (!entry.is_object()) return {false, 0};
@@ -275,13 +307,40 @@ int handlePluck(int& i, int argc, char** argv) {
         return 1;
     }
     // Locate the entry whose primary-key field matches.
+    // Prefer the explicit per-magic override if one exists
+    // (avoids the heuristic's failure modes on catalogs
+    // with multiple ambiguous *Id fields). Otherwise fall
+    // back to the heuristic.
+    const char* explicitPk = findExplicitPrimaryKey(magic);
     const nlohmann::json* match = nullptr;
     std::string keyName;
     for (const auto& entry : doc["entries"]) {
-        auto [ok, key] = findEntryPrimaryKey(entry);
+        uint64_t key = 0;
+        bool ok = false;
+        std::string fieldName;
+        if (explicitPk != nullptr && entry.is_object() &&
+            entry.contains(explicitPk) &&
+            entry[explicitPk].is_number_integer()) {
+            key = entry[explicitPk].get<uint64_t>();
+            ok = true;
+            fieldName = explicitPk;
+        } else {
+            auto [okHeur, keyHeur] = findEntryPrimaryKey(entry);
+            ok = okHeur;
+            key = keyHeur;
+            fieldName = findEntryPrimaryKeyName(entry);
+        }
+        if (std::getenv("WOWEE_PLUCK_DEBUG") != nullptr) {
+            std::fprintf(stderr,
+                "[pluck-debug] entry: pkField=%s pkValue=%llu "
+                "(target=%llu)\n",
+                fieldName.c_str(),
+                static_cast<unsigned long long>(key),
+                static_cast<unsigned long long>(searchId));
+        }
         if (ok && key == searchId) {
             match = &entry;
-            keyName = findEntryPrimaryKeyName(entry);
+            keyName = fieldName;
             break;
         }
     }
