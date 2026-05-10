@@ -1421,6 +1421,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTSK entries (id / profession / 4 skill brackets / craft spell / produced item / qty / tool / reagent count / name)\n");
     std::printf("  --validate-wtsk <wtsk-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, profession 0..13, craft spell + produced item required, monotonic skill brackets\n");
+    std::printf("  --export-wtsk-json <wtsk-base> [out.json]\n");
+    std::printf("                         Export binary .wtsk to a human-editable JSON sidecar with nested reagents (defaults to <base>.wtsk.json)\n");
+    std::printf("  --import-wtsk-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtsk.json sidecar back into binary .wtsk (accepts profession int OR name string, reagents array up to 4 slots)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
