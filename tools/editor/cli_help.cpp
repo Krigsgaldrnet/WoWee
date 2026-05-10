@@ -2667,6 +2667,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WBHV entries (id / creatureKind / evadeBehavior / aggro / leash / corpse / mainAttackSpellId / specials count / name)\n");
     std::printf("  --validate-wbhv <wbhv-base> [--json]\n");
     std::printf("                         Static checks: id+name required, creatureKind 0..5, evadeBehavior 0..3, aggroRadius > 0, no duplicate behaviorIds, no zero-spellId specials, no duplicate spellId within same behavior; CRITICAL invariant: leashRadius >= aggroRadius (else creature evades before engaging — un-killable from outside leash). Warns on corpseDuration < 60s (looting may fail in busy zones), useChancePct=0 on a special (ability never auto-fires; verify owner-triggered intent like warlock Sacrifice)\n");
+    std::printf("  --export-wbhv-json <wbhv-base> [out.json]\n");
+    std::printf("                         Export binary .wbhv to a human-editable JSON sidecar (defaults to <base>.wbhv.json; emits both creatureKind and evadeBehavior as int + name string; specialAbilities as JSON object array of {spellId, cooldownMs, useChancePct})\n");
+    std::printf("  --import-wbhv-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wbhv.json sidecar back into binary .wbhv (creatureKind int OR \"melee\"/\"caster\"/\"tank\"/\"healer\"/\"pet\"/\"beast\"; evadeBehavior int OR \"resettospawn\"/\"healatpath\"/\"fleetospawn\"/\"noevade\"; specialAbilities accept JSON object array — round-trips per-behavior variable-length ability lists byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
