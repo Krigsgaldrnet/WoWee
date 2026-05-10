@@ -1923,6 +1923,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .waur to a human-editable JSON sidecar (defaults to <base>.waur.json)\n");
     std::printf("  --import-waur-json <json-path> [out-base]\n");
     std::printf("                         Import a .waur.json sidecar back into binary .waur (accepts auraKind/targetingHint int OR name; isStackable bool OR int)\n");
+    std::printf("  --gen-iqr <wiqr-base> [name]\n");
+    std::printf("                         Emit .wiqr 8 standard quality tiers (Poor through Heirloom) with canonical hex colors and disenchant rules\n");
+    std::printf("  --gen-iqr-server <wiqr-base> [name]\n");
+    std::printf("                         Emit .wiqr 4 server-custom tiers (Junk / Weekly / QuestLocked / Donator) with custom colors and non-standard markups\n");
+    std::printf("  --gen-iqr-raid <wiqr-base> [name]\n");
+    std::printf("                         Emit .wiqr 4 raid progression tiers (T1/T2/T3/Legendary lvl 60+) gated by minLevelToDrop and priced for server economy\n");
+    std::printf("  --info-wiqr <wiqr-base> [--json]\n");
+    std::printf("                         Print WIQR entries (id / name / nameColor RGBA / vendor multiplier / minLevel / maxLevel / disenchant flag / border texture)\n");
+    std::printf("  --validate-wiqr <wiqr-base> [--json]\n");
+    std::printf("                         Static checks: name required, no duplicate ids, vendor>=0, min<=max; warns on lvl>80 (unreachable), vendor>100x (sanity), alpha=0 nameColor (invisible)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

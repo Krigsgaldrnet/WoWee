@@ -125,6 +125,7 @@
 #include "cli_achievement_criteria_catalog.hpp"
 #include "cli_spell_effect_types_catalog.hpp"
 #include "cli_spell_aura_types_catalog.hpp"
+#include "cli_item_qualities_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -291,6 +292,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleAchievementCriteriaCatalog,
     handleSpellEffectTypesCatalog,
     handleSpellAuraTypesCatalog,
+    handleItemQualitiesCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
