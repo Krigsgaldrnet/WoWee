@@ -2401,6 +2401,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMAR entries (id / kind / priority / glyph / name)\n");
     std::printf("  --validate-wmar <wmar-base> [--json]\n");
     std::printf("                         Static checks: id+name required, markerKind 0..3, no duplicate markerIds, no two markers at same (kind, priority) slot (picker UI sort would be non-deterministic); warns on empty iconPath, empty/oversized displayChar, RaidTarget priority > 7 (exceeds canonical /raidicon dispatch range)\n");
+    std::printf("  --export-wmar-json <wmar-base> [out.json]\n");
+    std::printf("                         Export binary .wmar to a human-editable JSON sidecar (defaults to <base>.wmar.json; emits markerKind as both int AND name string; iconPath and displayChar as plain strings)\n");
+    std::printf("  --import-wmar-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wmar.json sidecar back into binary .wmar (markerKind int OR \"raidtarget\"/\"worldmap\"/\"party\"/\"custom\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
