@@ -1587,6 +1587,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wpvp to a human-editable JSON sidecar (defaults to <base>.wpvp.json)\n");
     std::printf("  --import-wpvp-json <json-path> [out-base]\n");
     std::printf("                         Import a .wpvp.json sidecar back into binary .wpvp (accepts rankKind int OR name string; bracket level defaults to 1..80)\n");
+    std::printf("  --gen-bnk <wbnk-base> [name]\n");
+    std::printf("                         Emit .wbnk starter: 5 inventory slots (16-slot main backpack + 4 player-equippable bag slots)\n");
+    std::printf("  --gen-bnk-bank <wbnk-base> [name]\n");
+    std::printf("                         Emit .wbnk 8 bank bag slots — first 2 free, then 6 with ascending gold costs (10s/1g/10g/25g/50g/100g)\n");
+    std::printf("  --gen-bnk-special <wbnk-base> [name]\n");
+    std::printf("                         Emit .wbnk 4 special slots (Keyring fixed, Soul Shard warlock-only, Quiver hunter-only, Hunters Stable for pets)\n");
+    std::printf("  --info-wbnk <wbnk-base> [--json]\n");
+    std::printf("                         Print WBNK entries (id / kind / size / display order / unlock status + cost / accept-mask / fixed bag item / name)\n");
+    std::printf("  --validate-wbnk <wbnk-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, kind 0..7, locked-with-zero-cost warning, fixed-slot-with-mask conflict, ambiguous (kind,order)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
