@@ -1775,6 +1775,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wspc to a human-editable JSON sidecar (defaults to <base>.wspc.json)\n");
     std::printf("  --import-wspc-json <json-path> [out-base]\n");
     std::printf("                         Import a .wspc.json sidecar back into binary .wspc (accepts powerType int OR name; costFlags int OR pipe-separated label string)\n");
+    std::printf("  --gen-gfs <wgfs-base> [name]\n");
+    std::printf("                         Emit .wgfs starter: 6 baseline glyph slots (3 Major + 3 Minor) all-class, unlocking at 25/50/75 each\n");
+    std::printf("  --gen-gfs-wotlk <wgfs-base> [name]\n");
+    std::printf("                         Emit .wgfs WotLK 3.3.5a layout: 3 Major (15/30/50) + 3 Minor (15/50/70), all-class\n");
+    std::printf("  --gen-gfs-cata <wgfs-base> [name]\n");
+    std::printf("                         Emit .wgfs Cataclysm layout: 3 Prime + 3 Major + 3 Minor (9 slots), all unlocking at 25/50/75\n");
+    std::printf("  --info-wgfs <wgfs-base> [--json]\n");
+    std::printf("                         Print WGFS entries (id / kind / displayOrder / minLevelToUnlock / classMask / name)\n");
+    std::printf("  --validate-wgfs <wgfs-base> [--json]\n");
+    std::printf("                         Static checks: id+name+classMask required, slotKind 0..2, no duplicate ids; warns on lvl>80, displayOrder>4, and (kind+order) collisions for overlapping classMask\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
