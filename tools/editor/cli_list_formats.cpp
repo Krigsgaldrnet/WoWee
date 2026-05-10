@@ -142,6 +142,7 @@ constexpr FormatRow kFormats[] = {
     {"WTRD", ".wtrd",  "social",    "trade-window state machine policy",  "Trade window rules catalog (P2P trade policy)"},
     {"WWFL", ".wwfl",  "social",    "chat preprocessor bad-word matcher", "Word filter catalog (spam/RMT/all-caps/URL)"},
     {"WMAR", ".wmar",  "ui",        "raid-target icon set (8 fixed)",     "Raid marker catalog (8 raid + map pins + party roles)"},
+    {"WLMA", ".wlma",  "loot",      "GroupLoot CMSG_LOOT_METHOD policy",  "Loot mode policy catalog (FFA / RR / Master / NBG / Personal)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

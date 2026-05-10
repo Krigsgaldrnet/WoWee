@@ -2405,6 +2405,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wmar to a human-editable JSON sidecar (defaults to <base>.wmar.json; emits markerKind as both int AND name string; iconPath and displayChar as plain strings)\n");
     std::printf("  --import-wmar-json <json-path> [out-base]\n");
     std::printf("                         Import a .wmar.json sidecar back into binary .wmar (markerKind int OR \"raidtarget\"/\"worldmap\"/\"party\"/\"custom\")\n");
+    std::printf("  --gen-lma <wlma-base> [name]\n");
+    std::printf("                         Emit .wlma 4 standard loot modes (FFA farming / RoundRobin trash / NeedBeforeGreed Uncommon threshold / MasterLoot Rare threshold)\n");
+    std::printf("  --gen-lma-raid <wlma-base> [name]\n");
+    std::printf("                         Emit .wlma 3 raid loot policies (MasterLoot Epic 25-man / Personal Loot Epic / NeedBeforeGreed Rare default)\n");
+    std::printf("  --gen-lma-afk <wlma-base> [name]\n");
+    std::printf("                         Emit .wlma 3 AFK-mitigating modes (RoundRobin idle-skip 30s / MasterLoot 60s timeout fallback / Personal idle-skip 45s)\n");
+    std::printf("  --info-wlma <wlma-base> [--json]\n");
+    std::printf("                         Print WLMA entries (id / kind / threshold quality / master-looter required / idle skip seconds / fallback kind / name)\n");
+    std::printf("  --validate-wlma <wlma-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, modeKind 0..5, thresholdQuality 0..7, no duplicate modeIds, MasterLoot kind REQUIRES masterLooterRequired=1 (else self-contradicting); warns on Personal kind with masterLooterRequired=1 (no-op flag), timeoutFallbackKind == modeKind (fallback to self is no-op)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
