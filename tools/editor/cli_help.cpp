@@ -1217,6 +1217,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGLD entries (id / faction / level / leader + motd / rank+member+tab+perk counts)\n");
     std::printf("  --validate-wgld <wgld-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name+leader not empty, faction 0..1, members reference valid ranks, unique tab indices\n");
+    std::printf("  --export-wgld-json <wgld-base> [out.json]\n");
+    std::printf("                         Export binary .wgld to a human-editable JSON sidecar (defaults to <base>.wgld.json)\n");
+    std::printf("  --import-wgld-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wgld.json sidecar back into binary .wgld (accepts faction int OR name string)\n");
     std::printf("  --gen-conditions <wpcd-base> [name]\n");
     std::printf("                         Emit .wpcd starter: 4 conditions covering quest-done / has-item / min-level / class kinds\n");
     std::printf("  --gen-conditions-gated <wpcd-base> [name]\n");
