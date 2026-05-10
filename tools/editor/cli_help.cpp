@@ -2629,6 +2629,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcra to a human-editable JSON sidecar (defaults to <base>.wcra.json; tradeSkillName is informational; reagents emitted as JSON object array of {itemId,count})\n");
     std::printf("  --import-wcra-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcra.json sidecar back into binary .wcra (tradeSkillId int authoritative, tradeSkillName ignored; reagents accept JSON object array — round-trips per-recipe variable-length reagent lists byte-identical)\n");
+    std::printf("  --gen-loc-poi <wloc-base> [name]\n");
+    std::printf("                         Emit .wloc 4 Alliance POIs (Stormwind/Ironforge/Goldshire/Sentinel Hill) with discoverable XP and POI-kind iconry\n");
+    std::printf("  --gen-loc-herb <wloc-base> [name]\n");
+    std::printf("                         Emit .wloc 5 Elwynn/Westfall herb nodes (Peacebloom/Silverleaf skill 1 to Stranglekelp skill 85) with 600s respawn and Herbalism (skillId 182) gating\n");
+    std::printf("  --gen-loc-rare <wloc-base> [name]\n");
+    std::printf("                         Emit .wloc 4 vanilla rare-elite spawns (Mor'Ladim 1hr / Princess Tempestria 2hr / Foreman Rigger 30min / Lord Sakrasis 1hr) with realistic respawn timers\n");
+    std::printf("  --info-wloc <wloc-base> [--json]\n");
+    std::printf("                         Print WLOC entries (id / mapId / areaId / locKindName / factionAccessName / respawnSec / discoverableXp / requiredSkill / level / name)\n");
+    std::printf("  --validate-wloc <wloc-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, locKind 0..6, factionAccess 0..3, no duplicate locationIds, spawnable kinds (Rare/Herb/Mineral/Fishing) MUST have respawnSec > 0 (else entity spawns once and never returns); warns on discoverableXp set with non-POI kind (XP would never award), requiredSkillId set with non-gather kind (skill check would never fire), and gather kind with skill > 0 but level = 0 (every player satisfies — verify intentional)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

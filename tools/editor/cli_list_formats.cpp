@@ -158,6 +158,7 @@ constexpr FormatRow kFormats[] = {
     {"WGBK", ".wgbk",  "guild",     "(absent in vanilla, TBC GuildBankTab)","Guild bank tabs catalog (per-rank withdrawal limits)"},
     {"WQGR", ".wqgr",  "quests",    "QuestRelations.dbc + per-quest scripts","Quest graph catalog (chain prereq DAG + cycle detection)"},
     {"WCRA", ".wcra",  "crafting",  "SpellReagents.dbc + Spell.dbc effect-24","Crafting recipe catalog (trade-skill recipe expansion)"},
+    {"WLOC", ".wloc",  "world",     "AreaPOI + GO spawns + AreaTrigger.dbc","World locations catalog (POI/RareSpawn/HerbNode/MineralVein/FishingSpot/Trigger/PortalLand)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
