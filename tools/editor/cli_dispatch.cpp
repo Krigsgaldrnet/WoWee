@@ -172,6 +172,7 @@
 #include "cli_addon_manifest_catalog.hpp"
 #include "cli_spell_pack_catalog.hpp"
 #include "cli_player_movement_anim_catalog.hpp"
+#include "cli_transit_schedule_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -389,6 +390,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleAddonManifestCatalog,
     handleSpellPackCatalog,
     handlePlayerMovementAnimCatalog,
+    handleTransitScheduleCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,
