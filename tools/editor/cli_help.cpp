@@ -1273,6 +1273,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCHN entries (id / type / faction / autoJoin/announce/moderated / level / map+area gates / name)\n");
     std::printf("  --validate-wchn <wchn-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, type 0..9, faction 0..2, world+area-gate combo warning\n");
+    std::printf("  --export-wchn-json <wchn-base> [out.json]\n");
+    std::printf("                         Export binary .wchn to a human-editable JSON sidecar (defaults to <base>.wchn.json)\n");
+    std::printf("  --import-wchn-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wchn.json sidecar back into binary .wchn (accepts channelType/factionAccess int OR name string)\n");
     std::printf("  --gen-cinematics <wcms-base> [name]\n");
     std::printf("                         Emit .wcms starter: 3 cinematics (pre-rendered intro / quest cutscene / login splash)\n");
     std::printf("  --gen-cinematics-intros <wcms-base> [name]\n");
