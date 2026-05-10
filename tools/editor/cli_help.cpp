@@ -2079,6 +2079,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSTM entries (id / kind / minLvl / maxLvl / baseValue / perLevelDelta / multiplier / value@lvl80 sample / name)\n");
     std::printf("  --validate-wstm <wstm-base> [--json]\n");
     std::printf("                         Static checks: id+name required, curveKind 0..6, minLevel<=maxLevel, no duplicate ids; warns on maxLevel>80, multiplier=0 (always 0), multiplier<0 (inverts), perLevelDelta<0 (shrinks)\n");
+    std::printf("  --export-wstm-json <wstm-base> [out.json]\n");
+    std::printf("                         Export binary .wstm to a human-editable JSON sidecar (defaults to <base>.wstm.json)\n");
+    std::printf("  --import-wstm-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wstm.json sidecar back into binary .wstm (accepts curveKind int OR curveKindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
