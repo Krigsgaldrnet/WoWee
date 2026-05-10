@@ -1653,6 +1653,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCRR entries (id / kind / pointsAtL1/L60/L70/L80 conversion floors / max benefit pct / name)\n");
     std::printf("  --validate-wcrr <wcrr-base> [--json]\n");
     std::printf("                         Static checks: id+name required, kind 0..4, all pointsAtLN > 0 (div-by-zero risk), maxPct > 0, monotonic ascending curve\n");
+    std::printf("  --export-wcrr-json <wcrr-base> [out.json]\n");
+    std::printf("                         Export binary .wcrr to a human-editable JSON sidecar (defaults to <base>.wcrr.json)\n");
+    std::printf("  --import-wcrr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcrr.json sidecar back into binary .wcrr (accepts ratingKind int OR name string; pointsAtLN default to canonical WoW values)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

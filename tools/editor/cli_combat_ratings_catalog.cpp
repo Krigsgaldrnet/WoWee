@@ -124,6 +124,127 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWcrrExt(base);
+    if (outPath.empty()) outPath = base + ".wcrr.json";
+    if (!wowee::pipeline::WoweeCombatRatingLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcrr-json: WCRR not found: %s.wcrr\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCombatRatingLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"ratingType", e.ratingType},
+            {"name", e.name},
+            {"description", e.description},
+            {"iconPath", e.iconPath},
+            {"ratingKind", e.ratingKind},
+            {"ratingKindName", wowee::pipeline::WoweeCombatRating::ratingKindName(e.ratingKind)},
+            {"pointsAtL1", e.pointsAtL1},
+            {"pointsAtL60", e.pointsAtL60},
+            {"pointsAtL70", e.pointsAtL70},
+            {"pointsAtL80", e.pointsAtL80},
+            {"maxBenefitPercent", e.maxBenefitPercent},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wcrr-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source  : %s.wcrr\n", base.c_str());
+    std::printf("  ratings : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wcrr.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWcrrExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wcrr-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wcrr-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "combat")     return wowee::pipeline::WoweeCombatRating::Combat;
+        if (s == "defense")    return wowee::pipeline::WoweeCombatRating::Defense;
+        if (s == "spell")      return wowee::pipeline::WoweeCombatRating::Spell;
+        if (s == "resilience") return wowee::pipeline::WoweeCombatRating::Resilience;
+        if (s == "other")      return wowee::pipeline::WoweeCombatRating::Other;
+        return wowee::pipeline::WoweeCombatRating::Combat;
+    };
+    wowee::pipeline::WoweeCombatRating c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeCombatRating::Entry e;
+            e.ratingType = je.value("ratingType", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            if (je.contains("ratingKind") &&
+                je["ratingKind"].is_number_integer()) {
+                e.ratingKind = static_cast<uint8_t>(
+                    je["ratingKind"].get<int>());
+            } else if (je.contains("ratingKindName") &&
+                       je["ratingKindName"].is_string()) {
+                e.ratingKind = kindFromName(
+                    je["ratingKindName"].get<std::string>());
+            }
+            e.pointsAtL1 = je.value("pointsAtL1", 1.0f);
+            e.pointsAtL60 = je.value("pointsAtL60", 14.0f);
+            e.pointsAtL70 = je.value("pointsAtL70", 22.0f);
+            e.pointsAtL80 = je.value("pointsAtL80", 45.0f);
+            e.maxBenefitPercent = je.value("maxBenefitPercent",
+                                            100.0f);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeCombatRatingLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcrr-json: failed to save %s.wcrr\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wcrr\n", outBase.c_str());
+    std::printf("  source  : %s\n", jsonPath.c_str());
+    std::printf("  ratings : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -243,6 +364,12 @@ bool handleCombatRatingsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wcrr") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcrr-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcrr-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
