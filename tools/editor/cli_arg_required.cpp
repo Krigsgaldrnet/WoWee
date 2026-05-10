@@ -413,6 +413,8 @@ const char* const kArgRequired[] = {
     "--gen-loc-poi", "--gen-loc-herb", "--gen-loc-rare",
     "--info-wloc", "--validate-wloc",
     "--export-wloc-json", "--import-wloc-json",
+    "--gen-bnd-vanilla", "--gen-bnd-tbc", "--gen-bnd-wotlk",
+    "--info-wbnd", "--validate-wbnd",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

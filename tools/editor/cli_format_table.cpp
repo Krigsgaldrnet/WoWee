@@ -137,6 +137,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','Q','G','R'}, ".wqgr",  "quests",    "--info-wqgr",      "Quest graph catalog"},
     {{'W','C','R','A'}, ".wcra",  "crafting",  "--info-wcra",      "Crafting recipe catalog"},
     {{'W','L','O','C'}, ".wloc",  "world",     "--info-wloc",      "World locations catalog"},
+    {{'W','B','N','D'}, ".wbnd",  "loot",      "--info-wbnd",      "Soulbind rules catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

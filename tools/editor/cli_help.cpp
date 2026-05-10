@@ -2643,6 +2643,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wloc to a human-editable JSON sidecar (defaults to <base>.wloc.json; emits both locKind and factionAccess as int + name string; floats preserved bit-for-bit)\n");
     std::printf("  --import-wloc-json <json-path> [out-base]\n");
     std::printf("                         Import a .wloc.json sidecar back into binary .wloc (locKind int OR \"poi\"/\"rarespawn\"/\"herbnode\"/\"mineralvein\"/\"fishingspot\"/\"areatrigger\"/\"portallanding\"; factionAccess int OR \"both\"/\"alliance\"/\"horde\"/\"neutral\")\n");
+    std::printf("  --gen-bnd-vanilla <wbnd-base> [name]\n");
+    std::printf("                         Emit .wbnd vanilla 1.12 soulbind policy: 4 rules (Poor=NoBind, Common=BoE, Uncommon+=BoP no-window, Epic+=Soulbound). NO raid-trade window in vanilla\n");
+    std::printf("  --gen-bnd-tbc <wbnd-base> [name]\n");
+    std::printf("                         Emit .wbnd TBC 2.4.3 soulbind policy: 5 rules adding the 2-hour raid-trade window for BoP items (Uncommon and Rare quality)\n");
+    std::printf("  --gen-bnd-wotlk <wbnd-base> [name]\n");
+    std::printf("                         Emit .wbnd WotLK 3.3.5a soulbind policy: 6 rules adding Heirloom = BindOnAccount + cross-faction (Alliance<->Horde via account-mail) for the level-1-to-80 twink path\n");
+    std::printf("  --info-wbnd <wbnd-base> [--json]\n");
+    std::printf("                         Print WBND entries (id / bindKind / itemQualityFloor / raid-trade flag / boe-becomes-bop / xfac / window-sec / name)\n");
+    std::printf("  --validate-wbnd <wbnd-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, bindKind 0..5, itemQualityFloor 0..7, no duplicate ruleIds, no duplicate (bindKind,qualityFloor) pairs (resolveForQuality tie); tradableForRaidGroup=true with window=0 errors (instant expiry = no window). Warns on contradictions: tradableForRaidGroup with non-BoP kind, window > 0 without raid-trade flag, boeBecomesBoP without BoE kind, accountBoundCrossFaction without BoA kind (all flag-ignored at runtime)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

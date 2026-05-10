@@ -179,6 +179,7 @@
 #include "cli_quest_graph_catalog.hpp"
 #include "cli_crafting_recipes_catalog.hpp"
 #include "cli_world_locations_catalog.hpp"
+#include "cli_soulbind_rules_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -403,6 +404,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleQuestGraphCatalog,
     handleCraftingRecipesCatalog,
     handleWorldLocationsCatalog,
+    handleSoulbindRulesCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,
