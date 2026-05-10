@@ -371,11 +371,95 @@ int handleVersion(int& /*i*/, int /*argc*/, char** /*argv*/) {
     return 0;
 }
 
+int handleListPacks(int& /*i*/, int /*argc*/, char** /*argv*/) {
+    // Sister to --list-primitives: lists every --gen-*-pack
+    // composite flag from the shared kArgRequired registry.
+    // Auto-tracks new packs as they're added — no parallel list.
+    std::vector<std::string> packs;
+    for (std::size_t k = 0; k < kArgRequiredSize; ++k) {
+        const char* flag = kArgRequired[k];
+        std::size_t len = std::strlen(flag);
+        // Match --gen-*-pack (anything starting with --gen- and
+        // ending in -pack, but NOT --gen-mesh-* or --gen-texture-*
+        // which are individual primitives).
+        if (std::strncmp(flag, "--gen-", 6) != 0) continue;
+        if (std::strncmp(flag, "--gen-mesh-", 11) == 0) continue;
+        if (std::strncmp(flag, "--gen-texture-", 14) == 0) continue;
+        if (len > 5 && std::strcmp(flag + len - 5, "-pack") == 0) {
+            packs.emplace_back(flag);
+        }
+    }
+    std::sort(packs.begin(), packs.end());
+    std::printf("Composite packs (%zu):\n", packs.size());
+    for (const auto& p : packs) std::printf("  %s\n", p.c_str());
+    return 0;
+}
+
+int handleListPrimitives(int& i, int argc, char** argv) {
+    // Focused subset of --list-commands: just the procedural
+    // primitives (--gen-mesh-* and --gen-texture-* flags). Useful
+    // when authoring content packs to discover what's available
+    // without scrolling through the full --help dump. Walks the
+    // shared kArgRequired registry so it auto-tracks new
+    // primitives as they're added — no parallel list.
+    bool jsonOut = false;
+    bool meshOnly = false;
+    bool textureOnly = false;
+    while (i + 1 < argc && argv[i + 1][0] == '-') {
+        if (std::strcmp(argv[i + 1], "--json") == 0) {
+            jsonOut = true; ++i;
+        } else if (std::strcmp(argv[i + 1], "--mesh") == 0) {
+            meshOnly = true; ++i;
+        } else if (std::strcmp(argv[i + 1], "--texture") == 0) {
+            textureOnly = true; ++i;
+        } else {
+            break;
+        }
+    }
+    std::vector<std::string> meshes;
+    std::vector<std::string> textures;
+    for (std::size_t k = 0; k < kArgRequiredSize; ++k) {
+        const char* flag = kArgRequired[k];
+        if (std::strncmp(flag, "--gen-mesh-", 11) == 0) {
+            meshes.emplace_back(flag);
+        } else if (std::strncmp(flag, "--gen-texture-", 14) == 0) {
+            textures.emplace_back(flag);
+        }
+    }
+    std::sort(meshes.begin(), meshes.end());
+    std::sort(textures.begin(), textures.end());
+    if (jsonOut) {
+        nlohmann::json j;
+        if (!textureOnly) j["meshes"] = meshes;
+        if (!meshOnly)    j["textures"] = textures;
+        if (!textureOnly) j["meshCount"] = meshes.size();
+        if (!meshOnly)    j["textureCount"] = textures.size();
+        std::printf("%s\n", j.dump(2).c_str());
+        return 0;
+    }
+    if (!textureOnly) {
+        std::printf("Procedural meshes (%zu):\n", meshes.size());
+        for (const auto& m : meshes) std::printf("  %s\n", m.c_str());
+    }
+    if (!meshOnly) {
+        if (!textureOnly) std::printf("\n");
+        std::printf("Procedural textures (%zu):\n", textures.size());
+        for (const auto& t : textures) std::printf("  %s\n", t.c_str());
+    }
+    return 0;
+}
+
 }  // namespace
 
 bool handleIntrospect(int& i, int argc, char** argv, int& outRc) {
     if (std::strcmp(argv[i], "--list-commands") == 0) {
         outRc = handleListCommands(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--list-primitives") == 0) {
+        outRc = handleListPrimitives(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--list-packs") == 0) {
+        outRc = handleListPacks(i, argc, argv); return true;
     }
     if (std::strcmp(argv[i], "--info-cli-stats") == 0) {
         outRc = handleInfoCliStats(i, argc, argv); return true;

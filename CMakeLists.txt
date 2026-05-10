@@ -594,6 +594,49 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_model_fromm2.cpp
     src/pipeline/wowee_building.cpp
     src/pipeline/wowee_collision.cpp
+    src/pipeline/wowee_light.cpp
+    src/pipeline/wowee_weather.cpp
+    src/pipeline/wowee_world_map.cpp
+    src/pipeline/wowee_sound.cpp
+    src/pipeline/wowee_spawns.cpp
+    src/pipeline/wowee_items.cpp
+    src/pipeline/wowee_loot.cpp
+    src/pipeline/wowee_creatures.cpp
+    src/pipeline/wowee_quests.cpp
+    src/pipeline/wowee_objects.cpp
+    src/pipeline/wowee_factions.cpp
+    src/pipeline/wowee_locks.cpp
+    src/pipeline/wowee_skills.cpp
+    src/pipeline/wowee_spells.cpp
+    src/pipeline/wowee_achievements.cpp
+    src/pipeline/wowee_trainers.cpp
+    src/pipeline/wowee_gossip.cpp
+    src/pipeline/wowee_taxi.cpp
+    src/pipeline/wowee_talents.cpp
+    src/pipeline/wowee_maps.cpp
+    src/pipeline/wowee_chars.cpp
+    src/pipeline/wowee_tokens.cpp
+    src/pipeline/wowee_triggers.cpp
+    src/pipeline/wowee_titles.cpp
+    src/pipeline/wowee_events.cpp
+    src/pipeline/wowee_mounts.cpp
+    src/pipeline/wowee_battlegrounds.cpp
+    src/pipeline/wowee_mail.cpp
+    src/pipeline/wowee_gems.cpp
+    src/pipeline/wowee_guilds.cpp
+    src/pipeline/wowee_conditions.cpp
+    src/pipeline/wowee_pets.cpp
+    src/pipeline/wowee_auction.cpp
+    src/pipeline/wowee_channels.cpp
+    src/pipeline/wowee_cinematics.cpp
+    src/pipeline/wowee_glyphs.cpp
+    src/pipeline/wowee_vehicles.cpp
+    src/pipeline/wowee_holidays.cpp
+    src/pipeline/wowee_liquids.cpp
+    src/pipeline/wowee_animations.cpp
+    src/pipeline/wowee_spell_visuals.cpp
+    src/pipeline/wowee_world_state_ui.cpp
+    src/pipeline/wowee_player_conditions.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1336,6 +1379,52 @@ add_executable(wowee_editor
     tools/editor/cli_info_density.cpp
     tools/editor/cli_info_audio.cpp
     tools/editor/cli_world_info.cpp
+    tools/editor/cli_world_map.cpp
+    tools/editor/cli_sound_catalog.cpp
+    tools/editor/cli_spawns_catalog.cpp
+    tools/editor/cli_items_catalog.cpp
+    tools/editor/cli_loot_catalog.cpp
+    tools/editor/cli_creatures_catalog.cpp
+    tools/editor/cli_quests_catalog.cpp
+    tools/editor/cli_objects_catalog.cpp
+    tools/editor/cli_factions_catalog.cpp
+    tools/editor/cli_locks_catalog.cpp
+    tools/editor/cli_skills_catalog.cpp
+    tools/editor/cli_spells_catalog.cpp
+    tools/editor/cli_achievements_catalog.cpp
+    tools/editor/cli_trainers_catalog.cpp
+    tools/editor/cli_gossip_catalog.cpp
+    tools/editor/cli_taxi_catalog.cpp
+    tools/editor/cli_talents_catalog.cpp
+    tools/editor/cli_maps_catalog.cpp
+    tools/editor/cli_chars_catalog.cpp
+    tools/editor/cli_tokens_catalog.cpp
+    tools/editor/cli_triggers_catalog.cpp
+    tools/editor/cli_titles_catalog.cpp
+    tools/editor/cli_events_catalog.cpp
+    tools/editor/cli_mounts_catalog.cpp
+    tools/editor/cli_battlegrounds_catalog.cpp
+    tools/editor/cli_mail_catalog.cpp
+    tools/editor/cli_gems_catalog.cpp
+    tools/editor/cli_guilds_catalog.cpp
+    tools/editor/cli_conditions_catalog.cpp
+    tools/editor/cli_pets_catalog.cpp
+    tools/editor/cli_auction_catalog.cpp
+    tools/editor/cli_channels_catalog.cpp
+    tools/editor/cli_cinematics_catalog.cpp
+    tools/editor/cli_glyphs_catalog.cpp
+    tools/editor/cli_vehicles_catalog.cpp
+    tools/editor/cli_holidays_catalog.cpp
+    tools/editor/cli_liquids_catalog.cpp
+    tools/editor/cli_list_formats.cpp
+    tools/editor/cli_info_magic.cpp
+    tools/editor/cli_animations_catalog.cpp
+    tools/editor/cli_spell_visuals_catalog.cpp
+    tools/editor/cli_format_table.cpp
+    tools/editor/cli_summary_dir.cpp
+    tools/editor/cli_rename_magic.cpp
+    tools/editor/cli_world_state_ui_catalog.cpp
+    tools/editor/cli_player_conditions_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1408,6 +1497,49 @@ add_executable(wowee_editor
     src/pipeline/wowee_model_fromm2.cpp
     src/pipeline/wowee_building.cpp
     src/pipeline/wowee_collision.cpp
+    src/pipeline/wowee_light.cpp
+    src/pipeline/wowee_weather.cpp
+    src/pipeline/wowee_world_map.cpp
+    src/pipeline/wowee_sound.cpp
+    src/pipeline/wowee_spawns.cpp
+    src/pipeline/wowee_items.cpp
+    src/pipeline/wowee_loot.cpp
+    src/pipeline/wowee_creatures.cpp
+    src/pipeline/wowee_quests.cpp
+    src/pipeline/wowee_objects.cpp
+    src/pipeline/wowee_factions.cpp
+    src/pipeline/wowee_locks.cpp
+    src/pipeline/wowee_skills.cpp
+    src/pipeline/wowee_spells.cpp
+    src/pipeline/wowee_achievements.cpp
+    src/pipeline/wowee_trainers.cpp
+    src/pipeline/wowee_gossip.cpp
+    src/pipeline/wowee_taxi.cpp
+    src/pipeline/wowee_talents.cpp
+    src/pipeline/wowee_maps.cpp
+    src/pipeline/wowee_chars.cpp
+    src/pipeline/wowee_tokens.cpp
+    src/pipeline/wowee_triggers.cpp
+    src/pipeline/wowee_titles.cpp
+    src/pipeline/wowee_events.cpp
+    src/pipeline/wowee_mounts.cpp
+    src/pipeline/wowee_battlegrounds.cpp
+    src/pipeline/wowee_mail.cpp
+    src/pipeline/wowee_gems.cpp
+    src/pipeline/wowee_guilds.cpp
+    src/pipeline/wowee_conditions.cpp
+    src/pipeline/wowee_pets.cpp
+    src/pipeline/wowee_auction.cpp
+    src/pipeline/wowee_channels.cpp
+    src/pipeline/wowee_cinematics.cpp
+    src/pipeline/wowee_glyphs.cpp
+    src/pipeline/wowee_vehicles.cpp
+    src/pipeline/wowee_holidays.cpp
+    src/pipeline/wowee_liquids.cpp
+    src/pipeline/wowee_animations.cpp
+    src/pipeline/wowee_spell_visuals.cpp
+    src/pipeline/wowee_world_state_ui.cpp
+    src/pipeline/wowee_player_conditions.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

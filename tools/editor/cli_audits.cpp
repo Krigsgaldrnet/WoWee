@@ -354,10 +354,13 @@ int handleAuditWatertight(int& i, int argc, char** argv) {
     // CI-friendly: zero on full success.
     std::string root = argv[++i];
     bool jsonOut = false;
+    bool summary = false;
     float weldEps = 1e-4f;
     while (i + 1 < argc && argv[i + 1][0] == '-') {
         if (std::strcmp(argv[i + 1], "--json") == 0) {
             jsonOut = true; ++i;
+        } else if (std::strcmp(argv[i + 1], "--summary") == 0) {
+            summary = true; ++i;
         } else if (std::strcmp(argv[i + 1], "--weld") == 0 && i + 2 < argc) {
             try { weldEps = std::stof(argv[i + 2]); } catch (...) {}
             i += 2;
@@ -412,6 +415,16 @@ int handleAuditWatertight(int& i, int argc, char** argv) {
         }
         j["meshes"] = items;
         std::printf("%s\n", j.dump(2).c_str());
+        return std::min(failCount, 255);
+    }
+    if (summary) {
+        // Single rollup line for CI dashboards: PASS/FAIL +
+        // counts. Goes to stdout so build systems can capture it.
+        std::printf("watertight: %s (%zu meshes, %d failure(s)) "
+                    "[%s, weld %.6f]\n",
+                    failCount == 0 ? "PASS" : "FAIL",
+                    rows.size(), failCount,
+                    root.c_str(), weldEps);
         return std::min(failCount, 255);
     }
     std::printf("Watertight audit: %s (weld eps %.6f)\n",
@@ -482,10 +495,13 @@ int handleAuditWatertightWob(int& i, int argc, char** argv) {
     // intentional portal openings between them.
     std::string root = argv[++i];
     bool jsonOut = false;
+    bool summary = false;
     float weldEps = 1e-4f;
     while (i + 1 < argc && argv[i + 1][0] == '-') {
         if (std::strcmp(argv[i + 1], "--json") == 0) {
             jsonOut = true; ++i;
+        } else if (std::strcmp(argv[i + 1], "--summary") == 0) {
+            summary = true; ++i;
         } else if (std::strcmp(argv[i + 1], "--weld") == 0 && i + 2 < argc) {
             try { weldEps = std::stof(argv[i + 2]); } catch (...) {}
             i += 2;
@@ -542,6 +558,14 @@ int handleAuditWatertightWob(int& i, int argc, char** argv) {
         }
         j["buildings"] = items;
         std::printf("%s\n", j.dump(2).c_str());
+        return std::min(failCount, 255);
+    }
+    if (summary) {
+        std::printf("watertight-wob: %s (%zu buildings, %d failure(s)) "
+                    "[%s, weld %.6f]\n",
+                    failCount == 0 ? "PASS" : "FAIL",
+                    rows.size(), failCount,
+                    root.c_str(), weldEps);
         return std::min(failCount, 255);
     }
     std::printf("Watertight WOB audit: %s (weld eps %.6f)\n",
