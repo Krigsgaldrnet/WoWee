@@ -121,6 +121,7 @@ constexpr FormatRow kFormats[] = {
     {"WSTM", ".wstm",  "stats",     "gtChanceTo*.dbc + gtRegen*.dbc",   "Stat modifier curve catalog"},
     {"WACT", ".wact",  "ui",        "Hardcoded class default action bar","Action bar layout catalog"},
     {"WGRP", ".wgrp",  "social",    "LFG group-composition rules",     "Group composition catalog (role quotas)"},
+    {"WHRT", ".whrt",  "social",    "SMSG_BINDPOINTUPDATE bind list",  "Hearthstone bind point catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

@@ -2111,6 +2111,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wgrp to a human-editable JSON sidecar (defaults to <base>.wgrp.json; sizeCategory string is informational, ignored on import)\n");
     std::printf("  --import-wgrp-json <json-path> [out-base]\n");
     std::printf("                         Import a .wgrp.json sidecar back into binary .wgrp (requireSpec accepts bool OR int)\n");
+    std::printf("  --gen-hrt <whrt-base> [name]\n");
+    std::printf("                         Emit .whrt 4 starter-city innkeepers (Stormwind / Ironforge / Orgrimmar / Thunder Bluff) faction-gated\n");
+    std::printf("  --gen-hrt-capitals <whrt-base> [name]\n");
+    std::printf("                         Emit .whrt 6 capital-hall bind clerks (Stormwind / Ironforge / Darnassus / Orgrimmar / Undercity / Thunder Bluff)\n");
+    std::printf("  --gen-hrt-inns <whrt-base> [name]\n");
+    std::printf("                         Emit .whrt 8 starter-zone inns (Goldshire / Brill / Razor Hill / Bloodhoof Village / Kharanos / Aldrassil / Shadowglen / Sun Rock Retreat)\n");
+    std::printf("  --info-whrt <whrt-base> [--json]\n");
+    std::printf("                         Print WHRT entries (id / map / area / faction / kind / npc / levelMin / name)\n");
+    std::printf("  --validate-whrt <whrt-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, factionMask 1..3, bindKind 0..5, no duplicate ids; warns on (0,0,0) position, Inn with npcId=0, Quest with levelMin=0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

@@ -685,6 +685,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_stat_curves.cpp
     src/pipeline/wowee_action_bars.cpp
     src/pipeline/wowee_group_compositions.cpp
+    src/pipeline/wowee_hearth_binds.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1533,6 +1534,7 @@ add_executable(wowee_editor
     tools/editor/cli_stat_curves_catalog.cpp
     tools/editor/cli_action_bars_catalog.cpp
     tools/editor/cli_group_compositions_catalog.cpp
+    tools/editor/cli_hearth_binds_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1696,6 +1698,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_stat_curves.cpp
     src/pipeline/wowee_action_bars.cpp
     src/pipeline/wowee_group_compositions.cpp
+    src/pipeline/wowee_hearth_binds.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
