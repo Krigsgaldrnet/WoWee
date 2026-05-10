@@ -200,6 +200,8 @@ const char* const kArgRequired[] = {
     "--gen-crr", "--gen-crr-defensive", "--gen-crr-spell",
     "--info-wcrr", "--validate-wcrr",
     "--export-wcrr-json", "--import-wcrr-json",
+    "--gen-umv", "--gen-umv-flight", "--gen-umv-buffs",
+    "--info-wumv", "--validate-wumv",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

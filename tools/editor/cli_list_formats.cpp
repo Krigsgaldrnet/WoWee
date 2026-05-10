@@ -90,6 +90,7 @@ constexpr FormatRow kFormats[] = {
     {"WLDS", ".wlds",  "ui",        "LoadingScreens.dbc",               "Per-zone loading screen catalog"},
     {"WSUF", ".wsuf",  "items",     "ItemRandomProperties + Suffix",    "Item random-suffix bonus catalog"},
     {"WCRR", ".wcrr",  "stats",     "gtCombatRatings.dbc + curves",     "Combat rating conversion catalog"},
+    {"WUMV", ".wumv",  "stats",     "UnitMovement.dbc + speed mods",    "Unit movement type / speed catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

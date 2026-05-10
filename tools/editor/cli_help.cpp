@@ -1657,6 +1657,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcrr to a human-editable JSON sidecar (defaults to <base>.wcrr.json)\n");
     std::printf("  --import-wcrr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcrr.json sidecar back into binary .wcrr (accepts ratingKind int OR name string; pointsAtLN default to canonical WoW values)\n");
+    std::printf("  --gen-umv <wumv-base> [name]\n");
+    std::printf("                         Emit .wumv starter: 4 baseline movement types (Walk 2.5y/s / Run 7.0y/s / Swim 4.7y/s / Turn π rad/s)\n");
+    std::printf("  --gen-umv-flight <wumv-base> [name]\n");
+    std::printf("                         Emit .wumv 5 flight entries (Flight ground-rail / Fly free / FlyBack / FlightBack / Pitch rate) requiring flight skill\n");
+    std::printf("  --gen-umv-buffs <wumv-base> [name]\n");
+    std::printf("                         Emit .wumv 5 temp speed buffs (Sprint 1.4× / Aspect Cheetah 1.3× / Travel 1.4× / Crusader 1.2× / Wind Walk 1.5×)\n");
+    std::printf("  --info-wumv <wumv-base> [--json]\n");
+    std::printf("                         Print WUMV entries (id / category / baseSpeed / multipliers / duration / priority / flight+stack flags / name)\n");
+    std::printf("  --validate-wumv <wumv-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, category 0..11, baseMultiplier > 0, max >= base, baseline categories need baseSpeed > 0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

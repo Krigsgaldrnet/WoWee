@@ -654,6 +654,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_loading_screens.cpp
     src/pipeline/wowee_item_suffixes.cpp
     src/pipeline/wowee_combat_ratings.cpp
+    src/pipeline/wowee_unit_movement.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1462,6 +1463,7 @@ add_executable(wowee_editor
     tools/editor/cli_loading_screens_catalog.cpp
     tools/editor/cli_item_suffixes_catalog.cpp
     tools/editor/cli_combat_ratings_catalog.cpp
+    tools/editor/cli_unit_movement_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1594,6 +1596,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_loading_screens.cpp
     src/pipeline/wowee_item_suffixes.cpp
     src/pipeline/wowee_combat_ratings.cpp
+    src/pipeline/wowee_unit_movement.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
