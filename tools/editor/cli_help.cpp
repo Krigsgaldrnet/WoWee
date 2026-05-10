@@ -2587,6 +2587,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcst to a human-editable JSON sidecar (defaults to <base>.wcst.json; emits classId as int + className string for readability)\n");
     std::printf("  --import-wcst-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcst.json sidecar back into binary .wcst (className field is informational; classId int is authoritative — round-trips per-class per-level stat tables byte-identical)\n");
+    std::printf("  --gen-gbk <wgbk-base> [name]\n");
+    std::printf("                         Emit .wgbk standard 4-tab guild bank for guildId 1 (General/Materials/Consumables/Officer) with progressive per-rank withdrawal limits (GM unlimited, lower ranks tighter caps)\n");
+    std::printf("  --gen-gbk-raid <wgbk-base> [name]\n");
+    std::printf("                         Emit .wgbk 5-tab raid guild bank for guildId 2 (Tier1_BWL/Tier2_AQ40/Tier3_Naxx tier-set tabs + Consumables + Officer) — tier tabs strictly officer-only\n");
+    std::printf("  --gen-gbk-small <wgbk-base> [name]\n");
+    std::printf("                         Emit .wgbk 2-tab small guild bank for guildId 3 (General + Officer) with tight 5-slot/day per-rank caps below officer\n");
+    std::printf("  --info-wgbk <wgbk-base> [--json]\n");
+    std::printf("                         Print WGBK entries (id / guildId / slotCount / depositOnly / per-rank-0..7 withdrawal limits / tabName)\n");
+    std::printf("  --validate-wgbk <wgbk-base> [--json]\n");
+    std::printf("                         Static checks: id+guildId+tabName required, slotCount 1..98 (vanilla cap), GM withdrawal limit > 0 (rank 0 cannot be locked out — almost certainly a typo), per-rank monotonicity (lower rank cannot exceed higher rank's cap), no duplicate tabIds, no duplicate (guildId,tabName) pairs (UI tab dispatch tie); warns on depositOnly flag set with non-zero rank-0 limit (self-contradiction — flag overrides at runtime but data is contradictory)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

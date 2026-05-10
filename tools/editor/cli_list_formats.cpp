@@ -155,6 +155,7 @@ constexpr FormatRow kFormats[] = {
     {"WTSC", ".wtsc",  "transit",   "TaxiNodes + zeppelin GO scripts",   "Transit schedule catalog (taxi/zeppelin/boat scheduled departures)"},
     {"WPRT", ".wprt",  "portals",   "SpellEffect TELEPORT_UNITS + AreaTrigger","Mage portal destinations catalog (spellId -> coords binding)"},
     {"WCST", ".wcst",  "stats",     "CharBaseInfo + GtChanceTo*.dbc + StatSystem","Combat stats baseline catalog (per-class per-level base stats)"},
+    {"WGBK", ".wgbk",  "guild",     "(absent in vanilla, TBC GuildBankTab)","Guild bank tabs catalog (per-rank withdrawal limits)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
