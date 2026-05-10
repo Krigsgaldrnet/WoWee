@@ -2513,6 +2513,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMOD entries (id / version / requiresSavedVariables / loadOnDemand / dep counts / name)\n");
     std::printf("  --validate-wmod <wmod-base> [--json]\n");
     std::printf("                         Static checks: id+name+version required, no duplicate addonIds, no duplicate addon names (load-order ambiguity), no self-dependency, no missing required-dep addonId, DFS cycle detection on required deps (deadlock at load); warns on optional self-dep and on minClientBuild < 4500 (likely typo)\n");
+    std::printf("  --export-wmod-json <wmod-base> [out.json]\n");
+    std::printf("                         Export binary .wmod to a human-editable JSON sidecar (defaults to <base>.wmod.json; emits dependencies and optionalDependencies as JSON int arrays)\n");
+    std::printf("  --import-wmod-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wmod.json sidecar back into binary .wmod (dependency arrays accept JSON int arrays — round-trips chained dep graphs byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
