@@ -189,6 +189,7 @@
 #include "cli_tutorial_steps_catalog.hpp"
 #include "cli_chat_commands_catalog.hpp"
 #include "cli_camera_presets_catalog.hpp"
+#include "cli_combat_formulas_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -423,6 +424,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleTutorialStepsCatalog,
     handleChatCommandsCatalog,
     handleCameraPresetsCatalog,
+    handleCombatFormulasCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

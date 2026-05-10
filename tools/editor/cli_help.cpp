@@ -2783,6 +2783,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcam to a human-editable JSON sidecar (defaults to <base>.wcam.json; emits purposeKind as int + name string; floats preserved bit-for-bit)\n");
     std::printf("  --import-wcam-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcam.json sidecar back into binary .wcam (purposeKind int OR \"cinematic\"/\"combat\"/\"mounted\"/\"vehicle\"/\"cutscene\"/\"photomode\" — round-trips FOV+distance+pitch+yaw+shoulder floats byte-identical)\n");
+    std::printf("  --gen-cfr-warrior <wcfr-base> [name]\n");
+    std::printf("                         Emit .wcfr 4 Warrior stat conversion formulas (Str→AP 2.0 / Agi→Crit 0.05%% / Agi→Dodge 0.05%% / Str→Parry 0.04%% level 30+)\n");
+    std::printf("  --gen-cfr-mage <wcfr-base> [name]\n");
+    std::printf("                         Emit .wcfr 3 Mage formulas (Int→SpellPower 1.0 / Int→SpellCrit 0.02%% / Spi→OOC SpellPower 0.50)\n");
+    std::printf("  --gen-cfr-rogue <wcfr-base> [name]\n");
+    std::printf("                         Emit .wcfr 4 Rogue formulas (Str→AP 1.0 / Agi→AP 1.0 / Agi→Crit 0.07%% / Agi→Dodge 0.07%%) — demonstrates per-class ratio variation (Rogue gets Crit from Agi at significantly better rate than Warrior)\n");
+    std::printf("  --info-wcfr <wcfr-base> [--json]\n");
+    std::printf("                         Print WCFR entries (id / output stat / input stat / class bitmask / level range / conversionRatio fp_x100 / name)\n");
+    std::printf("  --validate-wcfr <wcfr-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, outputStatKind 0..7, inputStatKind 0..4, no duplicate formulaIds, no zero conversionRatio (no-op formula); CRITICAL: no duplicate (output, input, classMask, levelMin) quad — runtime stat-compute would apply both formulas, doubling the contribution. levelMax >= levelMin when set. Warns on conversionRatio > 100x (likely units-mismatch typo — forgot to divide by 100 when porting from a percentage table)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
