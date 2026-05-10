@@ -1919,6 +1919,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WAUR entries (id / kind / targeting / stack flag / max stack / tick interval / name)\n");
     std::printf("  --validate-waur <waur-base> [--json]\n");
     std::printf("                         Static checks: name required, auraKind 0..8, targetingHint 0..3, no duplicate ids; errors on Periodic without tick interval; warns on non-periodic with tick interval, maxStackCount without isStackable\n");
+    std::printf("  --export-waur-json <waur-base> [out.json]\n");
+    std::printf("                         Export binary .waur to a human-editable JSON sidecar (defaults to <base>.waur.json)\n");
+    std::printf("  --import-waur-json <json-path> [out-base]\n");
+    std::printf("                         Import a .waur.json sidecar back into binary .waur (accepts auraKind/targetingHint int OR name; isStackable bool OR int)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
