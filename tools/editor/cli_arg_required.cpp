@@ -172,6 +172,8 @@ const char* const kArgRequired[] = {
     "--gen-sch", "--gen-sch-magical", "--gen-sch-combined",
     "--info-wsch", "--validate-wsch",
     "--export-wsch-json", "--import-wsch-json",
+    "--gen-lfg", "--gen-lfg-heroic", "--gen-lfg-raid",
+    "--info-wlfg", "--validate-wlfg",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

@@ -1529,6 +1529,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsch to a human-editable JSON sidecar (defaults to <base>.wsch.json)\n");
     std::printf("  --import-wsch-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsch.json sidecar back into binary .wsch (canBeImmune/Absorbed/Crit default to 1, canBeReflected to 0)\n");
+    std::printf("  --gen-lfg <wlfg-base> [name]\n");
+    std::printf("                         Emit .wlfg starter: 3 classic 5-man dungeons (Ragefire Chasm / Wailing Caverns / Deadmines) with level brackets\n");
+    std::printf("  --gen-lfg-heroic <wlfg-base> [name]\n");
+    std::printf("                         Emit .wlfg 5 WotLK 80-level heroic 5-mans with emblem rewards + first-clear achievement IDs\n");
+    std::printf("  --gen-lfg-raid <wlfg-base> [name]\n");
+    std::printf("                         Emit .wlfg 3 raid entries (Naxxramas-25 / Ulduar-25 Hardmode / ToC-25 Mythic) with larger groupSize\n");
+    std::printf("  --info-wlfg <wlfg-base> [--json]\n");
+    std::printf("                         Print WLFG entries (id / map / level range / minIlvl / difficulty / groupSize / role mask / expansion / rewards / name)\n");
+    std::printf("  --validate-wlfg <wlfg-base> [--json]\n");
+    std::printf("                         Static checks: id+name+mapId required, difficulty 0..3 / expansion 0..3, minLevel<=maxLevel, recommended within range, role mask>0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
