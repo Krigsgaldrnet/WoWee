@@ -83,6 +83,8 @@ const char* const kArgRequired[] = {
     "--gen-tokens", "--gen-tokens-pvp", "--gen-tokens-seasonal",
     "--info-wtkn", "--validate-wtkn",
     "--export-wtkn-json", "--import-wtkn-json",
+    "--gen-triggers", "--gen-triggers-dungeon", "--gen-triggers-flightpath",
+    "--info-wtrg", "--validate-wtrg",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

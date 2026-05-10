@@ -1107,6 +1107,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtkn to a human-editable JSON sidecar (defaults to <base>.wtkn.json)\n");
     std::printf("  --import-wtkn-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtkn.json sidecar back into binary .wtkn (accepts category/flag int OR name forms)\n");
+    std::printf("  --gen-triggers <wtrg-base> [name]\n");
+    std::printf("                         Emit .wtrg starter: 2 triggers (Goldshire area-name + bandit-camp quest exploration ref WQT 100)\n");
+    std::printf("  --gen-triggers-dungeon <wtrg-base> [name]\n");
+    std::printf("                         Emit .wtrg dungeon set: outdoor area-name + Deadmines portal (key-gated) + interior exit teleport\n");
+    std::printf("  --gen-triggers-flightpath <wtrg-base> [name]\n");
+    std::printf("                         Emit .wtrg flight-master proximity waypoints (Stormwind / Goldshire) for auto-open flight UI\n");
+    std::printf("  --info-wtrg <wtrg-base> [--json]\n");
+    std::printf("                         Print WTRG triggers (id / map / area / kind / shape + dims / dest + facing / quest+key gates)\n");
+    std::printf("  --validate-wtrg <wtrg-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, finite center, sphere needs radius>0, box needs >=1 nonzero half-extent, quest-explore needs target\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
