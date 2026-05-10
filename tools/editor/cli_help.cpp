@@ -2051,6 +2051,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WHLD entries (id / map / diff / kind / interval (formatted) / boss kills / size / bonus rolls / name)\n");
     std::printf("  --validate-whld <whld-base> [--json]\n");
     std::printf("                         Static checks: id+name+kind+interval required, no duplicate ids; warns on non-standard group size, kind/interval mismatches (Daily not 24h, Weekly not 7d), 0 boss kill cap\n");
+    std::printf("  --export-whld-json <whld-base> [out.json]\n");
+    std::printf("                         Export binary .whld to a human-editable JSON sidecar (defaults to <base>.whld.json)\n");
+    std::printf("  --import-whld-json <json-path> [out-base]\n");
+    std::printf("                         Import a .whld.json sidecar back into binary .whld (accepts raidLockoutKind int OR raidLockoutKindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
