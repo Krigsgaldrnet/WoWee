@@ -137,6 +137,7 @@ constexpr FormatRow kFormats[] = {
     {"WMNL", ".wmnl",  "worldmap",  "WorldMapTransforms.dbc + Overlay",   "Minimap multi-level catalog (vertical zones)"},
     {"WPCR", ".wpcr",  "pets",      "Spell.dbc pet ops + npc_text stable","Pet care + action catalog (Hunter / Warlock / stable mgmt)"},
     {"WMVC", ".wmvc",  "cinematic", "embedded cinematic credit-roll blob","Movie credits roll catalog (per-cinematic)"},
+    {"WSPV", ".wspv",  "spells",    "implicit Spell.dbc context overrides","Spell variant catalog (stance/talent/racial substitution)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

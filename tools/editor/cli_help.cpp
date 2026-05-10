@@ -2335,6 +2335,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wmvc to a human-editable JSON sidecar (defaults to <base>.wmvc.json; emits category as both int AND name string; lines[] as JSON string array)\n");
     std::printf("  --import-wmvc-json <json-path> [out-base]\n");
     std::printf("                         Import a .wmvc.json sidecar back into binary .wmvc (category int OR \"production\"/\"music\"/\"audio\"/\"engineering\"/\"art\"/\"voice\"/\"special\"; lines[] is a JSON array of strings — directly editable to add/remove credit lines without binary tooling)\n");
+    std::printf("  --gen-spv <wspv-base> [name]\n");
+    std::printf("                         Emit .wspv 4 stance-conditional Warrior spell variants (Heroic Strike Berserker / Heroic Strike Battle / Mocking Blow Defensive / Pummel Berserker)\n");
+    std::printf("  --gen-spv-talent <wspv-base> [name]\n");
+    std::printf("                         Emit .wspv 4 talent-modified spell variants (Frostbolt + Brain Freeze instant / Lava Burst + Flame Shock auto-crit / Earth Shield + Improved bonus heal / Ferocious Bite + Berserk)\n");
+    std::printf("  --gen-spv-racial <wspv-base> [name]\n");
+    std::printf("                         Emit .wspv 4 racial spell variants (Stoneform Dwarf / War Stomp Tauren / Berserking Troll / Will of the Forsaken)\n");
+    std::printf("  --info-wspv <wspv-base> [--json]\n");
+    std::printf("                         Print WSPV entries (id / baseSpellId / variantSpellId / conditionKind / conditionValue / priority / name)\n");
+    std::printf("  --validate-wspv <wspv-base> [--json]\n");
+    std::printf("                         Static checks: id+name+baseSpellId+variantSpellId required, conditionKind 0..5, no duplicate variantIds, no two variants binding the same (baseSpell, conditionKind, conditionValue, priority) tuple (would tie at runtime and resolve non-deterministically); warns on conditionValue=0 (always-zero default match — gate becomes no-op)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
