@@ -147,6 +147,55 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parsePurposeKindToken(const std::string& s) {
+    using C = wowee::pipeline::WoweeCameraPresets;
+    if (s == "cinematic") return C::Cinematic;
+    if (s == "combat")    return C::Combat;
+    if (s == "mounted")   return C::Mounted;
+    if (s == "vehicle")   return C::Vehicle;
+    if (s == "cutscene")  return C::Cutscene;
+    if (s == "photomode") return C::PhotoMode;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wcam-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -270,6 +319,123 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWcamExt(base);
+    if (out.empty()) out = base + ".wcam.json";
+    if (!wowee::pipeline::WoweeCameraPresetsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcam-json: WCAM not found: %s.wcam\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCameraPresetsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WCAM";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"presetId", e.presetId},
+            {"name", e.name},
+            {"purposeKind", e.purposeKind},
+            {"purposeKindName",
+                purposeKindName(e.purposeKind)},
+            {"motionDamping", e.motionDamping},
+            {"fovDegrees", e.fovDegrees},
+            {"distanceFromTarget", e.distanceFromTarget},
+            {"pitchDegrees", e.pitchDegrees},
+            {"yawOffsetDegrees", e.yawOffsetDegrees},
+            {"shoulderOffsetMeters",
+                e.shoulderOffsetMeters},
+            {"focusBoneId", e.focusBoneId},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wcam-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu presets)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wcam.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wcam");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wcam-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wcam-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeCameraPresets c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wcam-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeCameraPresets::Entry e;
+        e.presetId = je.value("presetId", 0u);
+        e.name = je.value("name", std::string{});
+        if (!readEnumField(je, "purposeKind",
+                            "purposeKindName",
+                            parsePurposeKindToken,
+                            "purposeKind", e.presetId,
+                            e.purposeKind)) return 1;
+        e.motionDamping = static_cast<uint8_t>(
+            je.value("motionDamping", 0));
+        e.fovDegrees = je.value("fovDegrees", 0.f);
+        e.distanceFromTarget =
+            je.value("distanceFromTarget", 0.f);
+        e.pitchDegrees = je.value("pitchDegrees", 0.f);
+        e.yawOffsetDegrees =
+            je.value("yawOffsetDegrees", 0.f);
+        e.shoulderOffsetMeters =
+            je.value("shoulderOffsetMeters", 0.f);
+        e.focusBoneId = je.value("focusBoneId", 0u);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeCameraPresetsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcam-json: failed to save %s.wcam\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wcam (%zu presets)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleCameraPresetsCatalog(int& i, int argc, char** argv,
@@ -292,6 +458,14 @@ bool handleCameraPresetsCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wcam") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcam-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcam-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

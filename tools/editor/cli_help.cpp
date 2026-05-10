@@ -2779,6 +2779,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCAM entries (id / purpose / damping / FOV / distance / pitch / yaw / shoulder / focusBone / name)\n");
     std::printf("  --validate-wcam <wcam-base> [--json]\n");
     std::printf("                         Static checks: id+name required, purposeKind 0..5, no duplicate presetIds, FOV in (0,180) (zero/negative makes no sense, >=180 inverts the view frustum), distanceFromTarget >= 0 (negative places camera in front of target); CRITICAL: pitch within (-89,+89) — beyond gimbal-locks the camera. Warns on FOV outside 30..120 player-comfort range (motion-sickness risk), distanceFromTarget < 0.5m (clips into model), and yawOffsetDegrees beyond ±180 (wraps to smaller equivalent — simplify)\n");
+    std::printf("  --export-wcam-json <wcam-base> [out.json]\n");
+    std::printf("                         Export binary .wcam to a human-editable JSON sidecar (defaults to <base>.wcam.json; emits purposeKind as int + name string; floats preserved bit-for-bit)\n");
+    std::printf("  --import-wcam-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcam.json sidecar back into binary .wcam (purposeKind int OR \"cinematic\"/\"combat\"/\"mounted\"/\"vehicle\"/\"cutscene\"/\"photomode\" — round-trips FOV+distance+pitch+yaw+shoulder floats byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

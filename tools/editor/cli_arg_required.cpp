@@ -442,6 +442,7 @@ const char* const kArgRequired[] = {
     "--export-wcmd-json", "--import-wcmd-json",
     "--gen-cam-combat", "--gen-cam-mounted", "--gen-cam-cinematic",
     "--info-wcam", "--validate-wcam",
+    "--export-wcam-json", "--import-wcam-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
