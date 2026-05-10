@@ -1947,6 +1947,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSCS entries (id / rank / kind / minSkill / maxSkill / required level / gold cost / name)\n");
     std::printf("  --validate-wscs <wscs-base> [--json]\n");
     std::printf("                         Static checks: id+name required, costKind 0..4, no duplicate ids, min<max; warns on lvl>80, RidingSkill below lvl 20, Profession with cost=0\n");
+    std::printf("  --export-wscs-json <wscs-base> [out.json]\n");
+    std::printf("                         Export binary .wscs to a human-editable JSON sidecar (defaults to <base>.wscs.json)\n");
+    std::printf("  --import-wscs-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wscs.json sidecar back into binary .wscs (accepts costKind int OR costKindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
