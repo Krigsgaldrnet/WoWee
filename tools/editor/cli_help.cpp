@@ -1301,6 +1301,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGLY entries (id / type / spellId / itemId / classMask / requiredLevel / name)\n");
     std::printf("  --validate-wgly <wgly-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name+spellId not empty, type 0..2, classMask>0, level<25 warning, missing-itemId warning\n");
+    std::printf("  --export-wgly-json <wgly-base> [out.json]\n");
+    std::printf("                         Export binary .wgly to a human-editable JSON sidecar (defaults to <base>.wgly.json)\n");
+    std::printf("  --import-wgly-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wgly.json sidecar back into binary .wgly (accepts glyphType int OR name string)\n");
     std::printf("  --gen-vehicles <wvhc-base> [name]\n");
     std::printf("                         Emit .wvhc starter: 3 vehicles (chopper / wind rider / salvaged tank) covering ground+air+siege roles\n");
     std::printf("  --gen-vehicles-siege <wvhc-base> [name]\n");
