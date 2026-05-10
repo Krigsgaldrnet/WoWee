@@ -1189,6 +1189,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMAL templates (id / category / sender / subject + body / money + items / cod / expiry)\n");
     std::printf("  --validate-wmal <wmal-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, subject not empty, sender set, attachments valid, no money+no items info-only\n");
+    std::printf("  --gen-gems <wgem-base> [name]\n");
+    std::printf("                         Emit .wgem starter: 3 gems (red/yellow/blue) + 2 enchantments (Crusader proc + Greater Stats)\n");
+    std::printf("  --gen-gems-set <wgem-base> [name]\n");
+    std::printf("                         Emit .wgem 6-gem full color set (3 primary + 3 secondary purple/green/orange)\n");
+    std::printf("  --gen-gems-enchants <wgem-base> [name]\n");
+    std::printf("                         Emit .wgem 5 enchant variants (Mongoose / Deadly Poison / stats ring / cloak / Berserking proc)\n");
+    std::printf("  --info-wgem <wgem-base> [--json]\n");
+    std::printf("                         Print WGEM gems (id / color / stat / item) + enchantments (id / slot / stat / duration / charges)\n");
+    std::printf("  --validate-wgem <wgem-base> [--json]\n");
+    std::printf("                         Static checks: ids>0+unique, name not empty, color/slot in range, stat-only entries need non-zero value\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
