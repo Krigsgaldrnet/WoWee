@@ -2653,6 +2653,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WBND entries (id / bindKind / itemQualityFloor / raid-trade flag / boe-becomes-bop / xfac / window-sec / name)\n");
     std::printf("  --validate-wbnd <wbnd-base> [--json]\n");
     std::printf("                         Static checks: id+name required, bindKind 0..5, itemQualityFloor 0..7, no duplicate ruleIds, no duplicate (bindKind,qualityFloor) pairs (resolveForQuality tie); tradableForRaidGroup=true with window=0 errors (instant expiry = no window). Warns on contradictions: tradableForRaidGroup with non-BoP kind, window > 0 without raid-trade flag, boeBecomesBoP without BoE kind, accountBoundCrossFaction without BoA kind (all flag-ignored at runtime)\n");
+    std::printf("  --export-wbnd-json <wbnd-base> [out.json]\n");
+    std::printf("                         Export binary .wbnd to a human-editable JSON sidecar (defaults to <base>.wbnd.json; emits both bindKind and itemQualityFloor as int + name string)\n");
+    std::printf("  --import-wbnd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wbnd.json sidecar back into binary .wbnd (bindKind int OR \"bindonpickup\"/\"bindonequip\"/\"bindonuse\"/\"bindonaccount\"/\"soulbound\"/\"nobind\"; itemQualityFloor int OR \"poor\"/\"common\"/\"uncommon\"/\"rare\"/\"epic\"/\"legendary\"/\"artifact\"/\"heirloom\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

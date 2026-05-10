@@ -163,6 +163,68 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseBindKindToken(const std::string& s) {
+    using B = wowee::pipeline::WoweeSoulbindRules;
+    if (s == "bindonpickup")  return B::BindOnPickup;
+    if (s == "bindonequip")   return B::BindOnEquip;
+    if (s == "bindonuse")     return B::BindOnUse;
+    if (s == "bindonaccount") return B::BindOnAccount;
+    if (s == "soulbound")     return B::Soulbound;
+    if (s == "nobind")        return B::NoBind;
+    return -1;
+}
+
+int parseQualityToken(const std::string& s) {
+    using B = wowee::pipeline::WoweeSoulbindRules;
+    if (s == "poor")      return B::Poor;
+    if (s == "common")    return B::Common;
+    if (s == "uncommon")  return B::Uncommon;
+    if (s == "rare")      return B::Rare;
+    if (s == "epic")      return B::Epic;
+    if (s == "legendary") return B::Legendary;
+    if (s == "artifact")  return B::Artifact;
+    if (s == "heirloom")  return B::Heirloom;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wbnd-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -300,6 +362,125 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWbndExt(base);
+    if (out.empty()) out = base + ".wbnd.json";
+    if (!wowee::pipeline::WoweeSoulbindRulesLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wbnd-json: WBND not found: %s.wbnd\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSoulbindRulesLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WBND";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"ruleId", e.ruleId},
+            {"name", e.name},
+            {"bindKind", e.bindKind},
+            {"bindKindName", bindKindName(e.bindKind)},
+            {"itemQualityFloor", e.itemQualityFloor},
+            {"itemQualityFloorName",
+                qualityName(e.itemQualityFloor)},
+            {"tradableForRaidGroup",
+                e.tradableForRaidGroup != 0},
+            {"boeBecomesBoP", e.boeBecomesBoP != 0},
+            {"accountBoundCrossFaction",
+                e.accountBoundCrossFaction != 0},
+            {"tradableWindowSec", e.tradableWindowSec},
+            {"description", e.description},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wbnd-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu rules)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wbnd.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wbnd");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wbnd-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wbnd-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSoulbindRules c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wbnd-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeSoulbindRules::Entry e;
+        e.ruleId = je.value("ruleId", 0u);
+        e.name = je.value("name", std::string{});
+        if (!readEnumField(je, "bindKind", "bindKindName",
+                            parseBindKindToken, "bindKind",
+                            e.ruleId, e.bindKind)) return 1;
+        if (!readEnumField(je, "itemQualityFloor",
+                            "itemQualityFloorName",
+                            parseQualityToken,
+                            "itemQualityFloor",
+                            e.ruleId,
+                            e.itemQualityFloor)) return 1;
+        e.tradableForRaidGroup =
+            je.value("tradableForRaidGroup", false) ? 1 : 0;
+        e.boeBecomesBoP =
+            je.value("boeBecomesBoP", false) ? 1 : 0;
+        e.accountBoundCrossFaction =
+            je.value("accountBoundCrossFaction", false) ? 1 : 0;
+        e.tradableWindowSec = je.value("tradableWindowSec", 0u);
+        e.description = je.value("description", std::string{});
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeSoulbindRulesLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wbnd-json: failed to save %s.wbnd\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wbnd (%zu rules)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleSoulbindRulesCatalog(int& i, int argc, char** argv,
@@ -322,6 +503,14 @@ bool handleSoulbindRulesCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wbnd") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wbnd-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wbnd-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

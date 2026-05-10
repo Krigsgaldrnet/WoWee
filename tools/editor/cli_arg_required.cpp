@@ -415,6 +415,7 @@ const char* const kArgRequired[] = {
     "--export-wloc-json", "--import-wloc-json",
     "--gen-bnd-vanilla", "--gen-bnd-tbc", "--gen-bnd-wotlk",
     "--info-wbnd", "--validate-wbnd",
+    "--export-wbnd-json", "--import-wbnd-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
