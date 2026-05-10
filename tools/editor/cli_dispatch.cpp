@@ -65,6 +65,7 @@
 #include "cli_gems_catalog.hpp"
 #include "cli_guilds_catalog.hpp"
 #include "cli_conditions_catalog.hpp"
+#include "cli_pets_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -171,6 +172,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleGemsCatalog,
     handleGuildsCatalog,
     handleConditionsCatalog,
+    handlePetsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

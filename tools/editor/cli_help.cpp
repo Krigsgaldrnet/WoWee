@@ -1231,6 +1231,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPCD entries (id / group / kind / aggregator / negated / target / min..max value / name)\n");
     std::printf("  --validate-wpcd <wpcd-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, kind in 0..16, aggregator 0..1, kinds that need targetId have non-zero target\n");
+    std::printf("  --gen-pets <wpet-base> [name]\n");
+    std::printf("                         Emit .wpet starter: 2 hunter families (Wolf + Cat) + 1 warlock minion (Imp) with WSPL ability refs\n");
+    std::printf("  --gen-pets-hunter <wpet-base> [name]\n");
+    std::printf("                         Emit .wpet 8 classic hunter families (Wolf/Cat/Bear/Boar/Raptor/Hyena/Spider/Crab) with diet+petType\n");
+    std::printf("  --gen-pets-warlock <wpet-base> [name]\n");
+    std::printf("                         Emit .wpet 5 warlock minions (Imp/Voidwalker/Succubus/Felhunter/Felguard) with summon spell + WCRT ref\n");
+    std::printf("  --info-wpet <wpet-base> [--json]\n");
+    std::printf("                         Print WPET families (id / petType / atkSpd / dmg+arm mult / diet) + minions (id / summon / creatureId)\n");
+    std::printf("  --validate-wpet <wpet-base> [--json]\n");
+    std::printf("                         Static checks: ids>0+unique, name not empty, petType 0..2, atkSpeed>0, minion needs summon+creatureId\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
