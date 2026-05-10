@@ -273,6 +273,8 @@ const char* const kArgRequired[] = {
     "--gen-tbr", "--gen-tbr-pvp", "--gen-tbr-faction",
     "--info-wtbr", "--validate-wtbr",
     "--export-wtbr-json", "--import-wtbr-json",
+    "--gen-sps", "--gen-sps-aura", "--gen-sps-talent",
+    "--info-wsps", "--validate-wsps",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

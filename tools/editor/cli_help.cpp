@@ -1999,6 +1999,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtbr to a human-editable JSON sidecar (defaults to <base>.wtbr.json)\n");
     std::printf("  --import-wtbr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtbr.json sidecar back into binary .wtbr (accepts rewardKind/requiredFactionStanding int OR name)\n");
+    std::printf("  --gen-sps <wsps-base> [name]\n");
+    std::printf("                         Emit .wsps 4 weapon-imbue procs (Windfury 20PPM+3sICD / Frostbrand 9PPM / Flametongue 15PPM / Mana Oil 4PPM+5sICD) on DealtMeleeAutoAttack\n");
+    std::printf("  --gen-sps-aura <wsps-base> [name]\n");
+    std::printf("                         Emit .wsps 4 aura-tied procs (Blessing of Wisdom mana / Molten Armor reflect / Earth Shield heal / Judgement of Wisdom)\n");
+    std::printf("  --gen-sps-talent <wsps-base> [name]\n");
+    std::printf("                         Emit .wsps 4 talent procs (Clearcasting / Omen of Clarity / Seal of Righteousness / Nightfall) with charge-consuming variants\n");
+    std::printf("  --info-wsps <wsps-base> [--json]\n");
+    std::printf("                         Print WSPS entries (id / triggerSpellId / fromSpellId / chance%% / PPM / ICD / charges / proc flags)\n");
+    std::printf("  --validate-wsps <wsps-base> [--json]\n");
+    std::printf("                         Static checks: id+name+triggerSpellId+procFlags required, no duplicate ids; warns on chance outside [0,1], procPpm<0, both chance+ppm set (PPM wins), neither set (never fires)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
