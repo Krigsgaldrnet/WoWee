@@ -2377,6 +2377,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtrd to a human-editable JSON sidecar (defaults to <base>.wtrd.json; emits both ruleKind and targetingFilter as int + name string; goldEscrowMaxCopper as uint64)\n");
     std::printf("  --import-wtrd-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtrd.json sidecar back into binary .wtrd (ruleKind int OR \"allowed\"/\"forbidden\"/\"soulboundexception\"/\"crossfactionallowed\"/\"levelgated\"/\"goldescrowmax\"/\"auditlogged\"; targetingFilter int OR \"anyplayer\"/\"samerealmonly\"/\"samefactiononly\"/\"sameaccountonly\"/\"gmonly\")\n");
+    std::printf("  --gen-wfl <wwfl-base> [name]\n");
+    std::printf("                         Emit .wwfl 5 RMT/spam patterns (wts gold drop / wtb gold drop / g0ld typo-substitution replace / 1000g for drop / free gold mute) — non-profanity moderation only\n");
+    std::printf("  --gen-wfl-caps <wwfl-base> [name]\n");
+    std::printf("                         Emit .wwfl 3 all-caps patterns (case-sensitive uppercase word / triple-exclamation / dollar-symbol spam)\n");
+    std::printf("  --gen-wfl-url <wwfl-base> [name]\n");
+    std::printf("                         Emit .wwfl 3 URL-detection patterns (http:// / https:// / www. — replace with [link] placeholder)\n");
+    std::printf("  --info-wwfl <wwfl-base> [--json]\n");
+    std::printf("                         Print WWFL entries (id / kind / severity / case-sensitive / pattern -> replacement / name)\n");
+    std::printf("  --validate-wwfl <wwfl-base> [--json]\n");
+    std::printf("                         Static checks: id+name+pattern required, filterKind 0..5 OR 255 Misc, severity 0..3, no duplicate filterIds, no two filters with same pattern (preprocessor dispatch ambiguity); warns on Replace severity with empty replacement (would silently lose match — use Drop explicitly if intended)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

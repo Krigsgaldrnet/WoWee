@@ -140,6 +140,7 @@ constexpr FormatRow kFormats[] = {
     {"WSPV", ".wspv",  "spells",    "implicit Spell.dbc context overrides","Spell variant catalog (stance/talent/racial substitution)"},
     {"WVOX", ".wvox",  "audio",     "CreatureTextSounds + per-quest voice","Voiceover audio catalog (per-NPC, per-event clips)"},
     {"WTRD", ".wtrd",  "social",    "trade-window state machine policy",  "Trade window rules catalog (P2P trade policy)"},
+    {"WWFL", ".wwfl",  "social",    "chat preprocessor bad-word matcher", "Word filter catalog (spam/RMT/all-caps/URL)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

@@ -356,6 +356,8 @@ const char* const kArgRequired[] = {
     "--gen-trd", "--gen-trd-admin", "--gen-trd-rmt",
     "--info-wtrd", "--validate-wtrd",
     "--export-wtrd-json", "--import-wtrd-json",
+    "--gen-wfl", "--gen-wfl-caps", "--gen-wfl-url",
+    "--info-wwfl", "--validate-wwfl",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
