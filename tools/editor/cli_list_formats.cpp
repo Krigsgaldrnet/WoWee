@@ -97,6 +97,7 @@ constexpr FormatRow kFormats[] = {
     {"WSDR", ".wsdr",  "spells",    "SpellDuration.dbc + per-spell dur","Spell duration bucket catalog"},
     {"WSCD", ".wscd",  "spells",    "SpellCooldown.dbc + shared cd grp","Spell cooldown category catalog"},
     {"WCEF", ".wcef",  "creatures", "CreatureFamily.dbc + pet trees",   "Creature / pet family catalog"},
+    {"WSPC", ".wspc",  "spells",    "Spell.dbc power-cost fields",      "Spell power cost bucket catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

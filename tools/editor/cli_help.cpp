@@ -1761,6 +1761,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcef to a human-editable JSON sidecar (defaults to <base>.wcef.json)\n");
     std::printf("  --import-wcef-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcef.json sidecar back into binary .wcef (accepts familyKind/petTalentTree int OR name; petFoodTypes int OR pipe-separated label string)\n");
+    std::printf("  --gen-spc <wspc-base> [name]\n");
+    std::printf("                         Emit .wspc starter: 4 baseline mana cost tiers (NoCost / LowMana 5%% / MediumMana 15%% / HighMana 30%%) — %% of caster max mana\n");
+    std::printf("  --gen-spc-rage <wspc-base> [name]\n");
+    std::printf("                         Emit .wspc 4 fixed warrior rage costs (HeroicStrike 15 / Slam 20 / Whirlwind 25 stance-locked / MortalStrike 30)\n");
+    std::printf("  --gen-spc-mixed <wspc-base> [name]\n");
+    std::printf("                         Emit .wspc 5 cross-class costs covering every non-mana power type (Hunter Focus 30 / Rogue Energy 40 refund / DK Runic 30 / Paladin Holy 1 / Warlock Shard 1)\n");
+    std::printf("  --info-wspc <wspc-base> [--json]\n");
+    std::printf("                         Print WSPC entries (id / powerType / baseCost / perLevelCost / percentOfBase / cost flags / name) — flags decoded as label list\n");
+    std::printf("  --validate-wspc <wspc-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, powerType 0..11, no duplicate ids; warns on percent outside [0,1], NoCost+nonzero, and non-NoCost types with no cost set (would cast for free)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
