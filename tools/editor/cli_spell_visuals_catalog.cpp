@@ -127,6 +127,125 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each visual kit emits all 12 scalar fields
+    // and 4 model-path strings — there are no enums to widen
+    // with name forms, so the mapping is straightforward.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWsvkExt(base);
+    if (outPath.empty()) outPath = base + ".wsvk.json";
+    if (!wowee::pipeline::WoweeSpellVisualKitLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wsvk-json: WSVK not found: %s.wsvk\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellVisualKitLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"visualKitId", e.visualKitId},
+            {"name", e.name},
+            {"description", e.description},
+            {"castEffectModelPath", e.castEffectModelPath},
+            {"projectileModelPath", e.projectileModelPath},
+            {"impactEffectModelPath", e.impactEffectModelPath},
+            {"handEffectModelPath", e.handEffectModelPath},
+            {"precastAnimId", e.precastAnimId},
+            {"castAnimId", e.castAnimId},
+            {"impactAnimId", e.impactAnimId},
+            {"castSoundId", e.castSoundId},
+            {"impactSoundId", e.impactSoundId},
+            {"projectileSpeed", e.projectileSpeed},
+            {"projectileGravity", e.projectileGravity},
+            {"castDurationMs", e.castDurationMs},
+            {"impactRadius", e.impactRadius},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wsvk-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source  : %s.wsvk\n", base.c_str());
+    std::printf("  visuals : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wsvk.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWsvkExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wsvk-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wsvk-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSpellVisualKit c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSpellVisualKit::Entry e;
+            e.visualKitId = je.value("visualKitId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.castEffectModelPath = je.value("castEffectModelPath", std::string{});
+            e.projectileModelPath = je.value("projectileModelPath", std::string{});
+            e.impactEffectModelPath = je.value("impactEffectModelPath", std::string{});
+            e.handEffectModelPath = je.value("handEffectModelPath", std::string{});
+            e.precastAnimId = je.value("precastAnimId", 0u);
+            e.castAnimId = je.value("castAnimId", 0u);
+            e.impactAnimId = je.value("impactAnimId", 0u);
+            e.castSoundId = je.value("castSoundId", 0u);
+            e.impactSoundId = je.value("impactSoundId", 0u);
+            e.projectileSpeed = je.value("projectileSpeed", 0.0f);
+            e.projectileGravity = je.value("projectileGravity", 0.0f);
+            e.castDurationMs = je.value("castDurationMs", 0u);
+            e.impactRadius = je.value("impactRadius", 0.0f);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeSpellVisualKitLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wsvk-json: failed to save %s.wsvk\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wsvk\n", outBase.c_str());
+    std::printf("  source  : %s\n", jsonPath.c_str());
+    std::printf("  visuals : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -244,6 +363,12 @@ bool handleSpellVisualsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wsvk") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wsvk-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wsvk-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

@@ -1375,6 +1375,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSVK entries (id / cast+impact anim IDs / projectile speed+gravity / cast duration / AoE radius / sounds / name)\n");
     std::printf("  --validate-wsvk <wsvk-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, no negative speeds/radii, projectile-model + speed coherence, no-effect warning\n");
+    std::printf("  --export-wsvk-json <wsvk-base> [out.json]\n");
+    std::printf("                         Export binary .wsvk to a human-editable JSON sidecar (defaults to <base>.wsvk.json)\n");
+    std::printf("  --import-wsvk-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsvk.json sidecar back into binary .wsvk\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
