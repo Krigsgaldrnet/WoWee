@@ -416,6 +416,8 @@ const char* const kArgRequired[] = {
     "--gen-bnd-vanilla", "--gen-bnd-tbc", "--gen-bnd-wotlk",
     "--info-wbnd", "--validate-wbnd",
     "--export-wbnd-json", "--import-wbnd-json",
+    "--gen-bhv-melee", "--gen-bhv-caster", "--gen-bhv-boss",
+    "--info-wbhv", "--validate-wbhv",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

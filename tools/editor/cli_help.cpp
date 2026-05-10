@@ -2657,6 +2657,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wbnd to a human-editable JSON sidecar (defaults to <base>.wbnd.json; emits both bindKind and itemQualityFloor as int + name string)\n");
     std::printf("  --import-wbnd-json <json-path> [out-base]\n");
     std::printf("                         Import a .wbnd.json sidecar back into binary .wbnd (bindKind int OR \"bindonpickup\"/\"bindonequip\"/\"bindonuse\"/\"bindonaccount\"/\"soulbound\"/\"nobind\"; itemQualityFloor int OR \"poor\"/\"common\"/\"uncommon\"/\"rare\"/\"epic\"/\"legendary\"/\"artifact\"/\"heirloom\")\n");
+    std::printf("  --gen-bhv-melee <wbhv-base> [name]\n");
+    std::printf("                         Emit .wbhv 3 entry-tier melee creature behaviors (Kobold Worker / Timber Wolf / Stranglethorn Raptor) with 1 special each (throw-rock / claw / leap)\n");
+    std::printf("  --gen-bhv-caster <wbhv-base> [name]\n");
+    std::printf("                         Emit .wbhv 3 caster behaviors (Defias Wizard with Polymorph+FrostNova / Murloc Coastrunner with FrostBolt+heal / Voidwalker tank-pet pattern with Taunt+Sacrifice+Suffering)\n");
+    std::printf("  --gen-bhv-boss <wbhv-base> [name]\n");
+    std::printf("                         Emit .wbhv 1 Onyxia-pattern dragon boss (Tank kind, NoEvade leash, 600s corpse, 4 abilities including 90s-cooldown Deep Breath)\n");
+    std::printf("  --info-wbhv <wbhv-base> [--json]\n");
+    std::printf("                         Print WBHV entries (id / creatureKind / evadeBehavior / aggro / leash / corpse / mainAttackSpellId / specials count / name)\n");
+    std::printf("  --validate-wbhv <wbhv-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, creatureKind 0..5, evadeBehavior 0..3, aggroRadius > 0, no duplicate behaviorIds, no zero-spellId specials, no duplicate spellId within same behavior; CRITICAL invariant: leashRadius >= aggroRadius (else creature evades before engaging — un-killable from outside leash). Warns on corpseDuration < 60s (looting may fail in busy zones), useChancePct=0 on a special (ability never auto-fires; verify owner-triggered intent like warlock Sacrifice)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
