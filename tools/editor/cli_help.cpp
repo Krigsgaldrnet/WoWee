@@ -2499,6 +2499,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGCH entries (id / channelKind / accessKind / passwordRequired / levelMin / maxMembers / zoneDefaultMapId / name)\n");
     std::printf("  --validate-wgch <wgch-base> [--json]\n");
     std::printf("                         Static checks: id+name required, channelKind 0..3, accessKind 0..3, no duplicate channelIds, no duplicate channel names (chat /join routing collision), AutoJoinOnZone REQUIRES zoneDefaultMapId; warns on dead zoneDefaultMapId set with non-AutoJoin kind\n");
+    std::printf("  --export-wgch-json <wgch-base> [out.json]\n");
+    std::printf("                         Export binary .wgch to a human-editable JSON sidecar (defaults to <base>.wgch.json; emits both channelKind and accessKind as int + name string)\n");
+    std::printf("  --import-wgch-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wgch.json sidecar back into binary .wgch (channelKind int OR \"global\"/\"realmzone\"/\"faction\"/\"custom\"; accessKind int OR \"publicjoin\"/\"inviteonly\"/\"autojoinonzone\"/\"moderated\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
