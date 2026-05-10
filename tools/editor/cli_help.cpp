@@ -1937,6 +1937,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wiqr to a human-editable JSON sidecar (defaults to <base>.wiqr.json). Colors as RGBA uint32, easy to paste hex values\n");
     std::printf("  --import-wiqr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wiqr.json sidecar back into binary .wiqr (canBeDisenchanted accepts bool OR int)\n");
+    std::printf("  --gen-scs <wscs-base> [name]\n");
+    std::printf("                         Emit .wscs 6 canonical profession tiers (Apprentice/Journeyman/Expert/Artisan/Master/GrandMaster) with standard skill ranges and gold costs\n");
+    std::printf("  --gen-scs-weapon <wscs-base> [name]\n");
+    std::printf("                         Emit .wscs 5 weapon skill tiers (Beginner/Trained/Skilled/Expert/Master) — free to train, level-gated, capped at 5x char level\n");
+    std::printf("  --gen-scs-riding <wscs-base> [name]\n");
+    std::printf("                         Emit .wscs 5 riding skill tiers (Apprentice 60%% / Journeyman 100%% / Expert 150%% / Artisan 280%% / Cold Weather Flying) with canonical Vanilla/TBC/WotLK gold costs\n");
+    std::printf("  --info-wscs <wscs-base> [--json]\n");
+    std::printf("                         Print WSCS entries (id / rank / kind / minSkill / maxSkill / required level / gold cost / name)\n");
+    std::printf("  --validate-wscs <wscs-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, costKind 0..4, no duplicate ids, min<max; warns on lvl>80, RidingSkill below lvl 20, Profession with cost=0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

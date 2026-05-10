@@ -260,6 +260,8 @@ const char* const kArgRequired[] = {
     "--gen-iqr", "--gen-iqr-server", "--gen-iqr-raid",
     "--info-wiqr", "--validate-wiqr",
     "--export-wiqr-json", "--import-wiqr-json",
+    "--gen-scs", "--gen-scs-weapon", "--gen-scs-riding",
+    "--info-wscs", "--validate-wscs",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

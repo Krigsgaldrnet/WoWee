@@ -126,6 +126,7 @@
 #include "cli_spell_effect_types_catalog.hpp"
 #include "cli_spell_aura_types_catalog.hpp"
 #include "cli_item_qualities_catalog.hpp"
+#include "cli_skill_costs_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -293,6 +294,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSpellEffectTypesCatalog,
     handleSpellAuraTypesCatalog,
     handleItemQualitiesCatalog,
+    handleSkillCostsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
