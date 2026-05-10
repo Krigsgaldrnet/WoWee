@@ -2139,6 +2139,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wscb to a human-editable JSON sidecar (defaults to <base>.wscb.json; emits both channelKind/factionFilter ints AND name strings)\n");
     std::printf("  --import-wscb-json <json-path> [out-base]\n");
     std::printf("                         Import a .wscb.json sidecar back into binary .wscb (channelKind int OR \"login\"/\"system\"/\"raidwarning\"/\"motd\"/\"helptip\"; factionFilter int OR \"alliance\"/\"horde\"/\"both\")\n");
+    std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
+    std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

@@ -1537,6 +1537,7 @@ add_executable(wowee_editor
     tools/editor/cli_group_compositions_catalog.cpp
     tools/editor/cli_hearth_binds_catalog.cpp
     tools/editor/cli_server_broadcasts_catalog.cpp
+    tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
