@@ -136,7 +136,7 @@ const char* const kArgRequired[] = {
     "--export-wliq-json", "--import-wliq-json",
     "--info-magic", "--summary-dir", "--rename-by-magic",
     "--bulk-rename-by-magic", "--touch-tree", "--tree-summary-md",
-    "--catalog-grep", "--diff-headers",
+    "--catalog-grep", "--diff-headers", "--audit-tree",
     "--gen-animations", "--gen-animations-combat", "--gen-animations-movement",
     "--info-wani", "--validate-wani",
     "--export-wani-json", "--import-wani-json",

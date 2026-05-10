@@ -94,6 +94,7 @@
 #include "cli_lfg_catalog.hpp"
 #include "cli_catalog_grep.hpp"
 #include "cli_diff_headers.hpp"
+#include "cli_audit_tree.hpp"
 #include "cli_macros_catalog.hpp"
 #include "cli_char_features_catalog.hpp"
 #include "cli_pvp_catalog.hpp"
@@ -242,6 +243,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleLFGCatalog,
     handleCatalogGrep,
     handleDiffHeaders,
+    handleAuditTree,
     handleMacrosCatalog,
     handleCharFeaturesCatalog,
     handlePVPCatalog,

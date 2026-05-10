@@ -1365,6 +1365,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Recursively search catalog NAMES (the internal name field) across .w* files in <dir>. Case-insensitive by default. Exit 1 if no match\n");
     std::printf("  --diff-headers <fileA> <fileB> [--json]\n");
     std::printf("                         Compare two .w* files at the standard catalog header level (magic / version / name / entry count / file size). Exit 1 if any field differs\n");
+    std::printf("  --audit-tree <dir> [--json]\n");
+    std::printf("                         Walk directory recursively and flag corrupted/misnamed Wowee files: too-small, unknown-magic, ext/magic mismatch, magic-without-ext, truncated headers. Exit 1 on any issue\n");
     std::printf("  --gen-animations <wani-base> [name]\n");
     std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
     std::printf("  --gen-animations-combat <wani-base> [name]\n");
