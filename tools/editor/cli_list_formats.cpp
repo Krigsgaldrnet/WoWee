@@ -105,6 +105,7 @@ constexpr FormatRow kFormats[] = {
     {"WTLE", ".wtle",  "talents",   "TalentTab.dbc",                    "Talent tab / tree catalog"},
     {"WCTR", ".wctr",  "currency",  "CurrencyTypes.dbc + caps",         "Currency type catalog"},
     {"WSPR", ".wspr",  "spells",    "Spell.dbc Reagent[8]+Count[8]",    "Spell reagent set catalog"},
+    {"WACR", ".wacr",  "achieve",   "Achievement_Criteria.dbc",         "Achievement criteria catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

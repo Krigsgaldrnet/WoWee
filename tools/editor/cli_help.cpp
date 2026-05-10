@@ -1879,6 +1879,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wspr to a human-editable JSON sidecar (defaults to <base>.wspr.json). Reagent slot arrays exported as JSON arrays\n");
     std::printf("  --import-wspr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wspr.json sidecar back into binary .wspr (accepts reagentKind int OR reagentKindName string; reagent arrays pad with zeros if shorter than 8)\n");
+    std::printf("  --gen-acr <wacr-base> [name]\n");
+    std::printf("                         Emit .wacr 5 kill-counting criteria (Defias 50 / Murloc 25 / Naga 100 / Dragon 1 / RareElite 1) under one composite achievement\n");
+    std::printf("  --gen-acr-quest <wacr-base> [name]\n");
+    std::printf("                         Emit .wacr 4 quest-completion criteria (tutorial / starting zone / daily / escort) progression chain\n");
+    std::printf("  --gen-acr-mixed <wacr-base> [name]\n");
+    std::printf("                         Emit .wacr 5 cross-type criteria (ReachLevel 80 / EarnGold 10k / GainHonor 5k / PvPKill 100 / ExploreZone Stormwind) showing CriteriaType variety\n");
+    std::printf("  --info-wacr <wacr-base> [--json]\n");
+    std::printf("                         Print WACR entries (id / achievementId / type / targetId / requiredCount / timeLimitMs / progressOrder / name)\n");
+    std::printf("  --validate-wacr <wacr-base> [--json]\n");
+    std::printf("                         Static checks: id+name+achievementId required, criteriaType 0..12, no duplicate ids; warns on missing targetId for type-specific kinds, ReachLevel>80, timeLimit on non-timed types, requiredCount=0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

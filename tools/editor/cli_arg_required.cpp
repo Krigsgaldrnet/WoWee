@@ -247,6 +247,8 @@ const char* const kArgRequired[] = {
     "--gen-spr", "--gen-spr-warlock", "--gen-spr-rez",
     "--info-wspr", "--validate-wspr",
     "--export-wspr-json", "--import-wspr-json",
+    "--gen-acr", "--gen-acr-quest", "--gen-acr-mixed",
+    "--info-wacr", "--validate-wacr",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

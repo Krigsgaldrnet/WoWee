@@ -121,6 +121,7 @@
 #include "cli_talent_tabs_catalog.hpp"
 #include "cli_currency_types_catalog.hpp"
 #include "cli_spell_reagents_catalog.hpp"
+#include "cli_achievement_criteria_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -283,6 +284,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleTalentTabsCatalog,
     handleCurrencyTypesCatalog,
     handleSpellReagentsCatalog,
+    handleAchievementCriteriaCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
