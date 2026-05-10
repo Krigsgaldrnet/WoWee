@@ -2255,6 +2255,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
     std::printf("                         Search every catalog file under <directory> for an entry with the given id (recursive walk). Prints all hits as [WXXX] file:fieldName=id name. Use --magic to limit search to one format family when the same id is a primary key in multiple\n");
+    std::printf("  --catalog-by-name <directory> <substring> [--magic <WXXX>] [--ignore-case] [--json]\n");
+    std::printf("                         Search every catalog file under <directory> for entries whose name contains the substring. Complements --catalog-find (id-based) and --catalog-grep (catalog-header label only). --ignore-case for fuzzy substring matching\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

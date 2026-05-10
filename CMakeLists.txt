@@ -1555,6 +1555,7 @@ add_executable(wowee_editor
     tools/editor/cli_creature_resists_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
+    tools/editor/cli_catalog_by_name.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
