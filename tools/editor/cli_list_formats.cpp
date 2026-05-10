@@ -115,6 +115,7 @@ constexpr FormatRow kFormats[] = {
     {"WTBR", ".wtbr",  "tokens",    "currency_token_reward SQL",        "Token reward redemption catalog"},
     {"WSPS", ".wsps",  "spells",    "spell_proc_event SQL + Spell.dbc", "Spell proc trigger catalog"},
     {"WCMR", ".wcmr",  "creatures", "creature_movement waypoints SQL",  "Creature patrol path catalog"},
+    {"WBOS", ".wbos",  "raid",      "instance_encounter SQL",           "Boss encounter definition catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

@@ -2027,6 +2027,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcmr to a human-editable JSON sidecar (defaults to <base>.wcmr.json). Waypoints exported as JSON arrays for variable-length editing\n");
     std::printf("  --import-wcmr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcmr.json sidecar back into binary .wcmr (accepts pathKind/moveType int OR name; waypoint arrays length-preserving)\n");
+    std::printf("  --gen-bos <wbos-base> [name]\n");
+    std::printf("                         Emit .wbos 3 5-man dungeon bosses (TrollChieftain 2-phase / ShamanWraith / DrakTharonFinal 3-phase) at recommended ilvl 200-210\n");
+    std::printf("  --gen-bos-raid10 <wbos-base> [name]\n");
+    std::printf("                         Emit .wbos 4 ICC 10-Normal raid bosses (Marrowgar 2-phase / Deathwhisper 2-phase / Saurfang 1-phase / Lich King 5-phase) with soft-enrage timers\n");
+    std::printf("  --gen-bos-world <wbos-base> [name]\n");
+    std::printf("                         Emit .wbos 2 outdoor world bosses (Doom Lord Kazzak / Doomwalker) — 25-player, no enrage, no difficultyId\n");
+    std::printf("  --info-wbos <wbos-base> [--json]\n");
+    std::printf("                         Print WBOS entries (id / boss creature / map / difficulty / phases / size / ilvl / soft-enrage minutes / berserk spell / name)\n");
+    std::printf("  --validate-wbos <wbos-base> [--json]\n");
+    std::printf("                         Static checks: id+name+boss+map+phases+size required, no duplicate ids; warns on non-standard party size, berserkSpellId set without enrageTimerMs, enrage > 30 min\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
