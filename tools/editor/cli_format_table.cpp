@@ -112,6 +112,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','P','T','T'}, ".wptt",  "pets",      "--info-wptt",      "Hunter pet talent tree catalog"},
     {{'W','H','R','D'}, ".whrd",  "raid",      "--info-whrd",      "Heroic loot scaling catalog"},
     {{'W','R','P','R'}, ".wrpr",  "factions",  "--info-wrpr",      "Reputation reward tier catalog"},
+    {{'W','M','N','L'}, ".wmnl",  "worldmap",  "--info-wmnl",      "Minimap multi-level catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

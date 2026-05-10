@@ -134,6 +134,7 @@ constexpr FormatRow kFormats[] = {
     {"WPTT", ".wptt",  "pets",      "PetTalent.dbc + PetTalentTab.dbc",   "Hunter pet talent tree catalog (3 trees, grid+graph)"},
     {"WHRD", ".whrd",  "raid",      "implicit Heroic-mode loot scaling",  "Heroic loot scaling catalog (per instance+difficulty)"},
     {"WRPR", ".wrpr",  "factions",  "npc_vendor reqstanding + rep gates", "Reputation reward tier catalog (per faction)"},
+    {"WMNL", ".wmnl",  "worldmap",  "WorldMapTransforms.dbc + Overlay",   "Minimap multi-level catalog (vertical zones)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

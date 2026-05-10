@@ -2293,6 +2293,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wrpr to a human-editable JSON sidecar (defaults to <base>.wrpr.json; emits both unlockedItemIds and unlockedRecipeIds as JSON arrays of IDs; standingTier derived label \"Friendly/Honored/Revered/Exalted\" added for readability)\n");
     std::printf("  --import-wrpr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wrpr.json sidecar back into binary .wrpr (grantsTabard/grantsMount accept bool OR int; both unlock arrays serialize as plain JSON int arrays; standingTier label is informational only — minStanding int is authoritative)\n");
+    std::printf("  --gen-mnl <wmnl-base> [name]\n");
+    std::printf("                         Emit .wmnl 3 Stormwind minimap levels (Old Town Z 0-80 / Keep Approach Z 80-130 / Throne Room Z 130-200) at mapId 0 / areaId 1519\n");
+    std::printf("  --gen-mnl-dalaran <wmnl-base> [name]\n");
+    std::printf("                         Emit .wmnl 4 Dalaran minimap levels (Sewers / Street / Above Street / Floating Cathedral) — Wrath's most vertical city\n");
+    std::printf("  --gen-mnl-undercity <wmnl-base> [name]\n");
+    std::printf("                         Emit .wmnl 5 Undercity minimap levels (Sewer / Canal / Outer Ring / Inner Ring / Throne Room) — deepest layered city in EK\n");
+    std::printf("  --info-wmnl <wmnl-base> [--json]\n");
+    std::printf("                         Print WMNL entries (id / map / area / levelIndex / Z-range / displayName / name)\n");
+    std::printf("  --validate-wmnl <wmnl-base> [--json]\n");
+    std::printf("                         Static checks: id+name+areaId required, minZ<maxZ, no duplicate levelIds; per-area: no two levels at same levelIndex (picker UI conflict), no Z-range overlap between sibling levels (minimap flicker in overlap region); warns on empty texturePath (untextured layer) or empty displayName (blank picker entry)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
