@@ -339,6 +339,7 @@ const char* const kArgRequired[] = {
     "--export-wrpr-json", "--import-wrpr-json",
     "--gen-mnl", "--gen-mnl-dalaran", "--gen-mnl-undercity",
     "--info-wmnl", "--validate-wmnl",
+    "--export-wmnl-json", "--import-wmnl-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

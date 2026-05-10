@@ -125,6 +125,115 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWmnlExt(base);
+    if (out.empty()) out = base + ".wmnl.json";
+    if (!wowee::pipeline::WoweeMinimapLevelsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wmnl-json: WMNL not found: %s.wmnl\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeMinimapLevelsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WMNL";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"levelId", e.levelId},
+            {"name", e.name},
+            {"description", e.description},
+            {"mapId", e.mapId},
+            {"areaId", e.areaId},
+            {"levelIndex", e.levelIndex},
+            {"minZ", e.minZ},
+            {"maxZ", e.maxZ},
+            {"texturePath", e.texturePath},
+            {"displayName", e.displayName},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wmnl-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu levels)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wmnl.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wmnl");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wmnl-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wmnl-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeMinimapLevels c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wmnl-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeMinimapLevels::Entry e;
+        e.levelId = je.value("levelId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.mapId = je.value("mapId", 0u);
+        e.areaId = je.value("areaId", 0u);
+        e.levelIndex = static_cast<uint8_t>(
+            je.value("levelIndex", 0u));
+        e.minZ = je.value("minZ", 0.0f);
+        e.maxZ = je.value("maxZ", 0.0f);
+        e.texturePath = je.value("texturePath", std::string{});
+        e.displayName = je.value("displayName", std::string{});
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeMinimapLevelsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wmnl-json: failed to save %s.wmnl\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wmnl (%zu levels)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -294,6 +403,12 @@ bool handleMinimapLevelsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wmnl") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wmnl-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wmnl-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

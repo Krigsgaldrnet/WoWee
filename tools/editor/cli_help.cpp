@@ -2303,6 +2303,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMNL entries (id / map / area / levelIndex / Z-range / displayName / name)\n");
     std::printf("  --validate-wmnl <wmnl-base> [--json]\n");
     std::printf("                         Static checks: id+name+areaId required, minZ<maxZ, no duplicate levelIds; per-area: no two levels at same levelIndex (picker UI conflict), no Z-range overlap between sibling levels (minimap flicker in overlap region); warns on empty texturePath (untextured layer) or empty displayName (blank picker entry)\n");
+    std::printf("  --export-wmnl-json <wmnl-base> [out.json]\n");
+    std::printf("                         Export binary .wmnl to a human-editable JSON sidecar (defaults to <base>.wmnl.json; minZ/maxZ as floats, all string fields as plain strings)\n");
+    std::printf("  --import-wmnl-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wmnl.json sidecar back into binary .wmnl (no enums to coerce — pure positional/textual data; minZ/maxZ float-precise round-trip)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
