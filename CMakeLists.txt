@@ -1440,6 +1440,7 @@ add_executable(wowee_editor
     tools/editor/cli_companions_catalog.cpp
     tools/editor/cli_spell_mechanics_catalog.cpp
     tools/editor/cli_keybindings_catalog.cpp
+    tools/editor/cli_tree_summary_md.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp

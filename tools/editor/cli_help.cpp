@@ -1359,6 +1359,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Apply --rename-by-magic recursively to every file in <dir>. Conflicts are skipped without --force; exits 1 if any rename failed\n");
     std::printf("  --touch-tree <dir> [--json] [--quiet]\n");
     std::printf("                         CI integrity check: open every recognized .w* file in <dir>, parse standard header, report PASS/FAIL + extension mismatches. Exit 1 on any failure\n");
+    std::printf("  --tree-summary-md <dir> [out.md]\n");
+    std::printf("                         Emit a Markdown report of a content tree (per-format counts + per-file detail with catalog name + entry count). Stdout if no out path\n");
     std::printf("  --gen-animations <wani-base> [name]\n");
     std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
     std::printf("  --gen-animations-combat <wani-base> [name]\n");
