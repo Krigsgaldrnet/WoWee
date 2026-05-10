@@ -5,6 +5,7 @@
 #include "pipeline/wowee_spell_durations.hpp"
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -118,6 +119,142 @@ int handleInfo(int& i, int argc, char** argv) {
                     e.maxDurationMs,
                     e.iconColorRGBA, e.name.c_str());
     }
+    return 0;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWsdrExt(base);
+    if (!wowee::pipeline::WoweeSpellDurationLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wsdr-json: WSDR not found: %s.wsdr\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellDurationLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wsdr.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["durationId"] = e.durationId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["durationKind"] = e.durationKind;
+        je["durationKindName"] =
+            wowee::pipeline::WoweeSpellDuration::durationKindName(e.durationKind);
+        je["baseDurationMs"] = e.baseDurationMs;
+        je["perLevelMs"] = e.perLevelMs;
+        je["maxDurationMs"] = e.maxDurationMs;
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wsdr-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  buckets : %zu\n", c.entries.size());
+    return 0;
+}
+
+uint8_t parseDurationKindToken(const nlohmann::json& jv,
+                               uint8_t fallback) {
+    if (jv.is_number_integer() || jv.is_number_unsigned()) {
+        int v = jv.get<int>();
+        if (v < 0 || v > wowee::pipeline::WoweeSpellDuration::UntilDeath)
+            return fallback;
+        return static_cast<uint8_t>(v);
+    }
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        for (auto& ch : s) ch = static_cast<char>(std::tolower(ch));
+        if (s == "instant")          return wowee::pipeline::WoweeSpellDuration::Instant;
+        if (s == "timed")            return wowee::pipeline::WoweeSpellDuration::Timed;
+        if (s == "tick" ||
+            s == "tickbased")        return wowee::pipeline::WoweeSpellDuration::TickBased;
+        if (s == "until-cancelled" ||
+            s == "untilcancelled")   return wowee::pipeline::WoweeSpellDuration::UntilCancelled;
+        if (s == "until-death" ||
+            s == "untildeath")       return wowee::pipeline::WoweeSpellDuration::UntilDeath;
+    }
+    return fallback;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wsdr-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wsdr-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSpellDuration c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSpellDuration::Entry e;
+            if (je.contains("durationId"))  e.durationId = je["durationId"].get<uint32_t>();
+            if (je.contains("name"))        e.name = je["name"].get<std::string>();
+            if (je.contains("description")) e.description = je["description"].get<std::string>();
+            uint8_t kind = wowee::pipeline::WoweeSpellDuration::Timed;
+            if (je.contains("durationKind"))
+                kind = parseDurationKindToken(je["durationKind"], kind);
+            else if (je.contains("durationKindName"))
+                kind = parseDurationKindToken(je["durationKindName"], kind);
+            e.durationKind = kind;
+            if (je.contains("baseDurationMs")) e.baseDurationMs = je["baseDurationMs"].get<int32_t>();
+            if (je.contains("perLevelMs"))     e.perLevelMs = je["perLevelMs"].get<int32_t>();
+            if (je.contains("maxDurationMs"))  e.maxDurationMs = je["maxDurationMs"].get<int32_t>();
+            if (je.contains("iconColorRGBA")) e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wsdr.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWsdrExt(outBase);
+    if (!wowee::pipeline::WoweeSpellDurationLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wsdr-json: failed to save %s.wsdr\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wsdr\n", outBase.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  buckets : %zu\n", c.entries.size());
     return 0;
 }
 
@@ -246,6 +383,12 @@ bool handleSpellDurationsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wsdr") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wsdr-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wsdr-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

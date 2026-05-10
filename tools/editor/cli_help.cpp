@@ -1725,6 +1725,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSDR entries (id / kind / baseMs / perLevelMs / maxMs / iconColor / name)\n");
     std::printf("  --validate-wsdr <wsdr-base> [--json]\n");
     std::printf("                         Static checks: id+name required, durationKind 0..4, base>0 for Timed/TickBased, base<0 for permanent kinds, max>=base, no duplicate ids\n");
+    std::printf("  --export-wsdr-json <wsdr-base> [out.json]\n");
+    std::printf("                         Export binary .wsdr to a human-editable JSON sidecar (defaults to <base>.wsdr.json)\n");
+    std::printf("  --import-wsdr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsdr.json sidecar back into binary .wsdr (accepts durationKind int OR durationKindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
