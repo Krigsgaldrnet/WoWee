@@ -2443,6 +2443,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCFG entries (id / configKind / valueKind / restart-required / active value rendered per kind / name)\n");
     std::printf("  --validate-wcfg <wcfg-base> [--json]\n");
     std::printf("                         Static checks: id+name required, configKind 0..7 OR 255 Misc, valueKind 0..3, no duplicate configIds OR config names (server name-based lookups would be ambiguous), Bool valueKind requires intValue 0/1; warns on cross-field bleed (Float kind with non-zero intValue, etc.)\n");
+    std::printf("  --export-wcfg-json <wcfg-base> [out.json]\n");
+    std::printf("                         Export binary .wcfg to a human-editable JSON sidecar (defaults to <base>.wcfg.json; emits configKind + valueKind as int+name; ALL three value carriers (floatValue/intValue/strValue) plus an activeValue derived field rendering only the meaningful one per kind)\n");
+    std::printf("  --import-wcfg-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcfg.json sidecar back into binary .wcfg (configKind int OR \"xprate\"/\"droprate\"/\"honorrate\"/\"restedxp\"/\"realmtype\"/\"worldflag\"/\"performance\"/\"security\"/\"misc\"; valueKind int OR \"float\"/\"int\"/\"bool\"/\"string\"; restartRequired bool OR int)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
