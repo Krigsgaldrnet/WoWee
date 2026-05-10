@@ -2237,6 +2237,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wldn to a human-editable JSON sidecar (defaults to <base>.wldn.json; emits all 3 enums as both int AND name string; triggerValue as signed int32)\n");
     std::printf("  --import-wldn-json <json-path> [out-base]\n");
     std::printf("                         Import a .wldn.json sidecar back into binary .wldn (triggerKind int OR \"levelreach\"/\"factionstanding\"/\"itemacquired\"/\"questcomplete\"/\"spelllearned\"/\"zoneentered\"; channelKind \"raidwarning\"/\"systemmsg\"/\"subtitle\"/\"tutorial\"/\"motdappend\"; factionFilter \"alliance\"/\"horde\"/\"both\")\n");
+    std::printf("  --gen-cre <wcre-base> [name]\n");
+    std::printf("                         Emit .wcre 5 raid-boss resist profiles (Ragnaros 100%% fire-immune / Vael 50%% all schools / Hakkar arcane-immune / KT shadow-immune / Onyxia fire+frost partial)\n");
+    std::printf("  --gen-cre-elites <wcre-base> [name]\n");
+    std::printf("                         Emit .wcre 5 elite mid-tier profiles with single-school resists (water elemental fire / stone giant nature / scarlet priest holy / dustwind arcane / frostwolf frost)\n");
+    std::printf("  --gen-cre-immune <wcre-base> [name]\n");
+    std::printf("                         Emit .wcre 4 CC-immunity test profiles (treant root-immune / alpha worg stun-immune / acolyte silence-immune / risen construct fear+charm+poly immune)\n");
+    std::printf("  --info-wcre <wcre-base> [--json]\n");
+    std::printf("                         Print WCRE entries (id / creatureEntry / 6 school resists / phys%% / school-immune mask / CC-immune token list / name)\n");
+    std::printf("  --validate-wcre <wcre-base> [--json]\n");
+    std::printf("                         Static checks: id+name+creatureEntry required, no duplicate resistIds OR creatureEntries (damage-calc lookup ambiguity); warns on resist<-100 (extreme negative >2x dmg taken), physicalResistPct>75 (clamped at runtime), schoolImmunityMask reserved bits 0xC0 set\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

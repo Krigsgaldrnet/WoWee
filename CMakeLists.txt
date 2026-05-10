@@ -694,6 +694,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_tabards.cpp
     src/pipeline/wowee_spell_markers.cpp
     src/pipeline/wowee_learning_notifications.cpp
+    src/pipeline/wowee_creature_resists.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1551,6 +1552,7 @@ add_executable(wowee_editor
     tools/editor/cli_tabards_catalog.cpp
     tools/editor/cli_spell_markers_catalog.cpp
     tools/editor/cli_learning_notifications_catalog.cpp
+    tools/editor/cli_creature_resists_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
     tools/editor/cli_quest_objective.cpp
@@ -1725,6 +1727,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_tabards.cpp
     src/pipeline/wowee_spell_markers.cpp
     src/pipeline/wowee_learning_notifications.cpp
+    src/pipeline/wowee_creature_resists.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

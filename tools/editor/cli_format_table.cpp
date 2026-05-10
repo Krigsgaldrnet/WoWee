@@ -108,6 +108,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','T','B','D'}, ".wtbd",  "guilds",    "--info-wtbd",      "Tabard design / heraldry catalog"},
     {{'W','S','P','M'}, ".wspm",  "spellfx",   "--info-wspm",      "Spell persistent marker catalog"},
     {{'W','L','D','N'}, ".wldn",  "server",    "--info-wldn",      "Learning notification catalog"},
+    {{'W','C','R','E'}, ".wcre",  "creatures", "--info-wcre",      "Creature resist + immunity catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},
