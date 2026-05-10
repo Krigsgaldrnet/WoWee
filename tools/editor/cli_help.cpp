@@ -1361,6 +1361,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WANI entries (id / tier / flags / weapon mask / loop duration / fallback / name)\n");
     std::printf("  --validate-wani <wani-base> [--json]\n");
     std::printf("                         Static checks: id-unique, name not empty, tier 0..4, fallback != self, loop+oneshot exclusivity, looped requires duration\n");
+    std::printf("  --export-wani-json <wani-base> [out.json]\n");
+    std::printf("                         Export binary .wani to a human-editable JSON sidecar (defaults to <base>.wani.json)\n");
+    std::printf("  --import-wani-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wani.json sidecar back into binary .wani (accepts behaviorTier int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

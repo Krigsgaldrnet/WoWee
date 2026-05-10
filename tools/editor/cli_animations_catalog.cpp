@@ -121,6 +121,129 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each animation emits all 8 scalar fields
+    // plus a dual int + name form for behaviorTier so
+    // hand-edits can use either representation.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWaniExt(base);
+    if (outPath.empty()) outPath = base + ".wani.json";
+    if (!wowee::pipeline::WoweeAnimationLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wani-json: WANI not found: %s.wani\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeAnimationLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"animationId", e.animationId},
+            {"name", e.name},
+            {"description", e.description},
+            {"fallbackId", e.fallbackId},
+            {"behaviorId", e.behaviorId},
+            {"behaviorTier", e.behaviorTier},
+            {"behaviorTierName", wowee::pipeline::WoweeAnimation::behaviorTierName(e.behaviorTier)},
+            {"flags", e.flags},
+            {"weaponFlags", e.weaponFlags},
+            {"loopDurationMs", e.loopDurationMs},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wani-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source     : %s.wani\n", base.c_str());
+    std::printf("  animations : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wani.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWaniExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wani-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wani-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto tierFromName = [](const std::string& s) -> uint8_t {
+        if (s == "default")  return wowee::pipeline::WoweeAnimation::Default;
+        if (s == "mounted")  return wowee::pipeline::WoweeAnimation::Mounted;
+        if (s == "sitting")  return wowee::pipeline::WoweeAnimation::Sitting;
+        if (s == "aerial")   return wowee::pipeline::WoweeAnimation::Aerial;
+        if (s == "swimming") return wowee::pipeline::WoweeAnimation::Swimming;
+        return wowee::pipeline::WoweeAnimation::Default;
+    };
+    wowee::pipeline::WoweeAnimation c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeAnimation::Entry e;
+            e.animationId = je.value("animationId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.fallbackId = je.value("fallbackId", 0u);
+            e.behaviorId = je.value("behaviorId", 0u);
+            if (je.contains("behaviorTier") &&
+                je["behaviorTier"].is_number_integer()) {
+                e.behaviorTier = static_cast<uint8_t>(
+                    je["behaviorTier"].get<int>());
+            } else if (je.contains("behaviorTierName") &&
+                       je["behaviorTierName"].is_string()) {
+                e.behaviorTier = tierFromName(
+                    je["behaviorTierName"].get<std::string>());
+            }
+            e.flags = je.value("flags", 0u);
+            e.weaponFlags = je.value("weaponFlags",
+                wowee::pipeline::WoweeAnimation::kWeaponAny);
+            e.loopDurationMs = je.value("loopDurationMs", 0u);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeAnimationLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wani-json: failed to save %s.wani\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wani\n", outBase.c_str());
+    std::printf("  source     : %s\n", jsonPath.c_str());
+    std::printf("  animations : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -244,6 +367,12 @@ bool handleAnimationsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wani") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wani-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wani-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
