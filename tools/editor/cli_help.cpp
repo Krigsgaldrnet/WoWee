@@ -2531,6 +2531,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wspk to a human-editable JSON sidecar (defaults to <base>.wspk.json; emits spellIds as JSON int array preserving display order)\n");
     std::printf("  --import-wspk-json <json-path> [out-base]\n");
     std::printf("                         Import a .wspk.json sidecar back into binary .wspk (spellIds array preserves order — round-trips per-tab spell lists byte-identical)\n");
+    std::printf("  --gen-phm-human <wphm-base> [name]\n");
+    std::printf("                         Emit .wphm Human Male+Female 8-state machine (16 entries) with drunk-walk variant on Walk state\n");
+    std::printf("  --gen-phm-orc <wphm-base> [name]\n");
+    std::printf("                         Emit .wphm Orc Male+Female 8-state machine (16 entries) with AttackRun variant on Run for war-stance flavor\n");
+    std::printf("  --gen-phm-undead <wphm-base> [name]\n");
+    std::printf("                         Emit .wphm Undead Male+Female with shambling variant on Run (low-health renderer override) and slower swim transition (undead are awkward in water)\n");
+    std::printf("  --info-wphm <wphm-base> [--json]\n");
+    std::printf("                         Print WPHM bindings (id / race / gender / movementState / baseAnimId / variantAnimId / transitionMs)\n");
+    std::printf("  --validate-wphm <wphm-base> [--json]\n");
+    std::printf("                         Static checks: id required, raceId 1..10, genderId 0..1, movementState 0..7, no duplicate mapIds, no duplicate (race,gender,state) triples (renderer dispatch ambiguity), baseAnimId=0 forbidden on non-Idle states (would freeze model); warns on variantAnimId==baseAnimId no-op and transitionMs > 2000 animation hang\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

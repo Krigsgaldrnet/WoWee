@@ -151,6 +151,7 @@ constexpr FormatRow kFormats[] = {
     {"WGCH", ".wgch",  "chat",      "ChatChannels.dbc + zone-default joins","Global chat channel catalog (access policy + zone auto-join)"},
     {"WMOD", ".wmod",  "addons",    "per-addon TOC text + load-order rules","Addon manifest catalog (deps + cycle detection)"},
     {"WSPK", ".wspk",  "spells",    "SkillLineAbility + per-spec tab order","Spell pack catalog (per-class spellbook tab layout)"},
+    {"WPHM", ".wphm",  "anim",      "implicit M2 movementState->anim map","Player movement-to-animation map (per race/gender/state)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

@@ -389,6 +389,8 @@ const char* const kArgRequired[] = {
     "--gen-spk-warrior", "--gen-spk-mage", "--gen-spk-rogue",
     "--info-wspk", "--validate-wspk",
     "--export-wspk-json", "--import-wspk-json",
+    "--gen-phm-human", "--gen-phm-orc", "--gen-phm-undead",
+    "--info-wphm", "--validate-wphm",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
