@@ -2765,6 +2765,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCMD entries (id / /command / minSecurityLevel / category / hidden / throttleMs / aliases count / argSchema)\n");
     std::printf("  --validate-wcmd <wcmd-base> [--json]\n");
     std::printf("                         Static checks: id+command required, minSecurityLevel 0..4, category 0..4, no duplicate cmdIds; CRITICAL: command names + aliases share one flat namespace (chat parser dispatches uniformly) — duplicate name across canonical+aliases errors. Warns on uppercase chars (parser is case-insensitive but convention is canonical lowercase), Admin-category command at Player/Helper security (likely security misconfiguration), throttleMs > 60000 (likely ms-vs-s units typo), self-alias (canonical already matches), and empty helpText (/help would show no description)\n");
+    std::printf("  --export-wcmd-json <wcmd-base> [out.json]\n");
+    std::printf("                         Export binary .wcmd to a human-editable JSON sidecar (defaults to <base>.wcmd.json; emits both minSecurityLevel and category as int + name string; aliases as JSON string array)\n");
+    std::printf("  --import-wcmd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcmd.json sidecar back into binary .wcmd (minSecurityLevel int OR \"player\"/\"helper\"/\"moderator\"/\"gamemaster\"/\"admin\"; category int OR \"info\"/\"movement\"/\"communication\"/\"admincmd\"/\"debug\"; aliases array preserved)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
