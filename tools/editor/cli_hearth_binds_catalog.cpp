@@ -148,6 +148,187 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+// Token parser for bindKind. Returns -1 if the token
+// doesn't match any known kind, else the enum value.
+int parseBindKindToken(const std::string& s) {
+    using H = wowee::pipeline::WoweeHearthBinds;
+    if (s == "inn")         return H::Inn;
+    if (s == "capital")     return H::Capital;
+    if (s == "quest")       return H::Quest;
+    if (s == "guild")       return H::Guild;
+    if (s == "specialport") return H::SpecialPort;
+    if (s == "faction")     return H::Faction;
+    return -1;
+}
+
+// Token parser for factionMask. Returns -1 if unknown.
+int parseFactionMaskToken(const std::string& s) {
+    using H = wowee::pipeline::WoweeHearthBinds;
+    if (s == "alliance") return H::AllianceOnly;
+    if (s == "horde")    return H::HordeOnly;
+    if (s == "both")     return H::Both;
+    return -1;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWhrtExt(base);
+    if (out.empty()) out = base + ".whrt.json";
+    if (!wowee::pipeline::WoweeHearthBindsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-whrt-json: WHRT not found: %s.whrt\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeHearthBindsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WHRT";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"bindId", e.bindId},
+            {"name", e.name},
+            {"description", e.description},
+            {"mapId", e.mapId},
+            {"areaId", e.areaId},
+            {"x", e.x}, {"y", e.y}, {"z", e.z},
+            {"facing", e.facing},
+            {"npcId", e.npcId},
+            {"factionMask", e.factionMask},
+            {"factionMaskName", factionMaskName(e.factionMask)},
+            {"bindKind", e.bindKind},
+            {"bindKindName", bindKindName(e.bindKind)},
+            {"levelMin", e.levelMin},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-whrt-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu binds)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".whrt.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".whrt");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-whrt-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-whrt-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeHearthBinds c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-whrt-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeHearthBinds::Entry e;
+        e.bindId = je.value("bindId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.mapId = je.value("mapId", 0u);
+        e.areaId = je.value("areaId", 0u);
+        e.x = je.value("x", 0.0f);
+        e.y = je.value("y", 0.0f);
+        e.z = je.value("z", 0.0f);
+        e.facing = je.value("facing", 0.0f);
+        e.npcId = je.value("npcId", 0u);
+        // bindKind: int OR token string.
+        if (je.contains("bindKind")) {
+            const auto& bk = je["bindKind"];
+            if (bk.is_string()) {
+                int parsed = parseBindKindToken(bk.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-whrt-json: unknown bindKind "
+                        "token '%s' on entry id=%u\n",
+                        bk.get<std::string>().c_str(), e.bindId);
+                    return 1;
+                }
+                e.bindKind = static_cast<uint8_t>(parsed);
+            } else if (bk.is_number_integer()) {
+                e.bindKind = static_cast<uint8_t>(bk.get<int>());
+            }
+        } else if (je.contains("bindKindName") &&
+                   je["bindKindName"].is_string()) {
+            int parsed = parseBindKindToken(
+                je["bindKindName"].get<std::string>());
+            if (parsed >= 0)
+                e.bindKind = static_cast<uint8_t>(parsed);
+        }
+        // factionMask: int OR token string.
+        if (je.contains("factionMask")) {
+            const auto& fm = je["factionMask"];
+            if (fm.is_string()) {
+                int parsed = parseFactionMaskToken(
+                    fm.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-whrt-json: unknown factionMask "
+                        "token '%s' on entry id=%u\n",
+                        fm.get<std::string>().c_str(), e.bindId);
+                    return 1;
+                }
+                e.factionMask = static_cast<uint8_t>(parsed);
+            } else if (fm.is_number_integer()) {
+                e.factionMask = static_cast<uint8_t>(fm.get<int>());
+            }
+        } else if (je.contains("factionMaskName") &&
+                   je["factionMaskName"].is_string()) {
+            int parsed = parseFactionMaskToken(
+                je["factionMaskName"].get<std::string>());
+            if (parsed >= 0)
+                e.factionMask = static_cast<uint8_t>(parsed);
+        }
+        e.levelMin = static_cast<uint8_t>(je.value("levelMin", 0u));
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeHearthBindsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-whrt-json: failed to save %s.whrt\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.whrt (%zu binds)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -267,6 +448,12 @@ bool handleHearthBindsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-whrt") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-whrt-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-whrt-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
