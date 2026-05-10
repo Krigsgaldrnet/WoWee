@@ -60,6 +60,10 @@ bool isExternalRefField(const std::string& k) {
         "animationId", "particleId", "ribbonId",
         "vehicleId", "seatId", "currencyId",
         "trainerId", "vendorId", "mailTemplateId",
+        "playerId", "characterId", "creatorPlayerId",
+        "ownerId", "ownerCharacterId", "leaderId",
+        "emblemId", "glyphId", "decalId",
+        "previousRankId", "nextRankId",
     };
     for (const char* ref : kExternals) {
         if (k == ref) return true;

@@ -2195,6 +2195,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wbab to a human-editable JSON sidecar (defaults to <base>.wbab.json; emits statBonusKind as int+name and targetTypeMask as both int AND \"self+party+raid\" join string)\n");
     std::printf("  --import-wbab-json <json-path> [out-base]\n");
     std::printf("                         Import a .wbab.json sidecar back into binary .wbab (statBonusKind int OR \"stamina\"/\"intellect\"/\"spirit\"/\"allstats\"/\"armor\"/\"spellpower\"/\"attackpower\"/\"critrating\"/\"hasterating\"/\"manaregen\"/\"other\"; targetTypeMask int OR \"+\"-joined tokens \"self\"/\"party\"/\"raid\"/\"friendly\")\n");
+    std::printf("  --gen-tbd <wtbd-base> [name]\n");
+    std::printf("                         Emit .wtbd 4 Alliance-themed system tabards (Lion / DwarvenHammer / KulTirasAnchor / HighlordSword)\n");
+    std::printf("  --gen-tbd-horde <wtbd-base> [name]\n");
+    std::printf("                         Emit .wtbd 4 Horde-themed system tabards (OrgrimmarWolfhead / BarrensCrossedAxes / ForsakenSkull / SilvermoonPyramid)\n");
+    std::printf("  --gen-tbd-faction <wtbd-base> [name]\n");
+    std::printf("                         Emit .wtbd 6 faction-rep tabards (Argent Crusade / Ebon Blade / Sons of Hodir / Wyrmrest / Kalu'ak / Frenzyheart)\n");
+    std::printf("  --info-wtbd <wtbd-base> [--json]\n");
+    std::printf("                         Print WTBD entries (id / bg-pattern / border / emblem / guild / approval state / name)\n");
+    std::printf("  --validate-wtbd <wtbd-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, backgroundPattern 0..4, borderPattern 0..3, no duplicate ids; warns on emblemId>1023, alpha=0 on any color layer (transparent), and emblem-vs-background color similarity (squared RGB distance < 1500 — emblem unreadable)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

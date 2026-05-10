@@ -127,6 +127,7 @@ constexpr FormatRow kFormats[] = {
     {"WMSP", ".wmsp",  "server",    "realmlist + SMSG_REALM_LIST data",  "Master server profile / realmlist catalog"},
     {"WEMO", ".wemo",  "social",    "EmotesText.dbc + EmotesTextSound", "Emote definition catalog (/dance, /wave, etc.)"},
     {"WBAB", ".wbab",  "spells",    "Spell.dbc nextRank/prevRank ptrs",  "Buff & Aura book — long-duration class buffs with rank chains"},
+    {"WTBD", ".wtbd",  "guilds",    "guild_member tabard config blob",   "Tabard design / heraldry catalog (3-color)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
