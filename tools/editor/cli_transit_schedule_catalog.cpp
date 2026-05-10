@@ -160,6 +160,62 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseVehicleTypeToken(const std::string& s) {
+    using T = wowee::pipeline::WoweeTransitSchedule;
+    if (s == "taxi")     return T::Taxi;
+    if (s == "zeppelin") return T::Zeppelin;
+    if (s == "boat")     return T::Boat;
+    if (s == "mount")    return T::Mount;
+    return -1;
+}
+
+int parseFactionAccessToken(const std::string& s) {
+    using T = wowee::pipeline::WoweeTransitSchedule;
+    if (s == "both")     return T::Both;
+    if (s == "alliance") return T::Alliance;
+    if (s == "horde")    return T::Horde;
+    if (s == "neutral")  return T::Neutral;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wtsc-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -290,6 +346,136 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWtscExt(base);
+    if (out.empty()) out = base + ".wtsc.json";
+    if (!wowee::pipeline::WoweeTransitScheduleLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtsc-json: WTSC not found: %s.wtsc\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTransitScheduleLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WTSC";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"routeId", e.routeId},
+            {"name", e.name},
+            {"vehicleType", e.vehicleType},
+            {"vehicleTypeName",
+                vehicleTypeName(e.vehicleType)},
+            {"factionAccess", e.factionAccess},
+            {"factionAccessName",
+                factionAccessName(e.factionAccess)},
+            {"originName", e.originName},
+            {"originX", e.originX},
+            {"originY", e.originY},
+            {"originMapId", e.originMapId},
+            {"destinationName", e.destinationName},
+            {"destinationX", e.destinationX},
+            {"destinationY", e.destinationY},
+            {"destinationMapId", e.destinationMapId},
+            {"departureIntervalSec",
+                e.departureIntervalSec},
+            {"travelDurationSec", e.travelDurationSec},
+            {"capacity", e.capacity},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wtsc-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu routes)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wtsc.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wtsc");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wtsc-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wtsc-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeTransitSchedule c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wtsc-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeTransitSchedule::Entry e;
+        e.routeId = je.value("routeId", 0u);
+        e.name = je.value("name", std::string{});
+        if (!readEnumField(je, "vehicleType", "vehicleTypeName",
+                            parseVehicleTypeToken, "vehicleType",
+                            e.routeId, e.vehicleType)) return 1;
+        if (!readEnumField(je, "factionAccess",
+                            "factionAccessName",
+                            parseFactionAccessToken,
+                            "factionAccess", e.routeId,
+                            e.factionAccess)) return 1;
+        e.originName = je.value("originName", std::string{});
+        e.originX = je.value("originX", 0.f);
+        e.originY = je.value("originY", 0.f);
+        e.originMapId = je.value("originMapId", 0u);
+        e.destinationName = je.value("destinationName",
+                                       std::string{});
+        e.destinationX = je.value("destinationX", 0.f);
+        e.destinationY = je.value("destinationY", 0.f);
+        e.destinationMapId = je.value("destinationMapId", 0u);
+        e.departureIntervalSec =
+            je.value("departureIntervalSec", 0u);
+        e.travelDurationSec = je.value("travelDurationSec", 0u);
+        e.capacity = static_cast<uint16_t>(
+            je.value("capacity", 0));
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeTransitScheduleLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtsc-json: failed to save %s.wtsc\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtsc (%zu routes)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleTransitScheduleCatalog(int& i, int argc, char** argv,
@@ -312,6 +498,14 @@ bool handleTransitScheduleCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wtsc") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtsc-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtsc-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

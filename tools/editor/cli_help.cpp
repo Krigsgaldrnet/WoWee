@@ -2555,6 +2555,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTSC entries (id / vehicleType / factionAccess / departureIntervalSec / travelDurationSec / capacity / name)\n");
     std::printf("  --validate-wtsc <wtsc-base> [--json]\n");
     std::printf("                         Static checks: id+name+origin+destination required, vehicleType 0..3, factionAccess 0..3, no zero intervals/travel, no duplicate routeIds, no duplicate route names; CRITICAL scheduling invariant: when capacity > 0 the departureInterval >= travelDuration (else vehicle pool overflow — next zeppelin departs before prior arrives). Warns on same-map routes (originMapId == destinationMapId) — verify intentional\n");
+    std::printf("  --export-wtsc-json <wtsc-base> [out.json]\n");
+    std::printf("                         Export binary .wtsc to a human-editable JSON sidecar (defaults to <base>.wtsc.json; emits both vehicleType and factionAccess as int + name string; floats preserved bit-for-bit)\n");
+    std::printf("  --import-wtsc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtsc.json sidecar back into binary .wtsc (vehicleType int OR \"taxi\"/\"zeppelin\"/\"boat\"/\"mount\"; factionAccess int OR \"both\"/\"alliance\"/\"horde\"/\"neutral\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
