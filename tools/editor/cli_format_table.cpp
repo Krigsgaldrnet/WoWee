@@ -80,6 +80,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','C','D','F'}, ".wcdf",  "creatures", "--info-wcdf",      "Creature difficulty variant catalog"},
     {{'W','M','A','T'}, ".wmat",  "items",     "--info-wmat",      "Item material catalog"},
     {{'W','P','S','P'}, ".wpsp",  "chars",     "--info-wpsp",      "Player spawn profile catalog"},
+    {{'W','T','L','E'}, ".wtle",  "talents",   "--info-wtle",      "Talent tab / tree catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

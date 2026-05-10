@@ -237,6 +237,8 @@ const char* const kArgRequired[] = {
     "--gen-psp", "--gen-psp-horde", "--gen-psp-dk",
     "--info-wpsp", "--validate-wpsp",
     "--export-wpsp-json", "--import-wpsp-json",
+    "--gen-tle", "--gen-tle-mage", "--gen-tle-paladin",
+    "--info-wtle", "--validate-wtle",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

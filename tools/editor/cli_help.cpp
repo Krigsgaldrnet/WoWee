@@ -1833,6 +1833,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wpsp to a human-editable JSON sidecar (defaults to <base>.wpsp.json)\n");
     std::printf("  --import-wpsp-json <json-path> [out-base]\n");
     std::printf("                         Import a .wpsp.json sidecar back into binary .wpsp (all per-entry fields preserved verbatim including spawn/bind coords and item/spell ids)\n");
+    std::printf("  --gen-tle <wtle-base> [name]\n");
+    std::printf("                         Emit .wtle Warrior tabs: 3 trees (Arms DPS / Fury DPS / Protection Tank) with canonical icon and background art paths\n");
+    std::printf("  --gen-tle-mage <wtle-base> [name]\n");
+    std::printf("                         Emit .wtle Mage tabs: 3 trees (Arcane / Fire / Frost), all DPS, with mage-blue icon color\n");
+    std::printf("  --gen-tle-paladin <wtle-base> [name]\n");
+    std::printf("                         Emit .wtle Paladin tabs: 3 trees covering all 3 roles (Holy Healer / Protection Tank / Retribution DPS)\n");
+    std::printf("  --info-wtle <wtle-base> [--json]\n");
+    std::printf("                         Print WTLE entries (id / classMask / displayOrder / role / name / backgroundFile)\n");
+    std::printf("  --validate-wtle <wtle-base> [--json]\n");
+    std::printf("                         Static checks: id+name+classMask required, roleHint 0..4, no duplicate ids; warns on empty icon/background, displayOrder>3, and (classMask+order) UI position collisions\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

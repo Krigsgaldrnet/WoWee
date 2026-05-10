@@ -117,6 +117,7 @@
 #include "cli_creature_difficulties_catalog.hpp"
 #include "cli_item_materials_catalog.hpp"
 #include "cli_player_spawn_profiles_catalog.hpp"
+#include "cli_talent_tabs_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -275,6 +276,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleCreatureDifficultiesCatalog,
     handleItemMaterialsCatalog,
     handlePlayerSpawnProfilesCatalog,
+    handleTalentTabsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
