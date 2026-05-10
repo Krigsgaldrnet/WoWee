@@ -89,6 +89,7 @@ constexpr FormatRow kFormats[] = {
     {"WRUN", ".wrun",  "spells",    "RuneCost.dbc + ChrPowerType DK",   "Death Knight rune cost catalog"},
     {"WLDS", ".wlds",  "ui",        "LoadingScreens.dbc",               "Per-zone loading screen catalog"},
     {"WSUF", ".wsuf",  "items",     "ItemRandomProperties + Suffix",    "Item random-suffix bonus catalog"},
+    {"WCRR", ".wcrr",  "stats",     "gtCombatRatings.dbc + curves",     "Combat rating conversion catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

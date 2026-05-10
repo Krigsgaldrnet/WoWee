@@ -1643,6 +1643,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsuf to a human-editable JSON sidecar with nested stats[] arrays (defaults to <base>.wsuf.json)\n");
     std::printf("  --import-wsuf-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsuf.json sidecar back into binary .wsuf (accepts suffixCategory int OR name string; missing stat slots cleared)\n");
+    std::printf("  --gen-crr <wcrr-base> [name]\n");
+    std::printf("                         Emit .wcrr starter: 3 essential combat ratings (Hit / Crit / Haste) at canonical L80 conversion values\n");
+    std::printf("  --gen-crr-defensive <wcrr-base> [name]\n");
+    std::printf("                         Emit .wcrr 4 defensive ratings (Defense / Dodge / Parry / Block) for tank stat scaling with diminishing returns caps\n");
+    std::printf("  --gen-crr-spell <wcrr-base> [name]\n");
+    std::printf("                         Emit .wcrr 3 spell ratings (SpellPower direct / SpellPenetration flat / MP5 mana regen) for caster stat scaling\n");
+    std::printf("  --info-wcrr <wcrr-base> [--json]\n");
+    std::printf("                         Print WCRR entries (id / kind / pointsAtL1/L60/L70/L80 conversion floors / max benefit pct / name)\n");
+    std::printf("  --validate-wcrr <wcrr-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, kind 0..4, all pointsAtLN > 0 (div-by-zero risk), maxPct > 0, monotonic ascending curve\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
