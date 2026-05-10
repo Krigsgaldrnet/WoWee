@@ -2569,6 +2569,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPRT entries (id / spellId / portalKind / factionAccess / levelRequirement / reagentItemId / destination)\n");
     std::printf("  --validate-wprt <wprt-base> [--json]\n");
     std::printf("                         Static checks: id+spellId+destination required, factionAccess 0..3, portalKind 0..1, no duplicate portalIds, no duplicate spellIds (would conflict on cast); warns on levelRequirement < 20 (vanilla mage cannot unlock), Portal kind without Rune of Portals (17032), Teleport kind without Rune of Teleportation (17031), and duplicate destination names (likely Teleport+Portal pair OR copy-paste bug)\n");
+    std::printf("  --export-wprt-json <wprt-base> [out.json]\n");
+    std::printf("                         Export binary .wprt to a human-editable JSON sidecar (defaults to <base>.wprt.json; emits factionAccess and portalKind as int + name string; floats preserved bit-for-bit)\n");
+    std::printf("  --import-wprt-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wprt.json sidecar back into binary .wprt (factionAccess int OR \"both\"/\"alliance\"/\"horde\"/\"neutral\"; portalKind int OR \"teleport\"/\"portal\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
