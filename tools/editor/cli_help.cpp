@@ -1905,6 +1905,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSEF entries (id / kind / baseAmount / behavior flags / name) — flags decoded as label list\n");
     std::printf("  --validate-wsef <wsef-base> [--json]\n");
     std::printf("                         Static checks: name required, effectKind 0..9, no duplicate ids; warns on Hostile+Beneficial conflict, Damage without TriggersGCD, Heal without IsBeneficialEffect\n");
+    std::printf("  --export-wsef-json <wsef-base> [out.json]\n");
+    std::printf("                         Export binary .wsef to a human-editable JSON sidecar (defaults to <base>.wsef.json)\n");
+    std::printf("  --import-wsef-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsef.json sidecar back into binary .wsef (accepts effectKind int OR effectKindName string; behaviorFlags int OR pipe-separated label string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
