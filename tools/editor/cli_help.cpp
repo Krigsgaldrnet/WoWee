@@ -2251,6 +2251,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcre to a human-editable JSON sidecar (defaults to <base>.wcre.json; emits ccImmunityMask as both raw uint16 AND \"+\"-joined name string \"root+stun+fear\" / \"all\" / \"none\")\n");
     std::printf("  --import-wcre-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcre.json sidecar back into binary .wcre (ccImmunityMask int OR token string \"all\"/\"none\"/\"+\"-joined from {root,snare,stun,fear,sleep,silence,charm,disarm,polymorph,banish,knockback,interrupt,taunt,bleed})\n");
+    std::printf("  --gen-ptt <wptt-base> [name]\n");
+    std::printf("                         Emit .wptt 6 Ferocity (DPS) Hunter pet talents with grid placement + prereq chains (CobraReflexes / SerpentSwiftness / SpikedCollar / BoarsSpeed / SpidersBite / Rabid)\n");
+    std::printf("  --gen-ptt-cunning <wptt-base> [name]\n");
+    std::printf("                         Emit .wptt 5 Cunning (utility) Hunter pet talents (Dash / OwlsFocus / RoarOfRecovery / Cornered / HeartOfThePhoenix)\n");
+    std::printf("  --gen-ptt-tenacity <wptt-base> [name]\n");
+    std::printf("                         Emit .wptt 5 Tenacity (tank) Hunter pet talents (Charge / GreatStamina / Thunderstomp / Taunt / LastStand)\n");
+    std::printf("  --info-wptt <wptt-base> [--json]\n");
+    std::printf("                         Print WPTT entries (id / tree / tier / column / max ranks / prereq talentId / loyalty req / name) plus per-talent rank-spell IDs\n");
+    std::printf("  --validate-wptt <wptt-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, treeKind 0..2, tier 0..6, column 0..2, maxRank 1..5, no duplicate talentIds, no two talents in same (tree,tier,col) cell, no self-referencing prereqs, prereqs resolve to existing entries IN SAME TREE at EARLIER TIER, spellIdsByRank.size() == maxRank, no zero-spell-id within array\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
