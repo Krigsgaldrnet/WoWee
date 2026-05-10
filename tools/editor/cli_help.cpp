@@ -1301,6 +1301,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGLY entries (id / type / spellId / itemId / classMask / requiredLevel / name)\n");
     std::printf("  --validate-wgly <wgly-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name+spellId not empty, type 0..2, classMask>0, level<25 warning, missing-itemId warning\n");
+    std::printf("  --gen-vehicles <wvhc-base> [name]\n");
+    std::printf("                         Emit .wvhc starter: 3 vehicles (chopper / wind rider / salvaged tank) covering ground+air+siege roles\n");
+    std::printf("  --gen-vehicles-siege <wvhc-base> [name]\n");
+    std::printf("                         Emit .wvhc 3 siege weapons (Demolisher 2-seat / Glaive Thrower / Salvaged Cannon) with control spellIds\n");
+    std::printf("  --gen-vehicles-flying <wvhc-base> [name]\n");
+    std::printf("                         Emit .wvhc 3 flying mounts (Wind Rider / Storm Gryphon / Twilight Drake) cross-ref WMNT flightCapabilityIds\n");
+    std::printf("  --info-wvhc <wvhc-base> [--json]\n");
+    std::printf("                         Print WVHC entries with seat layout (id / creature / kind / movement / power / seat count / name)\n");
+    std::printf("  --validate-wvhc <wvhc-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, creatureId>0, kind/movement/power in range, exactly 1 driver seat, no duplicate seatIndex\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
