@@ -1525,6 +1525,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSCH entries (schoolId / immune+absorb+reflect+crit flags / resistance cap / combined-mask / name)\n");
     std::printf("  --validate-wsch <wsch-base> [--json]\n");
     std::printf("                         Static checks: id+name required, reflected-without-absorbed warning, combined-mask references defined schools, no self-reference\n");
+    std::printf("  --export-wsch-json <wsch-base> [out.json]\n");
+    std::printf("                         Export binary .wsch to a human-editable JSON sidecar (defaults to <base>.wsch.json)\n");
+    std::printf("  --import-wsch-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsch.json sidecar back into binary .wsch (canBeImmune/Absorbed/Crit default to 1, canBeReflected to 0)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

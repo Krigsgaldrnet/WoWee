@@ -124,6 +124,127 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. WSCH has no enum fields with name forms
+    // — just raw numeric school bits and flag bytes — so
+    // the JSON mapping is a direct dump.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWschExt(base);
+    if (outPath.empty()) outPath = base + ".wsch.json";
+    if (!wowee::pipeline::WoweeSpellSchoolLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wsch-json: WSCH not found: %s.wsch\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellSchoolLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"schoolId", e.schoolId},
+            {"name", e.name},
+            {"description", e.description},
+            {"iconPath", e.iconPath},
+            {"canBeImmune", e.canBeImmune},
+            {"canBeAbsorbed", e.canBeAbsorbed},
+            {"canBeReflected", e.canBeReflected},
+            {"canCrit", e.canCrit},
+            {"colorRGBA", e.colorRGBA},
+            {"baseResistanceCap", e.baseResistanceCap},
+            {"castSoundId", e.castSoundId},
+            {"impactSoundId", e.impactSoundId},
+            {"combinedSchoolMask", e.combinedSchoolMask},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wsch-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source  : %s.wsch\n", base.c_str());
+    std::printf("  schools : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wsch.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWschExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wsch-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wsch-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSpellSchool c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSpellSchool::Entry e;
+            e.schoolId = je.value("schoolId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            // Defaults match the WoW canonical behavior: most
+            // schools allow absorbs and crits, only Holy is
+            // non-immune by default. Hand-edits should set
+            // these explicitly when they differ.
+            e.canBeImmune = static_cast<uint8_t>(
+                je.value("canBeImmune", 1));
+            e.canBeAbsorbed = static_cast<uint8_t>(
+                je.value("canBeAbsorbed", 1));
+            e.canBeReflected = static_cast<uint8_t>(
+                je.value("canBeReflected", 0));
+            e.canCrit = static_cast<uint8_t>(
+                je.value("canCrit", 1));
+            e.colorRGBA = je.value("colorRGBA", 0xFFFFFFFFu);
+            e.baseResistanceCap = je.value("baseResistanceCap", 0u);
+            e.castSoundId = je.value("castSoundId", 0u);
+            e.impactSoundId = je.value("impactSoundId", 0u);
+            e.combinedSchoolMask = je.value("combinedSchoolMask", 0u);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeSpellSchoolLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wsch-json: failed to save %s.wsch\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wsch\n", outBase.c_str());
+    std::printf("  source  : %s\n", jsonPath.c_str());
+    std::printf("  schools : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -265,6 +386,12 @@ bool handleSpellSchoolsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wsch") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wsch-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wsch-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
