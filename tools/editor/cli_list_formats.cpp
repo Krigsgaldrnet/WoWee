@@ -77,6 +77,7 @@ constexpr FormatRow kFormats[] = {
     {"WCEQ", ".wceq",  "creatures", "creature_equip_template",          "Creature equipment loadout (visible weapons)"},
     {"WSET", ".wset",  "items",     "ItemSet.dbc + ItemSetSpell.dbc",   "Item set + tier-bonus catalog"},
     {"WGTP", ".wgtp",  "ui",        "GameTips.dbc + tutorial hints",    "Game tips / tutorial / loading-screen catalog"},
+    {"WCMP", ".wcmp",  "pets",      "CreatureFamily + companion SQL",   "Companion / vanity pet catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

@@ -1471,6 +1471,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wgtp to a human-editable JSON sidecar (defaults to <base>.wgtp.json)\n");
     std::printf("  --import-wgtp-json <json-path> [out-base]\n");
     std::printf("                         Import a .wgtp.json sidecar back into binary .wgtp (accepts displayKind int OR name string)\n");
+    std::printf("  --gen-cmp <wcmp-base> [name]\n");
+    std::printf("                         Emit .wcmp starter: 3 common vendor companions (Mechanical Squirrel / Cat / Prairie Dog)\n");
+    std::printf("  --gen-cmp-rare <wcmp-base> [name]\n");
+    std::printf("                         Emit .wcmp 4 promo / collector pets (Mini Diablo / Panda Cub / Zergling / Murky) at Epic rarity\n");
+    std::printf("  --gen-cmp-faction <wcmp-base> [name]\n");
+    std::printf("                         Emit .wcmp 3 faction-restricted pets (Alliance Lion Cub / Horde Mottled Boar / Argent Squire any-faction)\n");
+    std::printf("  --info-wcmp <wcmp-base> [--json]\n");
+    std::printf("                         Print WCMP entries (id / creature / kind / rarity / faction / learn spell+item / idle sound / name)\n");
+    std::printf("  --validate-wcmp <wcmp-base> [--json]\n");
+    std::printf("                         Static checks: id+name+creatureId+learnSpellId required, kind 0..7, rarity 0..3, faction 0..2, Epic-no-itemId warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

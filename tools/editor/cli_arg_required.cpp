@@ -160,6 +160,8 @@ const char* const kArgRequired[] = {
     "--gen-tips", "--gen-tips-new-player", "--gen-tips-advanced",
     "--info-wgtp", "--validate-wgtp",
     "--export-wgtp-json", "--import-wgtp-json",
+    "--gen-cmp", "--gen-cmp-rare", "--gen-cmp-faction",
+    "--info-wcmp", "--validate-wcmp",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
