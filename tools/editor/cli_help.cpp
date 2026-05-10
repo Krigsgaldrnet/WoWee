@@ -1701,6 +1701,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsrg to a human-editable JSON sidecar (defaults to <base>.wsrg.json)\n");
     std::printf("  --import-wsrg-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsrg.json sidecar back into binary .wsrg (accepts rangeKind int OR rangeKindName string)\n");
+    std::printf("  --gen-sct <wsct-base> [name]\n");
+    std::printf("                         Emit .wsct starter: 4 baseline cast time buckets (Instant 0ms / FastCast 1s / MediumCast 1.5s / LongCast 3s)\n");
+    std::printf("  --gen-sct-channel <wsct-base> [name]\n");
+    std::printf("                         Emit .wsct 3 channeled-spell buckets (TickEvery1s 3s total / TickEvery2s 6s / TickEvery3s 9s)\n");
+    std::printf("  --gen-sct-ramp <wsct-base> [name]\n");
+    std::printf("                         Emit .wsct 4 level-scaled buckets (perLevelMs > 0; baseMs grows with level, clamped to min/max)\n");
+    std::printf("  --info-wsct <wsct-base> [--json]\n");
+    std::printf("                         Print WSCT entries (id / kind / baseMs / perLevelMs / minMs / maxMs / iconColor / name)\n");
+    std::printf("  --validate-wsct <wsct-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, castKind 0..4, baseMs>=0, min<=max, no duplicate ids; warns on Instant+nonzero base, errors on Channel+0 base\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
