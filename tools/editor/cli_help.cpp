@@ -2625,6 +2625,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCRA entries (recipeId / spellId / tradeSkillName / requiredSkillLevel / producedItemId / producedCount / reagent count / name)\n");
     std::printf("  --validate-wcra <wcra-base> [--json]\n");
     std::printf("                         Static checks: id+name+spellId+tradeSkillId+producedItemId+producedCount required, no duplicate recipeIds, no duplicate spellIds (cast-handler conflict), no zero-itemId/zero-count reagents, no duplicate reagent itemIds within a single recipe (should be merged), no self-reagent (recipe consuming its own output is a perpetual-motion bug); warns on requiredSkillLevel > 450 (above WotLK cap), empty reagent list (free-to-craft is unusual)\n");
+    std::printf("  --export-wcra-json <wcra-base> [out.json]\n");
+    std::printf("                         Export binary .wcra to a human-editable JSON sidecar (defaults to <base>.wcra.json; tradeSkillName is informational; reagents emitted as JSON object array of {itemId,count})\n");
+    std::printf("  --import-wcra-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcra.json sidecar back into binary .wcra (tradeSkillId int authoritative, tradeSkillName ignored; reagents accept JSON object array — round-trips per-recipe variable-length reagent lists byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

@@ -301,6 +301,134 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWcraExt(base);
+    if (out.empty()) out = base + ".wcra.json";
+    if (!wowee::pipeline::WoweeCraftingRecipesLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcra-json: WCRA not found: %s.wcra\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCraftingRecipesLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WCRA";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json reagents = nlohmann::json::array();
+        for (const auto& r : e.reagents) {
+            reagents.push_back({
+                {"itemId", r.itemId},
+                {"count", r.count},
+            });
+        }
+        arr.push_back({
+            {"recipeId", e.recipeId},
+            {"spellId", e.spellId},
+            {"name", e.name},
+            {"tradeSkillId", e.tradeSkillId},
+            {"tradeSkillName",
+                tradeSkillName(e.tradeSkillId)},
+            {"requiredSkillLevel", e.requiredSkillLevel},
+            {"producedItemId", e.producedItemId},
+            {"producedCount", e.producedCount},
+            {"categoryId", e.categoryId},
+            {"learnedFromItemId", e.learnedFromItemId},
+            {"reagents", reagents},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wcra-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu recipes)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wcra.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wcra");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wcra-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wcra-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeCraftingRecipes c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wcra-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeCraftingRecipes::Entry e;
+        e.recipeId = je.value("recipeId", 0u);
+        e.spellId = je.value("spellId", 0u);
+        e.name = je.value("name", std::string{});
+        e.tradeSkillId = static_cast<uint16_t>(
+            je.value("tradeSkillId", 0));
+        e.requiredSkillLevel = static_cast<uint16_t>(
+            je.value("requiredSkillLevel", 0));
+        e.producedItemId = je.value("producedItemId", 0u);
+        e.producedCount = static_cast<uint16_t>(
+            je.value("producedCount", 1));
+        e.categoryId = static_cast<uint16_t>(
+            je.value("categoryId", 0));
+        e.learnedFromItemId = je.value("learnedFromItemId", 0u);
+        if (je.contains("reagents") &&
+            je["reagents"].is_array()) {
+            for (const auto& r : je["reagents"]) {
+                wowee::pipeline::WoweeCraftingRecipes::
+                    Reagent reagent;
+                reagent.itemId = r.value("itemId", 0u);
+                reagent.count = r.value("count", 0u);
+                e.reagents.push_back(reagent);
+            }
+        }
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeCraftingRecipesLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcra-json: failed to save %s.wcra\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wcra (%zu recipes)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleCraftingRecipesCatalog(int& i, int argc, char** argv,
@@ -323,6 +451,14 @@ bool handleCraftingRecipesCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wcra") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcra-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcra-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

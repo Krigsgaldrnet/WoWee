@@ -409,6 +409,7 @@ const char* const kArgRequired[] = {
     "--export-wqgr-json", "--import-wqgr-json",
     "--gen-cra-alchemy", "--gen-cra-engineering", "--gen-cra-blacksmithing",
     "--info-wcra", "--validate-wcra",
+    "--export-wcra-json", "--import-wcra-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
