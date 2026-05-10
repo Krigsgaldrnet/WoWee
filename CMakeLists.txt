@@ -1475,6 +1475,7 @@ add_executable(wowee_editor
     tools/editor/cli_magic_fix.cpp
     tools/editor/cli_bulk_validate.cpp
     tools/editor/cli_bulk_json.cpp
+    tools/editor/cli_diff_tree.cpp
     tools/editor/cli_macros_catalog.cpp
     tools/editor/cli_char_features_catalog.cpp
     tools/editor/cli_pvp_catalog.cpp

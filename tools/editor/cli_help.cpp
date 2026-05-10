@@ -1375,6 +1375,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Recursively export every recognized .w* file to its JSON sidecar via the per-format --export-X-json flag. Useful for git-friendly diffs of binary catalogs. Exit 1 if any failure\n");
     std::printf("  --bulk-import-json <dir> [--json]\n");
     std::printf("                         Recursively import every .wXXX.json sidecar back to its binary .w* form via the per-format --import-X-json flag. Inverse of --bulk-export-json. Exit 1 if any failure\n");
+    std::printf("  --diff-tree <dirA> <dirB> [--json]\n");
+    std::printf("                         Compare two directory trees of .w* catalogs at the magic+size level. Reports only-in-A / only-in-B / magic-changed / size-changed / identical counts and lists changed paths. Exit 1 if any difference\n");
     std::printf("  --gen-animations <wani-base> [name]\n");
     std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
     std::printf("  --gen-animations-combat <wani-base> [name]\n");
