@@ -2149,6 +2149,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCMG entries (id / classMask / category / exclusive / member count / name) plus per-group spell ID list\n");
     std::printf("  --validate-wcmg <wcmg-base> [--json]\n");
     std::printf("                         Static checks: id+name+classMask required, categoryKind 0..5, members[] non-empty, no duplicate spellIds within a group, no duplicate groupIds, no spellId in two exclusive groups (undecidable mutex); warns on single-member groups\n");
+    std::printf("  --export-wcmg-json <wcmg-base> [out.json]\n");
+    std::printf("                         Export binary .wcmg to a human-editable JSON sidecar (defaults to <base>.wcmg.json; emits both categoryKind int AND name string; members[] as JSON array of spell IDs)\n");
+    std::printf("  --import-wcmg-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcmg.json sidecar back into binary .wcmg (categoryKind int OR \"stance\"/\"form\"/\"aspect\"/\"presence\"/\"posture\"/\"sigil\"; exclusive bool OR int)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");

@@ -158,6 +158,162 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+// Token parser for categoryKind. Returns -1 if unknown.
+int parseCategoryKindToken(const std::string& s) {
+    using C = wowee::pipeline::WoweeCombatManeuvers;
+    if (s == "stance")   return C::Stance;
+    if (s == "form")     return C::Form;
+    if (s == "aspect")   return C::Aspect;
+    if (s == "presence") return C::Presence;
+    if (s == "posture")  return C::Posture;
+    if (s == "sigil")    return C::Sigil;
+    return -1;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWcmgExt(base);
+    if (out.empty()) out = base + ".wcmg.json";
+    if (!wowee::pipeline::WoweeCombatManeuversLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcmg-json: WCMG not found: %s.wcmg\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCombatManeuversLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WCMG";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"groupId", e.groupId},
+            {"name", e.name},
+            {"description", e.description},
+            {"classMask", e.classMask},
+            {"categoryKind", e.categoryKind},
+            {"categoryKindName",
+                categoryKindName(e.categoryKind)},
+            {"exclusive", e.exclusive != 0},
+            {"iconColorRGBA", e.iconColorRGBA},
+            {"members", e.members},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wcmg-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu groups)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wcmg.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wcmg");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wcmg-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wcmg-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeCombatManeuvers c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wcmg-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeCombatManeuvers::Entry e;
+        e.groupId = je.value("groupId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.classMask = je.value("classMask", 0u);
+        // categoryKind: int OR token string.
+        if (je.contains("categoryKind")) {
+            const auto& ck = je["categoryKind"];
+            if (ck.is_string()) {
+                int parsed = parseCategoryKindToken(
+                    ck.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-wcmg-json: unknown "
+                        "categoryKind token '%s' on entry "
+                        "id=%u\n",
+                        ck.get<std::string>().c_str(), e.groupId);
+                    return 1;
+                }
+                e.categoryKind = static_cast<uint8_t>(parsed);
+            } else if (ck.is_number_integer()) {
+                e.categoryKind = static_cast<uint8_t>(
+                    ck.get<int>());
+            }
+        } else if (je.contains("categoryKindName") &&
+                   je["categoryKindName"].is_string()) {
+            int parsed = parseCategoryKindToken(
+                je["categoryKindName"].get<std::string>());
+            if (parsed >= 0)
+                e.categoryKind = static_cast<uint8_t>(parsed);
+        }
+        // exclusive: bool OR int.
+        if (je.contains("exclusive")) {
+            const auto& ex = je["exclusive"];
+            if (ex.is_boolean())
+                e.exclusive = ex.get<bool>() ? 1 : 0;
+            else if (ex.is_number_integer())
+                e.exclusive = static_cast<uint8_t>(
+                    ex.get<int>() != 0 ? 1 : 0);
+        }
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        if (je.contains("members") && je["members"].is_array()) {
+            for (const auto& m : je["members"]) {
+                if (m.is_number_integer())
+                    e.members.push_back(m.get<uint32_t>());
+            }
+        }
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeCombatManeuversLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcmg-json: failed to save %s.wcmg\n",
+            outBase.c_str());
+        return 1;
+    }
+    size_t totalSpells = 0;
+    for (const auto& e : c.entries) totalSpells += e.members.size();
+    std::printf("Wrote %s.wcmg (%zu groups, %zu member spells)\n",
+                outBase.c_str(), c.entries.size(), totalSpells);
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -301,6 +457,12 @@ bool handleCombatManeuversCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wcmg") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcmg-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcmg-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
