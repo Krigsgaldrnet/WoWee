@@ -1418,6 +1418,8 @@ add_executable(wowee_editor
     tools/editor/cli_info_magic.cpp
     tools/editor/cli_animations_catalog.cpp
     tools/editor/cli_spell_visuals_catalog.cpp
+    tools/editor/cli_format_table.cpp
+    tools/editor/cli_summary_dir.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
