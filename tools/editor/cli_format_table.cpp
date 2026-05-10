@@ -119,6 +119,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','V','O','X'}, ".wvox",  "audio",     "--info-wvox",      "Voiceover audio catalog"},
     {{'W','T','R','D'}, ".wtrd",  "social",    "--info-wtrd",      "Trade window rules catalog"},
     {{'W','W','F','L'}, ".wwfl",  "social",    "--info-wwfl",      "Word filter catalog"},
+    {{'W','M','A','R'}, ".wmar",  "ui",        "--info-wmar",      "Raid marker catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

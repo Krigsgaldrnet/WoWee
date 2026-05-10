@@ -161,6 +161,7 @@
 #include "cli_voiceovers_catalog.hpp"
 #include "cli_trade_rules_catalog.hpp"
 #include "cli_word_filters_catalog.hpp"
+#include "cli_raid_markers_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -367,6 +368,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleVoiceoversCatalog,
     handleTradeRulesCatalog,
     handleWordFiltersCatalog,
+    handleRaidMarkersCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

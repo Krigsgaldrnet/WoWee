@@ -705,6 +705,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_voiceovers.cpp
     src/pipeline/wowee_trade_rules.cpp
     src/pipeline/wowee_word_filters.cpp
+    src/pipeline/wowee_raid_markers.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1573,6 +1574,7 @@ add_executable(wowee_editor
     tools/editor/cli_voiceovers_catalog.cpp
     tools/editor/cli_trade_rules_catalog.cpp
     tools/editor/cli_word_filters_catalog.cpp
+    tools/editor/cli_raid_markers_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
     tools/editor/cli_catalog_by_name.cpp
@@ -1760,6 +1762,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_voiceovers.cpp
     src/pipeline/wowee_trade_rules.cpp
     src/pipeline/wowee_word_filters.cpp
+    src/pipeline/wowee_raid_markers.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

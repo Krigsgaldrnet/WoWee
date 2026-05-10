@@ -2391,6 +2391,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wwfl to a human-editable JSON sidecar (defaults to <base>.wwfl.json; emits both filterKind and severity as int + name string; pattern and replacement as plain strings)\n");
     std::printf("  --import-wwfl-json <json-path> [out-base]\n");
     std::printf("                         Import a .wwfl.json sidecar back into binary .wwfl (filterKind int OR \"spam\"/\"goldseller\"/\"allcaps\"/\"repeatchar\"/\"url\"/\"advertreward\"/\"misc\"; severity int OR \"warn\"/\"replace\"/\"drop\"/\"mute\"; caseSensitive accepts bool OR int)\n");
+    std::printf("  --gen-mar <wmar-base> [name]\n");
+    std::printf("                         Emit .wmar 8 standard raid markers (Star/Circle/Diamond/Triangle/Moon/Square/Cross/Skull) at canonical priorities 0..7\n");
+    std::printf("  --gen-mar-world <wmar-base> [name]\n");
+    std::printf("                         Emit .wmar 5 world-map pin markers (Pin/Flag/Crosshair/Question/Compass)\n");
+    std::printf("  --gen-mar-party <wmar-base> [name]\n");
+    std::printf("                         Emit .wmar 4 party role markers (Tank/Healer/DPS/Caster) for groupfinder filtering\n");
+    std::printf("  --info-wmar <wmar-base> [--json]\n");
+    std::printf("                         Print WMAR entries (id / kind / priority / glyph / name)\n");
+    std::printf("  --validate-wmar <wmar-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, markerKind 0..3, no duplicate markerIds, no two markers at same (kind, priority) slot (picker UI sort would be non-deterministic); warns on empty iconPath, empty/oversized displayChar, RaidTarget priority > 7 (exceeds canonical /raidicon dispatch range)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

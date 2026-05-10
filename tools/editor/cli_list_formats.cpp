@@ -141,6 +141,7 @@ constexpr FormatRow kFormats[] = {
     {"WVOX", ".wvox",  "audio",     "CreatureTextSounds + per-quest voice","Voiceover audio catalog (per-NPC, per-event clips)"},
     {"WTRD", ".wtrd",  "social",    "trade-window state machine policy",  "Trade window rules catalog (P2P trade policy)"},
     {"WWFL", ".wwfl",  "social",    "chat preprocessor bad-word matcher", "Word filter catalog (spam/RMT/all-caps/URL)"},
+    {"WMAR", ".wmar",  "ui",        "raid-target icon set (8 fixed)",     "Raid marker catalog (8 raid + map pins + party roles)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
