@@ -93,6 +93,7 @@
 #include "cli_spell_schools_catalog.hpp"
 #include "cli_lfg_catalog.hpp"
 #include "cli_catalog_grep.hpp"
+#include "cli_diff_headers.hpp"
 #include "cli_macros_catalog.hpp"
 #include "cli_char_features_catalog.hpp"
 #include "cli_pvp_catalog.hpp"
@@ -237,6 +238,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSpellSchoolsCatalog,
     handleLFGCatalog,
     handleCatalogGrep,
+    handleDiffHeaders,
     handleMacrosCatalog,
     handleCharFeaturesCatalog,
     handlePVPCatalog,

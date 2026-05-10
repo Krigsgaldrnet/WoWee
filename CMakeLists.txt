@@ -1456,6 +1456,7 @@ add_executable(wowee_editor
     tools/editor/cli_spell_schools_catalog.cpp
     tools/editor/cli_lfg_catalog.cpp
     tools/editor/cli_catalog_grep.cpp
+    tools/editor/cli_diff_headers.cpp
     tools/editor/cli_macros_catalog.cpp
     tools/editor/cli_char_features_catalog.cpp
     tools/editor/cli_pvp_catalog.cpp
