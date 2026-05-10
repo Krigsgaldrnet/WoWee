@@ -1789,6 +1789,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wgfs to a human-editable JSON sidecar (defaults to <base>.wgfs.json)\n");
     std::printf("  --import-wgfs-json <json-path> [out-base]\n");
     std::printf("                         Import a .wgfs.json sidecar back into binary .wgfs (accepts slotKind int OR slotKindName string)\n");
+    std::printf("  --gen-cdf <wcdf-base> [name]\n");
+    std::printf("                         Emit .wcdf starter: 4 example boss/mini/add routes with full 4-variant 10/25/H10/H25 mapping\n");
+    std::printf("  --gen-cdf-wotlk-raid <wcdf-base> [name]\n");
+    std::printf("                         Emit .wcdf 4 ICC-style raid bosses (Marrowgar / Deathwhisper / Saurfang / Lich King) with all 4 difficulty variants\n");
+    std::printf("  --gen-cdf-fiveman <wcdf-base> [name]\n");
+    std::printf("                         Emit .wcdf 4 5-man dungeon bosses with only Normal+Heroic 10-man variants set (25-man fields stay 0)\n");
+    std::printf("  --info-wcdf <wcdf-base> [--json]\n");
+    std::printf("                         Print WCDF entries (id / kind / baseCreatureId / 4 variant ids / name)\n");
+    std::printf("  --validate-wcdf <wcdf-base> [--json]\n");
+    std::printf("                         Static checks: id+name+baseCreatureId required, spawnGroupKind 0..5, no duplicate ids; warns on WorldBoss with variants, Boss with only n10, duplicate baseIds, all-self-ref non-WorldBoss\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
