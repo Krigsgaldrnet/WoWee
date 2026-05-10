@@ -155,6 +155,7 @@
 #include "cli_heroic_scaling_catalog.hpp"
 #include "cli_reputation_rewards_catalog.hpp"
 #include "cli_minimap_levels_catalog.hpp"
+#include "cli_pet_care_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -355,6 +356,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleHeroicScalingCatalog,
     handleReputationRewardsCatalog,
     handleMinimapLevelsCatalog,
+    handlePetCareCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

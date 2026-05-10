@@ -2307,6 +2307,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wmnl to a human-editable JSON sidecar (defaults to <base>.wmnl.json; minZ/maxZ as floats, all string fields as plain strings)\n");
     std::printf("  --import-wmnl-json <json-path> [out-base]\n");
     std::printf("                         Import a .wmnl.json sidecar back into binary .wmnl (no enums to coerce — pure positional/textual data; minZ/maxZ float-precise round-trip)\n");
+    std::printf("  --gen-pcr <wpcr-base> [name]\n");
+    std::printf("                         Emit .wpcr 5 Hunter pet care actions (Revive Pet / Mend Pet / Feed Pet / Dismiss Pet / Tame Beast)\n");
+    std::printf("  --gen-pcr-stable <wpcr-base> [name]\n");
+    std::printf("                         Emit .wpcr 4 stable-master actions (Stable Slot Purchase 500g / Untrain Pet 1g+ramp / Rename Pet / Abandon Pet permanent)\n");
+    std::printf("  --gen-pcr-warlock <wpcr-base> [name]\n");
+    std::printf("                         Emit .wpcr 4 Warlock minion summons (Imp 6.5s / Voidwalker 10s / Succubus 10s / Felhunter 10s, all 1 Soul Shard)\n");
+    std::printf("  --info-wpcr <wpcr-base> [--json]\n");
+    std::printf("                         Print WPCR entries (id / spellId / classFilter / actionKind / happiness / pet-required / stable-NPC required / cost copper / reagent / cast ms / name)\n");
+    std::printf("  --validate-wpcr <wpcr-base> [--json]\n");
+    std::printf("                         Static checks: id+name+classFilter required, actionKind 0..10, no duplicate actionIds, per-kind constraints (Tame and Summon REQUIRE no active pet, requiresPet must be 0); warns on happinessRestore outside +/-25, Stable kind without requiresStableNPC, Tame kind without cooldown (canonically 15 sec)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
