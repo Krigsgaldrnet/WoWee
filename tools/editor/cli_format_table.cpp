@@ -123,6 +123,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','L','M','A'}, ".wlma",  "loot",      "--info-wlma",      "Loot mode policy catalog"},
     {{'W','S','K','P'}, ".wskp",  "world",     "--info-wskp",      "Sky parameters catalog"},
     {{'W','C','F','G'}, ".wcfg",  "server",    "--info-wcfg",      "Server config catalog"},
+    {{'W','A','N','V'}, ".wanv",  "events",    "--info-wanv",      "Anniversary & recurring event catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

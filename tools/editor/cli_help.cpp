@@ -2447,6 +2447,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcfg to a human-editable JSON sidecar (defaults to <base>.wcfg.json; emits configKind + valueKind as int+name; ALL three value carriers (floatValue/intValue/strValue) plus an activeValue derived field rendering only the meaningful one per kind)\n");
     std::printf("  --import-wcfg-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcfg.json sidecar back into binary .wcfg (configKind int OR \"xprate\"/\"droprate\"/\"honorrate\"/\"restedxp\"/\"realmtype\"/\"worldflag\"/\"performance\"/\"security\"/\"misc\"; valueKind int OR \"float\"/\"int\"/\"bool\"/\"string\"; restartRequired bool OR int)\n");
+    std::printf("  --gen-anv <wanv-base> [name]\n");
+    std::printf("                         Emit .wanv 5 yearly holidays (Hallow's End / Winter Veil / Lunar Festival / Children's Week / Brewfest) with payload spell+item bindings\n");
+    std::printf("  --gen-anv-bonus <wanv-base> [name]\n");
+    std::printf("                         Emit .wanv 4 weekly bonus events (Double XP weekend / Double Honor / Pet Battle weekend / BG Bonus Day) with weekly recurrence\n");
+    std::printf("  --gen-anv-launch <wanv-base> [name]\n");
+    std::printf("                         Emit .wanv 3 game-launch anniversaries (WoW Nov 23 / TBC Jan 16 / WotLK Nov 13) with overlapping celebration windows\n");
+    std::printf("  --info-wanv <wanv-base> [--json]\n");
+    std::printf("                         Print WANV entries (id / kind / recurrence / schedule / duration / payload spell+item / name)\n");
+    std::printf("  --validate-wanv <wanv-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, eventKind 0..6 OR 255 Misc, recurrenceKind 0..3, durationDays > 0, no duplicate eventIds; per-recurrence schedule validity (Weekly: startDay 0..6 weekday, durationDays <= 7; Yearly/Monthly/OneOff: startMonth 1..12, startDay 1..31 with calendar sanity — Feb < 30, Apr/Jun/Sep/Nov < 31)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
