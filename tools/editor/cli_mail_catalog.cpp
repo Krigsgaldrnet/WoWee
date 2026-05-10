@@ -146,6 +146,144 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each template emits scalar fields plus
+    // attachments array; categoryId emits dual int + name
+    // forms.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWmalExt(base);
+    if (outPath.empty()) outPath = base + ".wmal.json";
+    if (!wowee::pipeline::WoweeMailLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wmal-json: WMAL not found: %s.wmal\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeMailLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["templateId"] = e.templateId;
+        je["senderNpcId"] = e.senderNpcId;
+        je["subject"] = e.subject;
+        je["body"] = e.body;
+        je["senderName"] = e.senderName;
+        je["moneyCopperAttached"] = e.moneyCopperAttached;
+        je["categoryId"] = e.categoryId;
+        je["categoryName"] = wowee::pipeline::WoweeMail::categoryName(e.categoryId);
+        je["cod"] = e.cod;
+        je["returnable"] = e.returnable;
+        je["expiryDays"] = e.expiryDays;
+        nlohmann::json att = nlohmann::json::array();
+        for (const auto& a : e.attachments) {
+            att.push_back({{"itemId", a.itemId},
+                            {"quantity", a.quantity}});
+        }
+        je["attachments"] = att;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wmal-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source    : %s.wmal\n", base.c_str());
+    std::printf("  templates : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wmal.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWmalExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wmal-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wmal-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto categoryFromName = [](const std::string& s) -> uint8_t {
+        if (s == "quest")       return wowee::pipeline::WoweeMail::QuestReward;
+        if (s == "auction")     return wowee::pipeline::WoweeMail::Auction;
+        if (s == "gm")          return wowee::pipeline::WoweeMail::GmCorrespondence;
+        if (s == "achievement") return wowee::pipeline::WoweeMail::AchievementReward;
+        if (s == "event")       return wowee::pipeline::WoweeMail::EventMailing;
+        if (s == "raffle")      return wowee::pipeline::WoweeMail::Raffle;
+        if (s == "script")      return wowee::pipeline::WoweeMail::ScriptDelivery;
+        if (s == "returned")    return wowee::pipeline::WoweeMail::ReturnedMail;
+        return wowee::pipeline::WoweeMail::QuestReward;
+    };
+    wowee::pipeline::WoweeMail c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeMail::Entry e;
+            e.templateId = je.value("templateId", 0u);
+            e.senderNpcId = je.value("senderNpcId", 0u);
+            e.subject = je.value("subject", std::string{});
+            e.body = je.value("body", std::string{});
+            e.senderName = je.value("senderName", std::string{});
+            e.moneyCopperAttached = je.value("moneyCopperAttached", 0u);
+            if (je.contains("categoryId") && je["categoryId"].is_number_integer()) {
+                e.categoryId = static_cast<uint8_t>(je["categoryId"].get<int>());
+            } else if (je.contains("categoryName") &&
+                       je["categoryName"].is_string()) {
+                e.categoryId = categoryFromName(je["categoryName"].get<std::string>());
+            }
+            e.cod = static_cast<uint8_t>(je.value("cod", 0));
+            e.returnable = static_cast<uint8_t>(je.value("returnable", 1));
+            e.expiryDays = static_cast<uint16_t>(je.value("expiryDays", 30));
+            if (je.contains("attachments") && je["attachments"].is_array()) {
+                for (const auto& ja : je["attachments"]) {
+                    wowee::pipeline::WoweeMail::Attachment a;
+                    a.itemId = ja.value("itemId", 0u);
+                    a.quantity = static_cast<uint16_t>(ja.value("quantity", 1));
+                    e.attachments.push_back(a);
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeMailLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wmal-json: failed to save %s.wmal\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wmal\n", outBase.c_str());
+    std::printf("  source    : %s\n", jsonPath.c_str());
+    std::printf("  templates : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -262,6 +400,12 @@ bool handleMailCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wmal") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wmal-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wmal-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

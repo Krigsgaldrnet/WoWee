@@ -100,6 +100,7 @@ const char* const kArgRequired[] = {
     "--export-wbgd-json", "--import-wbgd-json",
     "--gen-mail", "--gen-mail-holiday", "--gen-mail-auction",
     "--info-wmal", "--validate-wmal",
+    "--export-wmal-json", "--import-wmal-json",
     "--gen-gems", "--gen-gems-set", "--gen-gems-enchants",
     "--info-wgem", "--validate-wgem",
     "--gen-weather-temperate", "--gen-weather-arctic",

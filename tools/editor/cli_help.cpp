@@ -1189,6 +1189,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMAL templates (id / category / sender / subject + body / money + items / cod / expiry)\n");
     std::printf("  --validate-wmal <wmal-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, subject not empty, sender set, attachments valid, no money+no items info-only\n");
+    std::printf("  --export-wmal-json <wmal-base> [out.json]\n");
+    std::printf("                         Export binary .wmal to a human-editable JSON sidecar (defaults to <base>.wmal.json)\n");
+    std::printf("  --import-wmal-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wmal.json sidecar back into binary .wmal (accepts category int OR name string)\n");
     std::printf("  --gen-gems <wgem-base> [name]\n");
     std::printf("                         Emit .wgem starter: 3 gems (red/yellow/blue) + 2 enchantments (Crusader proc + Greater Stats)\n");
     std::printf("  --gen-gems-set <wgem-base> [name]\n");
