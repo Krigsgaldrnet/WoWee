@@ -2205,6 +2205,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTBD entries (id / bg-pattern / border / emblem / guild / approval state / name)\n");
     std::printf("  --validate-wtbd <wtbd-base> [--json]\n");
     std::printf("                         Static checks: id+name required, backgroundPattern 0..4, borderPattern 0..3, no duplicate ids; warns on emblemId>1023, alpha=0 on any color layer (transparent), and emblem-vs-background color similarity (squared RGB distance < 1500 — emblem unreadable)\n");
+    std::printf("  --export-wtbd-json <wtbd-base> [out.json]\n");
+    std::printf("                         Export binary .wtbd to a human-editable JSON sidecar (defaults to <base>.wtbd.json; emits both backgroundPattern/borderPattern ints AND name strings; all 3 colors as 0xAARRGGBB uint32)\n");
+    std::printf("  --import-wtbd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtbd.json sidecar back into binary .wtbd (backgroundPattern int OR \"solid\"/\"gradient\"/\"chevron\"/\"quartered\"/\"starburst\"; borderPattern int OR \"none\"/\"thin\"/\"thick\"/\"decorative\"; isApproved bool OR int)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

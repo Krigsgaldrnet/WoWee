@@ -318,6 +318,7 @@ const char* const kArgRequired[] = {
     "--export-wbab-json", "--import-wbab-json",
     "--gen-tbd", "--gen-tbd-horde", "--gen-tbd-faction",
     "--info-wtbd", "--validate-wtbd",
+    "--export-wtbd-json", "--import-wtbd-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

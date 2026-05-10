@@ -154,6 +154,198 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseBackgroundPatternToken(const std::string& s) {
+    using T = wowee::pipeline::WoweeTabards;
+    if (s == "solid")     return T::Solid;
+    if (s == "gradient")  return T::Gradient;
+    if (s == "chevron")   return T::Chevron;
+    if (s == "quartered") return T::Quartered;
+    if (s == "starburst") return T::Starburst;
+    return -1;
+}
+
+int parseBorderPatternToken(const std::string& s) {
+    using T = wowee::pipeline::WoweeTabards;
+    if (s == "none")       return T::BorderNone;
+    if (s == "thin")       return T::BorderThin;
+    if (s == "thick")      return T::BorderThick;
+    if (s == "decorative") return T::BorderDecorative;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wtbd-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWtbdExt(base);
+    if (out.empty()) out = base + ".wtbd.json";
+    if (!wowee::pipeline::WoweeTabardsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtbd-json: WTBD not found: %s.wtbd\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTabardsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WTBD";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"tabardId", e.tabardId},
+            {"name", e.name},
+            {"description", e.description},
+            {"backgroundPattern", e.backgroundPattern},
+            {"backgroundPatternName",
+                backgroundPatternName(e.backgroundPattern)},
+            {"backgroundColor", e.backgroundColor},
+            {"borderPattern", e.borderPattern},
+            {"borderPatternName",
+                borderPatternName(e.borderPattern)},
+            {"borderColor", e.borderColor},
+            {"emblemId", e.emblemId},
+            {"emblemColor", e.emblemColor},
+            {"guildId", e.guildId},
+            {"creatorPlayerId", e.creatorPlayerId},
+            {"isApproved", e.isApproved != 0},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wtbd-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu tabards)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wtbd.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wtbd");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wtbd-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wtbd-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeTabards c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wtbd-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeTabards::Entry e;
+        e.tabardId = je.value("tabardId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        if (!readEnumField(je, "backgroundPattern",
+                            "backgroundPatternName",
+                            parseBackgroundPatternToken,
+                            "backgroundPattern",
+                            e.tabardId,
+                            e.backgroundPattern)) return 1;
+        if (!readEnumField(je, "borderPattern",
+                            "borderPatternName",
+                            parseBorderPatternToken,
+                            "borderPattern",
+                            e.tabardId,
+                            e.borderPattern)) return 1;
+        e.emblemId = static_cast<uint16_t>(
+            je.value("emblemId", 0u));
+        e.backgroundColor = je.value("backgroundColor",
+                                       0xFF000000u);
+        e.borderColor = je.value("borderColor", 0xFFFFFFFFu);
+        e.emblemColor = je.value("emblemColor", 0xFFFFFFFFu);
+        e.guildId = je.value("guildId", 0u);
+        e.creatorPlayerId = je.value("creatorPlayerId", 0u);
+        if (je.contains("isApproved")) {
+            const auto& a = je["isApproved"];
+            if (a.is_boolean())
+                e.isApproved = a.get<bool>() ? 1 : 0;
+            else if (a.is_number_integer())
+                e.isApproved = static_cast<uint8_t>(
+                    a.get<int>() != 0 ? 1 : 0);
+        }
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeTabardsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtbd-json: failed to save %s.wtbd\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtbd (%zu tabards)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -280,6 +472,12 @@ bool handleTabardsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wtbd") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtbd-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtbd-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
