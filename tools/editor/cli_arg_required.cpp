@@ -224,6 +224,7 @@ const char* const kArgRequired[] = {
     "--export-wcef-json", "--import-wcef-json",
     "--gen-spc", "--gen-spc-rage", "--gen-spc-mixed",
     "--info-wspc", "--validate-wspc",
+    "--export-wspc-json", "--import-wspc-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

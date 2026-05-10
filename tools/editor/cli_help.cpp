@@ -1771,6 +1771,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSPC entries (id / powerType / baseCost / perLevelCost / percentOfBase / cost flags / name) — flags decoded as label list\n");
     std::printf("  --validate-wspc <wspc-base> [--json]\n");
     std::printf("                         Static checks: id+name required, powerType 0..11, no duplicate ids; warns on percent outside [0,1], NoCost+nonzero, and non-NoCost types with no cost set (would cast for free)\n");
+    std::printf("  --export-wspc-json <wspc-base> [out.json]\n");
+    std::printf("                         Export binary .wspc to a human-editable JSON sidecar (defaults to <base>.wspc.json)\n");
+    std::printf("  --import-wspc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wspc.json sidecar back into binary .wspc (accepts powerType int OR name; costFlags int OR pipe-separated label string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
