@@ -1745,6 +1745,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wscd to a human-editable JSON sidecar (defaults to <base>.wscd.json)\n");
     std::printf("  --import-wscd-json <json-path> [out-base]\n");
     std::printf("                         Import a .wscd.json sidecar back into binary .wscd (accepts bucketKind int OR name; categoryFlags as int OR pipe-separated label string)\n");
+    std::printf("  --gen-cef <wcef-base> [name]\n");
+    std::printf("                         Emit .wcef starter: 5 baseline beast families (Bear/Cat/Wolf/Boar/Crab) covering Tenacity + Ferocity trees\n");
+    std::printf("  --gen-cef-ferocity <wcef-base> [name]\n");
+    std::printf("                         Emit .wcef 4 Ferocity-tree DPS pets (Cat / Wolf / Raptor / Devilsaur) with bleed/howl/armor mechanics\n");
+    std::printf("  --gen-cef-exotic <wcef-base> [name]\n");
+    std::printf("                         Emit .wcef 4 exotic Beast Master families (Worm / Devilsaur / Chimaera / Core Hound) — Exotic kind, requires 51-pt BM\n");
+    std::printf("  --info-wcef <wcef-base> [--json]\n");
+    std::printf("                         Print WCEF entries (id / kind / talent tree / tame level / skill line / food types / name)\n");
+    std::printf("  --validate-wcef <wcef-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, familyKind 0..5, talent tree 0..3, no duplicate ids; warns on NotPet+talent, Exotic+lvl>80, Beast/Exotic with no foods (would starve)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

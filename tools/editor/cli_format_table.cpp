@@ -74,6 +74,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','S','C','T'}, ".wsct",  "spells",    "--info-wsct",      "Spell cast time bucket catalog"},
     {{'W','S','D','R'}, ".wsdr",  "spells",    "--info-wsdr",      "Spell duration bucket catalog"},
     {{'W','S','C','D'}, ".wscd",  "spells",    "--info-wscd",      "Spell cooldown category catalog"},
+    {{'W','C','E','F'}, ".wcef",  "creatures", "--info-wcef",      "Creature / pet family catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

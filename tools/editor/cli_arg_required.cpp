@@ -218,6 +218,8 @@ const char* const kArgRequired[] = {
     "--gen-cdb", "--gen-cdb-class", "--gen-cdb-items",
     "--info-wscd", "--validate-wscd",
     "--export-wscd-json", "--import-wscd-json",
+    "--gen-cef", "--gen-cef-ferocity", "--gen-cef-exotic",
+    "--info-wcef", "--validate-wcef",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
