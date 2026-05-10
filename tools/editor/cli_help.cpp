@@ -1601,6 +1601,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wbnk to a human-editable JSON sidecar (defaults to <base>.wbnk.json)\n");
     std::printf("  --import-wbnk-json <json-path> [out-base]\n");
     std::printf("                         Import a .wbnk.json sidecar back into binary .wbnk (accepts bagKind int OR name string; isUnlocked defaults to 1, mask to AnyContainer)\n");
+    std::printf("  --gen-rune <wrun-base> [name]\n");
+    std::printf("                         Emit .wrun starter: 3 baseline DK rune costs (Death Strike 1F+1U, Frost Strike 40RP spender, Heart Strike 1B)\n");
+    std::printf("  --gen-rune-blood <wrun-base> [name]\n");
+    std::printf("                         Emit .wrun 4 blood-tree DK rune costs (Heart Strike, Death and Decay AoE, Vampiric Blood, Rune Tap self-heal)\n");
+    std::printf("  --gen-rune-frost <wrun-base> [name]\n");
+    std::printf("                         Emit .wrun 4 frost-tree DK rune costs (Frost Strike, Howling Blast AoE, Obliterate finisher, Icy Touch opener)\n");
+    std::printf("  --info-wrun <wrun-base> [--json]\n");
+    std::printf("                         Print WRUN entries (id / spell / B/F/U costs / death-convertible / RP cost+arrow / branch / name)\n");
+    std::printf("  --validate-wrun <wrun-base> [--json]\n");
+    std::printf("                         Static checks: id+name+spellId required, branch 0..3, no rune cost > 2 (DK has only 2 of each), runicPower > 100 cap, no-cost warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

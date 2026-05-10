@@ -86,6 +86,7 @@ constexpr FormatRow kFormats[] = {
     {"WCHF", ".wchf",  "chars",     "CharHairGeosets + CharFacialHair", "Character hair / face customization catalog"},
     {"WPVP", ".wpvp",  "pvp",       "honor / arena rank tables",        "PvP honor rank + arena tier catalog"},
     {"WBNK", ".wbnk",  "items",     "ItemBag.dbc + bank slots",         "Bag / bank / special slot catalog"},
+    {"WRUN", ".wrun",  "spells",    "RuneCost.dbc + ChrPowerType DK",   "Death Knight rune cost catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
