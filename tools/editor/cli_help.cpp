@@ -1175,6 +1175,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WBGD entries (id / map / objective / player counts / level range / score / token reward)\n");
     std::printf("  --validate-wbgd <wbgd-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, player counts>0+min<=max, level range valid, scoreToWin>0\n");
+    std::printf("  --export-wbgd-json <wbgd-base> [out.json]\n");
+    std::printf("                         Export binary .wbgd to a human-editable JSON sidecar (defaults to <base>.wbgd.json)\n");
+    std::printf("  --import-wbgd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wbgd.json sidecar back into binary .wbgd (accepts objectiveKind int OR name string)\n");
     std::printf("  --gen-mail <wmal-base> [name]\n");
     std::printf("                         Emit .wmal starter: 3 templates (quest overflow / auction won / GM gift) covering main mail categories\n");
     std::printf("  --gen-mail-holiday <wmal-base> [name]\n");
