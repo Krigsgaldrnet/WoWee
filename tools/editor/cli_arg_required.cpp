@@ -383,6 +383,8 @@ const char* const kArgRequired[] = {
     "--gen-gch", "--gen-gch-rp", "--gen-gch-admin",
     "--info-wgch", "--validate-wgch",
     "--export-wgch-json", "--import-wgch-json",
+    "--gen-mod", "--gen-mod-ui", "--gen-mod-util",
+    "--info-wmod", "--validate-wmod",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

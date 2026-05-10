@@ -149,6 +149,7 @@ constexpr FormatRow kFormats[] = {
     {"WPRG", ".wprg",  "pvp",       "vanilla 14-rank PvP ladder ladder",  "PvP ranking grades catalog (faction + tier + honor thresholds)"},
     {"WLAN", ".wlan",  "i18n",      "Locale_*.MPQ + DBC trailing strings","Localization catalog (per-language string overlay)"},
     {"WGCH", ".wgch",  "chat",      "ChatChannels.dbc + zone-default joins","Global chat channel catalog (access policy + zone auto-join)"},
+    {"WMOD", ".wmod",  "addons",    "per-addon TOC text + load-order rules","Addon manifest catalog (deps + cycle detection)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

@@ -2503,6 +2503,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wgch to a human-editable JSON sidecar (defaults to <base>.wgch.json; emits both channelKind and accessKind as int + name string)\n");
     std::printf("  --import-wgch-json <json-path> [out-base]\n");
     std::printf("                         Import a .wgch.json sidecar back into binary .wgch (channelKind int OR \"global\"/\"realmzone\"/\"faction\"/\"custom\"; accessKind int OR \"publicjoin\"/\"inviteonly\"/\"autojoinonzone\"/\"moderated\")\n");
+    std::printf("  --gen-mod <wmod-base> [name]\n");
+    std::printf("                         Emit .wmod 4 vanilla-era addons (Recount standalone + Atlas standalone + Auctioneer optional-dep on Atlas + Questie standalone)\n");
+    std::printf("  --gen-mod-ui <wmod-base> [name]\n");
+    std::printf("                         Emit .wmod 3 UI-replacement addons with chained required deps (Bartender4 root -> ElvUI requires Bartender4 -> SuperOrders requires ElvUI)\n");
+    std::printf("  --gen-mod-util <wmod-base> [name]\n");
+    std::printf("                         Emit .wmod 3 standalone utility addons (XPerl + Decursive + GearVendor loadOnDemand) — baseline empty-deps path\n");
+    std::printf("  --info-wmod <wmod-base> [--json]\n");
+    std::printf("                         Print WMOD entries (id / version / requiresSavedVariables / loadOnDemand / dep counts / name)\n");
+    std::printf("  --validate-wmod <wmod-base> [--json]\n");
+    std::printf("                         Static checks: id+name+version required, no duplicate addonIds, no duplicate addon names (load-order ambiguity), no self-dependency, no missing required-dep addonId, DFS cycle detection on required deps (deadlock at load); warns on optional self-dep and on minClientBuild < 4500 (likely typo)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
