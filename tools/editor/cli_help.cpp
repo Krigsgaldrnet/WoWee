@@ -1509,6 +1509,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WKBD entries (id / category / user-overridable / sort / default key + alt / actionName)\n");
     std::printf("  --validate-wkbd <wkbd-base> [--json]\n");
     std::printf("                         Static checks: id+actionName+defaultKey required, category 0..8, alt!=default, unique action names + primary keys\n");
+    std::printf("  --export-wkbd-json <wkbd-base> [out.json]\n");
+    std::printf("                         Export binary .wkbd to a human-editable JSON sidecar (defaults to <base>.wkbd.json)\n");
+    std::printf("  --import-wkbd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wkbd.json sidecar back into binary .wkbd (accepts category int OR name string; isUserOverridable defaults to 1)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

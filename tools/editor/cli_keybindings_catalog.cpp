@@ -123,6 +123,135 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each binding emits all 7 scalar fields
+    // plus a dual int + name form for category so hand-edits
+    // can use either representation.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWkbdExt(base);
+    if (outPath.empty()) outPath = base + ".wkbd.json";
+    if (!wowee::pipeline::WoweeKeyBindingLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wkbd-json: WKBD not found: %s.wkbd\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeKeyBindingLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"bindingId", e.bindingId},
+            {"actionName", e.actionName},
+            {"description", e.description},
+            {"defaultKey", e.defaultKey},
+            {"alternateKey", e.alternateKey},
+            {"category", e.category},
+            {"categoryName", wowee::pipeline::WoweeKeyBinding::categoryName(e.category)},
+            {"isUserOverridable", e.isUserOverridable},
+            {"sortOrder", e.sortOrder},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wkbd-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source   : %s.wkbd\n", base.c_str());
+    std::printf("  bindings : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wkbd.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWkbdExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wkbd-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wkbd-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto catFromName = [](const std::string& s) -> uint8_t {
+        if (s == "movement")  return wowee::pipeline::WoweeKeyBinding::Movement;
+        if (s == "combat")    return wowee::pipeline::WoweeKeyBinding::Combat;
+        if (s == "targeting") return wowee::pipeline::WoweeKeyBinding::Targeting;
+        if (s == "camera")    return wowee::pipeline::WoweeKeyBinding::Camera;
+        if (s == "ui-panels") return wowee::pipeline::WoweeKeyBinding::UIPanels;
+        if (s == "chat")      return wowee::pipeline::WoweeKeyBinding::Chat;
+        if (s == "macro")     return wowee::pipeline::WoweeKeyBinding::Macro;
+        if (s == "bar")       return wowee::pipeline::WoweeKeyBinding::Bar;
+        if (s == "other")     return wowee::pipeline::WoweeKeyBinding::Other;
+        return wowee::pipeline::WoweeKeyBinding::Movement;
+    };
+    wowee::pipeline::WoweeKeyBinding c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeKeyBinding::Entry e;
+            e.bindingId = je.value("bindingId", 0u);
+            e.actionName = je.value("actionName", std::string{});
+            e.description = je.value("description", std::string{});
+            e.defaultKey = je.value("defaultKey", std::string{});
+            e.alternateKey = je.value("alternateKey", std::string{});
+            if (je.contains("category") &&
+                je["category"].is_number_integer()) {
+                e.category = static_cast<uint8_t>(
+                    je["category"].get<int>());
+            } else if (je.contains("categoryName") &&
+                       je["categoryName"].is_string()) {
+                e.category = catFromName(
+                    je["categoryName"].get<std::string>());
+            }
+            // isUserOverridable defaults to 1 (overridable)
+            // when omitted — matches the typical case for
+            // game-action bindings.
+            e.isUserOverridable = static_cast<uint8_t>(
+                je.value("isUserOverridable", 1));
+            e.sortOrder = static_cast<uint8_t>(
+                je.value("sortOrder", 0));
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeKeyBindingLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wkbd-json: failed to save %s.wkbd\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wkbd\n", outBase.c_str());
+    std::printf("  source   : %s\n", jsonPath.c_str());
+    std::printf("  bindings : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -244,6 +373,12 @@ bool handleKeybindingsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wkbd") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wkbd-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wkbd-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
