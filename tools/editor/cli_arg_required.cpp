@@ -151,6 +151,8 @@ const char* const kArgRequired[] = {
     "--gen-tsk", "--gen-tsk-blacksmithing", "--gen-tsk-alchemy",
     "--info-wtsk", "--validate-wtsk",
     "--export-wtsk-json", "--import-wtsk-json",
+    "--gen-ceq", "--gen-ceq-bosses", "--gen-ceq-ranged",
+    "--info-wceq", "--validate-wceq",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

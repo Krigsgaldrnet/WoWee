@@ -1427,6 +1427,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtsk to a human-editable JSON sidecar with nested reagents (defaults to <base>.wtsk.json)\n");
     std::printf("  --import-wtsk-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtsk.json sidecar back into binary .wtsk (accepts profession int OR name string, reagents array up to 4 slots)\n");
+    std::printf("  --gen-ceq <wceq-base> [name]\n");
+    std::printf("                         Emit .wceq starter: 3 generic creature loadouts (guard 1H+shield, hunter bow, rogue dual-dagger)\n");
+    std::printf("  --gen-ceq-bosses <wceq-base> [name]\n");
+    std::printf("                         Emit .wceq 4 iconic boss loadouts (Onyxia 2H, Lich King Frostmourne, Sylvanas bow, Illidan dual warglaives) with WSVK refs\n");
+    std::printf("  --gen-ceq-ranged <wceq-base> [name]\n");
+    std::printf("                         Emit .wceq 3 ranged-only loadouts (rifle / bow / crossbow) — ranged slot only, no melee\n");
+    std::printf("  --info-wceq <wceq-base> [--json]\n");
+    std::printf("                         Print WCEQ entries (id / creatureId / mainhand+offhand+ranged item IDs / equipFlags / visualKitId / name)\n");
+    std::printf("  --validate-wceq <wceq-base> [--json]\n");
+    std::printf("                         Static checks: id+creatureId>0+unique, dual-wield/shield/2H polearm flag coherence, mutually-exclusive flag combos\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
