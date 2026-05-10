@@ -1273,6 +1273,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCHN entries (id / type / faction / autoJoin/announce/moderated / level / map+area gates / name)\n");
     std::printf("  --validate-wchn <wchn-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, type 0..9, faction 0..2, world+area-gate combo warning\n");
+    std::printf("  --gen-cinematics <wcms-base> [name]\n");
+    std::printf("                         Emit .wcms starter: 3 cinematics (pre-rendered intro / quest cutscene / login splash)\n");
+    std::printf("  --gen-cinematics-intros <wcms-base> [name]\n");
+    std::printf("                         Emit .wcms 4 class intros (Warrior / Hunter / Rogue / Mage) triggered on first ClassStart\n");
+    std::printf("  --gen-cinematics-quests <wcms-base> [name]\n");
+    std::printf("                         Emit .wcms 3 quest-bound cinematics referencing WQT questIds 1 / 100 / 102 (start / start / end)\n");
+    std::printf("  --info-wcms <wcms-base> [--json]\n");
+    std::printf("                         Print WCMS entries (id / kind / trigger / target / duration / skippable / soundtrackId / name)\n");
+    std::printf("  --validate-wcms <wcms-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name+mediaPath not empty, kind 0..4, trigger 0..8, target required for non-Manual triggers\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

@@ -118,6 +118,8 @@ const char* const kArgRequired[] = {
     "--export-wauc-json", "--import-wauc-json",
     "--gen-channels", "--gen-channels-city", "--gen-channels-moderated",
     "--info-wchn", "--validate-wchn",
+    "--gen-cinematics", "--gen-cinematics-intros", "--gen-cinematics-quests",
+    "--info-wcms", "--validate-wcms",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
