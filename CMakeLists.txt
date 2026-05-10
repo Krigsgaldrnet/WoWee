@@ -714,6 +714,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_localization.cpp
     src/pipeline/wowee_global_channels.cpp
     src/pipeline/wowee_addon_manifest.cpp
+    src/pipeline/wowee_spell_pack.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1591,6 +1592,7 @@ add_executable(wowee_editor
     tools/editor/cli_localization_catalog.cpp
     tools/editor/cli_global_channels_catalog.cpp
     tools/editor/cli_addon_manifest_catalog.cpp
+    tools/editor/cli_spell_pack_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
     tools/editor/cli_catalog_by_name.cpp
@@ -1787,6 +1789,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_localization.cpp
     src/pipeline/wowee_global_channels.cpp
     src/pipeline/wowee_addon_manifest.cpp
+    src/pipeline/wowee_spell_pack.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

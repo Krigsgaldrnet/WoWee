@@ -2517,6 +2517,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wmod to a human-editable JSON sidecar (defaults to <base>.wmod.json; emits dependencies and optionalDependencies as JSON int arrays)\n");
     std::printf("  --import-wmod-json <json-path> [out-base]\n");
     std::printf("                         Import a .wmod.json sidecar back into binary .wmod (dependency arrays accept JSON int arrays — round-trips chained dep graphs byte-identical)\n");
+    std::printf("  --gen-spk-warrior <wspk-base> [name]\n");
+    std::printf("                         Emit .wspk Warrior class spellbook layout — 4 tabs (General + Arms/Fury/Protection) with canonical vanilla low-rank spellIds\n");
+    std::printf("  --gen-spk-mage <wspk-base> [name]\n");
+    std::printf("                         Emit .wspk Mage class spellbook layout — 4 tabs (General + Arcane/Fire/Frost) including Frostbolt rank 1 (spellId 116)\n");
+    std::printf("  --gen-spk-rogue <wspk-base> [name]\n");
+    std::printf("                         Emit .wspk Rogue class spellbook layout — 4 tabs (General + Assassination/Combat/Subtlety) with poison + lethality picks\n");
+    std::printf("  --info-wspk <wspk-base> [--json]\n");
+    std::printf("                         Print WSPK entries (packId / classId+name / tabIndex / iconIndex / spell count / tabName)\n");
+    std::printf("  --validate-wspk <wspk-base> [--json]\n");
+    std::printf("                         Static checks: packId+tabName required, classId in 1..11, tabIndex in 0..3, no duplicate packIds, no duplicate (classId,tabIndex) pairs (spellbook UI dispatch tie), no zero spellIds, no duplicate spellIds within any tab; warns on classId 6/10 (vanilla DBC gap) and on empty tabs (player would see blank spellbook)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

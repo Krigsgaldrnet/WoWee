@@ -128,6 +128,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','L','A','N'}, ".wlan",  "i18n",      "--info-wlan",      "Localization catalog"},
     {{'W','G','C','H'}, ".wgch",  "chat",      "--info-wgch",      "Global chat channel catalog"},
     {{'W','M','O','D'}, ".wmod",  "addons",    "--info-wmod",      "Addon manifest catalog"},
+    {{'W','S','P','K'}, ".wspk",  "spells",    "--info-wspk",      "Spell pack catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

@@ -150,6 +150,7 @@ constexpr FormatRow kFormats[] = {
     {"WLAN", ".wlan",  "i18n",      "Locale_*.MPQ + DBC trailing strings","Localization catalog (per-language string overlay)"},
     {"WGCH", ".wgch",  "chat",      "ChatChannels.dbc + zone-default joins","Global chat channel catalog (access policy + zone auto-join)"},
     {"WMOD", ".wmod",  "addons",    "per-addon TOC text + load-order rules","Addon manifest catalog (deps + cycle detection)"},
+    {"WSPK", ".wspk",  "spells",    "SkillLineAbility + per-spec tab order","Spell pack catalog (per-class spellbook tab layout)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
