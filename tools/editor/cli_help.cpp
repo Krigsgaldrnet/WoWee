@@ -2727,6 +2727,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wbrd to a human-editable JSON sidecar (defaults to <base>.wbrd.json; battlegroundName field is informational; battlegroundId int is authoritative)\n");
     std::printf("  --import-wbrd-json <json-path> [out-base]\n");
     std::printf("                         Import a .wbrd.json sidecar back into binary .wbrd (battlegroundName ignored; bgId int authoritative — round-trips per-bracket reward tables byte-identical)\n");
+    std::printf("  --gen-swp-bosses <wswp-base> [name]\n");
+    std::printf("                         Emit .wswp 3 raid-boss zone-only sound swaps (Onyxia roar in Onyxia's Lair, Ragnaros emerge in Molten Core, Nefarian shout in BWL — priority 100)\n");
+    std::printf("  --gen-swp-race <wswp-base> [name]\n");
+    std::printf("                         Emit .wswp 3 race-conditional voice swaps (BloodElf priest cast / Tauren shaman cast / Undead warlock cast — priority 50)\n");
+    std::printf("  --gen-swp-ui <wswp-base> [name]\n");
+    std::printf("                         Emit .wswp 3 always-on UI sound swaps (level-up / quest-complete / mount-up) with +3dB gain adjustment (priority 10 — boss/race overrides win)\n");
+    std::printf("  --info-wswp <wswp-base> [--json]\n");
+    std::printf("                         Print WSWP entries (id / origSound / replSound / conditionKind+value / priority / gain dB / name)\n");
+    std::printf("  --validate-wswp <wswp-base> [--json]\n");
+    std::printf("                         Static checks: id+name+originalSoundId+replacementSoundId required, conditionKind 0..4, no duplicate ruleIds, no self-replacement (orig==repl is no-op); CRITICAL: no duplicate (originalSoundId, conditionKind, conditionValue) trigger triple (runtime would have two rules for the same trigger), non-Always conditionKind requires non-zero conditionValue. Warns on priorityIndex=0 (effectively disabled), |gainAdjustDb_x10| > 300 (±30dB clip risk), Always condition with non-zero conditionValue (dead data), and same-priority within same originalSoundId (tie-break undefined when both conditions match)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

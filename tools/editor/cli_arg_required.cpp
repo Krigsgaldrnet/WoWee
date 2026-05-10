@@ -431,6 +431,8 @@ const char* const kArgRequired[] = {
     "--gen-brd-av", "--gen-brd-wsg", "--gen-brd-ab",
     "--info-wbrd", "--validate-wbrd",
     "--export-wbrd-json", "--import-wbrd-json",
+    "--gen-swp-bosses", "--gen-swp-race", "--gen-swp-ui",
+    "--info-wswp", "--validate-wswp",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
