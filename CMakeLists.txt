@@ -708,6 +708,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_raid_markers.cpp
     src/pipeline/wowee_loot_modes.cpp
     src/pipeline/wowee_sky_params.cpp
+    src/pipeline/wowee_server_config.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1579,6 +1580,7 @@ add_executable(wowee_editor
     tools/editor/cli_raid_markers_catalog.cpp
     tools/editor/cli_loot_modes_catalog.cpp
     tools/editor/cli_sky_params_catalog.cpp
+    tools/editor/cli_server_config_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
     tools/editor/cli_catalog_by_name.cpp
@@ -1769,6 +1771,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_raid_markers.cpp
     src/pipeline/wowee_loot_modes.cpp
     src/pipeline/wowee_sky_params.cpp
+    src/pipeline/wowee_server_config.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

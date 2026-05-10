@@ -144,6 +144,7 @@ constexpr FormatRow kFormats[] = {
     {"WMAR", ".wmar",  "ui",        "raid-target icon set (8 fixed)",     "Raid marker catalog (8 raid + map pins + party roles)"},
     {"WLMA", ".wlma",  "loot",      "GroupLoot CMSG_LOOT_METHOD policy",  "Loot mode policy catalog (FFA / RR / Master / NBG / Personal)"},
     {"WSKP", ".wskp",  "world",     "LightParams.dbc + Light.dbc diurnal","Sky parameters catalog (per-zone keyframes)"},
+    {"WCFG", ".wcfg",  "server",    "worldserver.conf flat-text config",  "Server config catalog (polymorphic Float/Int/Bool/String values)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

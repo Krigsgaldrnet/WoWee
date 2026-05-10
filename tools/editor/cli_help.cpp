@@ -2433,6 +2433,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wskp to a human-editable JSON sidecar (defaults to <base>.wskp.json; emits cloudSpeedX10 as both raw int AND derived cloudSpeedMph float convenience field)\n");
     std::printf("  --import-wskp-json <json-path> [out-base]\n");
     std::printf("                         Import a .wskp.json sidecar back into binary .wskp (no enum coercion — all-numeric payload; cloudSpeedX10 raw int OR cloudSpeedMph float — converts mph * 10 -> raw with rounding and clamp to 0..255)\n");
+    std::printf("  --gen-cfg <wcfg-base> [name]\n");
+    std::printf("                         Emit .wcfg 4 rate-multiplier configs (XPRate 1.0x / DropRate 1.0x / HonorRate 1.0x / RestedRate 200%%) — vanilla baselines\n");
+    std::printf("  --gen-cfg-perf <wcfg-base> [name]\n");
+    std::printf("                         Emit .wcfg 4 server tuning configs (max creatures per cell 100 / view distance 533 yards / spawn rate 1.0x / GC interval 300s)\n");
+    std::printf("  --gen-cfg-sec <wcfg-base> [name]\n");
+    std::printf("                         Emit .wcfg 4 anti-cheat configs (speedhack tolerance 1.05x / trade gold cap 100,000g / GM audit logging enabled / cheat-detection \"high\" preset — first format using valueKind=String)\n");
+    std::printf("  --info-wcfg <wcfg-base> [--json]\n");
+    std::printf("                         Print WCFG entries (id / configKind / valueKind / restart-required / active value rendered per kind / name)\n");
+    std::printf("  --validate-wcfg <wcfg-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, configKind 0..7 OR 255 Misc, valueKind 0..3, no duplicate configIds OR config names (server name-based lookups would be ambiguous), Bool valueKind requires intValue 0/1; warns on cross-field bleed (Float kind with non-zero intValue, etc.)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
