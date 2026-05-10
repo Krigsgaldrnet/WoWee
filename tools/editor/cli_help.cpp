@@ -2475,6 +2475,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wprg to a human-editable JSON sidecar (defaults to <base>.wprg.json; emits factionFilter as both int AND name string)\n");
     std::printf("  --import-wprg-json <json-path> [out-base]\n");
     std::printf("                         Import a .wprg.json sidecar back into binary .wprg (factionFilter int OR \"alliance\"/\"horde\"; titlePrefix as plain string)\n");
+    std::printf("  --gen-lan <wlan-base> [name]\n");
+    std::printf("                         Emit .wlan 5 UI-button localizations (the 'Cancel' button translated to deDE/frFR/esES/koKR/zhCN — multibyte UTF-8 round-trip preserved)\n");
+    std::printf("  --gen-lan-quest <wlan-base> [name]\n");
+    std::printf("                         Emit .wlan 3 quest-title localizations (one quest title in deDE/frFR/koKR — illustrates dotted-key convention 'QUEST.123.title')\n");
+    std::printf("  --gen-lan-tooltip <wlan-base> [name]\n");
+    std::printf("                         Emit .wlan 4 item-tooltip strings (BindOnPickup + Unique in deDE+frFR — high-volume client localization use case)\n");
+    std::printf("  --info-wlan <wlan-base> [--json]\n");
+    std::printf("                         Print WLAN entries (id / language / namespace / original key / localized text)\n");
+    std::printf("  --validate-wlan <wlan-base> [--json]\n");
+    std::printf("                         Static checks: id+name+originalKey required, languageCode 0..10 OR 255 Unknown, namespace 0..7, no duplicate stringIds, no two entries with same (originalKey, languageCode, namespace) triple (locale lookup tie); warns on empty localizedText (override would render blank, possibly worse than fallback)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

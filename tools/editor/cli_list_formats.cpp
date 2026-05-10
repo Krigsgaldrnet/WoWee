@@ -147,6 +147,7 @@ constexpr FormatRow kFormats[] = {
     {"WCFG", ".wcfg",  "server",    "worldserver.conf flat-text config",  "Server config catalog (polymorphic Float/Int/Bool/String values)"},
     {"WANV", ".wanv",  "events",    "GameEvent SQL + per-holiday script", "Anniversary & recurring event catalog (cron-like scheduling)"},
     {"WPRG", ".wprg",  "pvp",       "vanilla 14-rank PvP ladder ladder",  "PvP ranking grades catalog (faction + tier + honor thresholds)"},
+    {"WLAN", ".wlan",  "i18n",      "Locale_*.MPQ + DBC trailing strings","Localization catalog (per-language string overlay)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
