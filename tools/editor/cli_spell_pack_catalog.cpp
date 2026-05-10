@@ -260,6 +260,113 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWspkExt(base);
+    if (out.empty()) out = base + ".wspk.json";
+    if (!wowee::pipeline::WoweeSpellPackLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wspk-json: WSPK not found: %s.wspk\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellPackLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WSPK";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"packId", e.packId},
+            {"classId", e.classId},
+            {"className", classIdName(e.classId)},
+            {"tabIndex", e.tabIndex},
+            {"iconIndex", e.iconIndex},
+            {"tabName", e.tabName},
+            {"spellIds", e.spellIds},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wspk-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu packs)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wspk.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wspk");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wspk-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wspk-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSpellPack c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wspk-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeSpellPack::Entry e;
+        e.packId = je.value("packId", 0u);
+        e.classId = static_cast<uint8_t>(je.value("classId", 0));
+        e.tabIndex = static_cast<uint8_t>(je.value("tabIndex", 0));
+        e.iconIndex = static_cast<uint8_t>(je.value("iconIndex", 0));
+        e.tabName = je.value("tabName", std::string{});
+        if (je.contains("spellIds") &&
+            je["spellIds"].is_array()) {
+            for (const auto& s : je["spellIds"]) {
+                if (s.is_number_unsigned() ||
+                    s.is_number_integer()) {
+                    e.spellIds.push_back(s.get<uint32_t>());
+                }
+            }
+        }
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeSpellPackLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wspk-json: failed to save %s.wspk\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wspk (%zu packs)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleSpellPackCatalog(int& i, int argc, char** argv,
@@ -282,6 +389,14 @@ bool handleSpellPackCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wspk") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wspk-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wspk-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
