@@ -2723,6 +2723,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WBRD entries (id / bg / bracket / minPlayers / win+loss honor / markId / win+loss marks / bonusItem)\n");
     std::printf("  --validate-wbrd <wbrd-base> [--json]\n");
     std::printf("                         Static checks: id+battlegroundId required, bracketIndex 1..6 (vanilla), minPlayersToStart > 0 (else queue would never start a match), no duplicate rewardIds, no duplicate (bgId,bracket) pairs (runtime reward-lookup tie), bonusItemCount > 0 requires bonusItemId; CRITICAL: lossHonor <= winHonor (else losing rewards more than winning, no incentive to play to win). Warns on winMarks=0 with markItemId set (vanilla wins always granted at least 1 mark)\n");
+    std::printf("  --export-wbrd-json <wbrd-base> [out.json]\n");
+    std::printf("                         Export binary .wbrd to a human-editable JSON sidecar (defaults to <base>.wbrd.json; battlegroundName field is informational; battlegroundId int is authoritative)\n");
+    std::printf("  --import-wbrd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wbrd.json sidecar back into binary .wbrd (battlegroundName ignored; bgId int authoritative — round-trips per-bracket reward tables byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

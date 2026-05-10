@@ -430,6 +430,7 @@ const char* const kArgRequired[] = {
     "--export-wauh-json", "--import-wauh-json",
     "--gen-brd-av", "--gen-brd-wsg", "--gen-brd-ab",
     "--info-wbrd", "--validate-wbrd",
+    "--export-wbrd-json", "--import-wbrd-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
