@@ -3500,6 +3500,81 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleGearCog(int& i, int argc, char** argv) {
+    // Gear cog: mechanical wheel pattern tiled per cell. Each
+    // cell holds one cog with `teeth` alternating peaks (at
+    // outerR) and valleys (at innerR). The center hole (axle)
+    // is left as bg by inverting the rNorm test below the
+    // hubR threshold. The 85th procedural texture.
+    //
+    // Useful for: engineering crafting backdrops, mechanical
+    // door textures, gnomish / goblin themed gear icons,
+    // factory tile sets, clockwork-themed dungeons.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string fgHex   = argv[++i];
+    int cell = 64;
+    int teeth = 12;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cell);
+    parseOptInt(i, argc, argv, teeth);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cell < 8 || cell > 1024 ||
+        teeth < 4 || teeth > 64) {
+        std::fprintf(stderr,
+            "gen-texture-gear-cog: invalid dims (W/H 1..8192, cell 8..1024, teeth 4..64)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, fr, fg_, fb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-gear-cog")) return 1;
+    if (!parseHexOrError(fgHex, fr, fg_, fb_,
+                         "gen-texture-gear-cog")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float halfCell = cell * 0.5f;
+    const float twoPi = 6.283185307179586f;
+    // Three radii define the gear: hub (center hole), inner
+    // (gap between teeth), outer (tooth tip). Hub is left as bg.
+    const float hubR   = 0.20f;
+    const float innerR = 0.65f;
+    const float outerR = 0.92f;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            int tx = x % cell;
+            int ty = y % cell;
+            float dx = tx - halfCell;
+            float dy = ty - halfCell;
+            float r = std::sqrt(dx * dx + dy * dy);
+            float rNorm = r / halfCell;
+            float theta = std::atan2(dy, dx);
+            // Phase within a single tooth period (each period is
+            // 2π / teeth wide). Half the period is a tooth, the
+            // other half is a gap.
+            float phase = std::fmod(theta + twoPi, twoPi) /
+                           (twoPi / teeth);
+            phase = phase - std::floor(phase);   // wrap to [0, 1)
+            bool inTooth = phase < 0.5f;
+            float effectiveR = inTooth ? outerR : innerR;
+            bool inGear = rNorm > hubR && rNorm <= effectiveR;
+            uint8_t r8, g8, b8;
+            if (inGear) {
+                r8 = fr; g8 = fg_; b8 = fb_;
+            } else {
+                r8 = br_; g8 = bg_; b8 = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r8, g8, b8);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-gear-cog")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/fg      : %s / %s\n", bgHex.c_str(), fgHex.c_str());
+    std::printf("  cell/teeth : %d / %d\n", cell, teeth);
+    return 0;
+}
+
 int handleSnowflake(int& i, int argc, char** argv) {
     // Snowflake: 6-fold symmetric stamp in each cell. Built
     // by computing polar (r, theta) from the cell center and
@@ -6187,6 +6262,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-moon",           3, handleMoon},
     {"--gen-texture-damask",         3, handleDamask},
     {"--gen-texture-snowflake",      3, handleSnowflake},
+    {"--gen-texture-gear-cog",       3, handleGearCog},
 };
 }  // namespace
 

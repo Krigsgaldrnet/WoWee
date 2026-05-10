@@ -203,6 +203,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Damask: 4-petal floral motif tiled per cell (palace wallpaper / noble-faction tapestry)\n");
     std::printf("  --gen-texture-snowflake <out.png> <bgHex> <fgHex> [cell] [W H]\n");
     std::printf("                         Snowflake: 6-fold symmetric ice crystal stamped per cell (winter zones / frost spell effects)\n");
+    std::printf("  --gen-texture-gear-cog <out.png> <bgHex> <fgHex> [cell] [teeth] [W H]\n");
+    std::printf("                         Gear cog: mechanical wheel with N alternating teeth + center axle hole (engineering / clockwork themes)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
