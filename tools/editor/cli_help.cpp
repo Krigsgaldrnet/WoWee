@@ -2373,6 +2373,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTRD entries (id / ruleKind / targetingFilter / level requirement / priority / category bitmask / gold cap / name)\n");
     std::printf("  --validate-wtrd <wtrd-base> [--json]\n");
     std::printf("                         Static checks: id+name required, ruleKind 0..6, targetingFilter 0..4, no duplicate ruleIds, GoldEscrowMax kind requires goldEscrowMaxCopper > 0 (else self-contradicting); warns on levelRequirement > 80 (exceeds cap), GMOnly targeting with priority < 50 (would be overridden by player rules)\n");
+    std::printf("  --export-wtrd-json <wtrd-base> [out.json]\n");
+    std::printf("                         Export binary .wtrd to a human-editable JSON sidecar (defaults to <base>.wtrd.json; emits both ruleKind and targetingFilter as int + name string; goldEscrowMaxCopper as uint64)\n");
+    std::printf("  --import-wtrd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtrd.json sidecar back into binary .wtrd (ruleKind int OR \"allowed\"/\"forbidden\"/\"soulboundexception\"/\"crossfactionallowed\"/\"levelgated\"/\"goldescrowmax\"/\"auditlogged\"; targetingFilter int OR \"anyplayer\"/\"samerealmonly\"/\"samefactiononly\"/\"sameaccountonly\"/\"gmonly\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

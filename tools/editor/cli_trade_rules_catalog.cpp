@@ -154,6 +154,183 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseRuleKindToken(const std::string& s) {
+    using T = wowee::pipeline::WoweeTradeRules;
+    if (s == "allowed")             return T::Allowed;
+    if (s == "forbidden")           return T::Forbidden;
+    if (s == "soulboundexception")  return T::SoulboundException;
+    if (s == "crossfactionallowed") return T::CrossFactionAllowed;
+    if (s == "levelgated")          return T::LevelGated;
+    if (s == "goldescrowmax")       return T::GoldEscrowMax;
+    if (s == "auditlogged")         return T::AuditLogged;
+    return -1;
+}
+
+int parseTargetingFilterToken(const std::string& s) {
+    using T = wowee::pipeline::WoweeTradeRules;
+    if (s == "anyplayer")       return T::AnyPlayer;
+    if (s == "samerealmonly")   return T::SameRealmOnly;
+    if (s == "samefactiononly") return T::SameFactionOnly;
+    if (s == "sameaccountonly") return T::SameAccountOnly;
+    if (s == "gmonly")          return T::GMOnly;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wtrd-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWtrdExt(base);
+    if (out.empty()) out = base + ".wtrd.json";
+    if (!wowee::pipeline::WoweeTradeRulesLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtrd-json: WTRD not found: %s.wtrd\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTradeRulesLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WTRD";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"ruleId", e.ruleId},
+            {"name", e.name},
+            {"description", e.description},
+            {"ruleKind", e.ruleKind},
+            {"ruleKindName", ruleKindName(e.ruleKind)},
+            {"targetingFilter", e.targetingFilter},
+            {"targetingFilterName",
+                targetingFilterName(e.targetingFilter)},
+            {"levelRequirement", e.levelRequirement},
+            {"priority", e.priority},
+            {"itemCategoryFilter", e.itemCategoryFilter},
+            {"goldEscrowMaxCopper", e.goldEscrowMaxCopper},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wtrd-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu rules)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wtrd.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wtrd");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wtrd-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wtrd-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeTradeRules c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wtrd-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeTradeRules::Entry e;
+        e.ruleId = je.value("ruleId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        if (!readEnumField(je, "ruleKind", "ruleKindName",
+                            parseRuleKindToken, "ruleKind",
+                            e.ruleId, e.ruleKind)) return 1;
+        if (!readEnumField(je, "targetingFilter",
+                            "targetingFilterName",
+                            parseTargetingFilterToken,
+                            "targetingFilter",
+                            e.ruleId, e.targetingFilter)) return 1;
+        e.levelRequirement = static_cast<uint8_t>(
+            je.value("levelRequirement", 0u));
+        e.priority = static_cast<uint8_t>(je.value("priority", 1u));
+        e.itemCategoryFilter = je.value("itemCategoryFilter", 0u);
+        e.goldEscrowMaxCopper = je.value("goldEscrowMaxCopper",
+                                            uint64_t{0});
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeTradeRulesLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtrd-json: failed to save %s.wtrd\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtrd (%zu rules)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -273,6 +450,12 @@ bool handleTradeRulesCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wtrd") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtrd-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtrd-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
