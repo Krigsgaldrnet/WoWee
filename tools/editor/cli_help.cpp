@@ -1545,6 +1545,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wlfg to a human-editable JSON sidecar (defaults to <base>.wlfg.json)\n");
     std::printf("  --import-wlfg-json <json-path> [out-base]\n");
     std::printf("                         Import a .wlfg.json sidecar back into binary .wlfg (accepts difficulty/expansion int OR name string; groupSize defaults to 5, role mask to kRoleAll)\n");
+    std::printf("  --gen-mac <wmac-base> [name]\n");
+    std::printf("                         Emit .wmac starter: 3 system slash commands (/sit, /dance, /target with [@mouseover])\n");
+    std::printf("  --gen-mac-combat <wmac-base> [name]\n");
+    std::printf("                         Emit .wmac 4 warrior combat macros (Heroic Strike spam, Charge/Intercept stance dance, Victory Rush) with bind keys + classMask\n");
+    std::printf("  --gen-mac-utility <wmac-base> [name]\n");
+    std::printf("                         Emit .wmac 3 utility macros (/follow target, mass /inv with %%targetN, /releasecorpse via RepopMe)\n");
+    std::printf("  --info-wmac <wmac-base> [--json]\n");
+    std::printf("                         Print WMAC entries (id / kind / classMask / bindKey / maxLen / body length / name)\n");
+    std::printf("  --validate-wmac <wmac-base> [--json]\n");
+    std::printf("                         Static checks: id+name+body required, kind 0..4, body within maxLength, body starts with '/' or '#', SystemSlash + classMask warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
