@@ -2457,6 +2457,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WANV entries (id / kind / recurrence / schedule / duration / payload spell+item / name)\n");
     std::printf("  --validate-wanv <wanv-base> [--json]\n");
     std::printf("                         Static checks: id+name required, eventKind 0..6 OR 255 Misc, recurrenceKind 0..3, durationDays > 0, no duplicate eventIds; per-recurrence schedule validity (Weekly: startDay 0..6 weekday, durationDays <= 7; Yearly/Monthly/OneOff: startMonth 1..12, startDay 1..31 with calendar sanity — Feb < 30, Apr/Jun/Sep/Nov < 31)\n");
+    std::printf("  --export-wanv-json <wanv-base> [out.json]\n");
+    std::printf("                         Export binary .wanv to a human-editable JSON sidecar (defaults to <base>.wanv.json; emits both eventKind and recurrenceKind as int + name string)\n");
+    std::printf("  --import-wanv-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wanv.json sidecar back into binary .wanv (eventKind int OR \"holiday\"/\"anniversary\"/\"doublexp\"/\"doublehonor\"/\"petbattle\"/\"bgbonus\"/\"seasonalquest\"/\"misc\"; recurrenceKind int OR \"yearly\"/\"monthly\"/\"weekly\"/\"oneoff\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
