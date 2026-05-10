@@ -80,6 +80,7 @@
 #include "cli_summary_dir.hpp"
 #include "cli_rename_magic.hpp"
 #include "cli_world_state_ui_catalog.hpp"
+#include "cli_player_conditions_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -201,6 +202,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSummaryDir,
     handleRenameMagic,
     handleWorldStateUICatalog,
+    handlePlayerConditionsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

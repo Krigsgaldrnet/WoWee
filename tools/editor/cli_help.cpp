@@ -1397,6 +1397,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wwui to a human-editable JSON sidecar (defaults to <base>.wwui.json)\n");
     std::printf("  --import-wwui-json <json-path> [out-base]\n");
     std::printf("                         Import a .wwui.json sidecar back into binary .wwui (accepts displayKind/panelPosition int OR name string)\n");
+    std::printf("  --gen-pcn <wpcn-base> [name]\n");
+    std::printf("                         Emit .wpcn starter: 3 single-check conditions (level>=60 / race=Human / class=Warrior)\n");
+    std::printf("  --gen-pcn-quest-gates <wpcn-base> [name]\n");
+    std::printf("                         Emit .wpcn 4 quest-style gates (quest complete, reputation, achievement, zone presence) with cross-refs\n");
+    std::printf("  --gen-pcn-composite <wpcn-base> [name]\n");
+    std::printf("                         Emit .wpcn 6 entries (3 leaves + 3 chained roots) exercising AND/OR/NOT chainOps for boolean trees\n");
+    std::printf("  --info-wpcn <wpcn-base> [--json]\n");
+    std::printf("                         Print WPCN entries (id / kind / op / target IDs / int values / chainOp / chainNextId / name)\n");
+    std::printf("  --validate-wpcn <wpcn-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name not empty, kind 0..15, op 0..7, chainOp 0..3, chain self-loop, dangling chainNextId warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

@@ -144,6 +144,8 @@ const char* const kArgRequired[] = {
     "--gen-wsui", "--gen-wsui-wintergrasp", "--gen-wsui-dungeon",
     "--info-wwui", "--validate-wwui",
     "--export-wwui-json", "--import-wwui-json",
+    "--gen-pcn", "--gen-pcn-quest-gates", "--gen-pcn-composite",
+    "--info-wpcn", "--validate-wpcn",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

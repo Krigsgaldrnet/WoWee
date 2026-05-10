@@ -72,6 +72,7 @@ constexpr FormatRow kFormats[] = {
     {"WANI", ".wani",  "anim",      "AnimationData.dbc",               "Animation ID + fallback + weapon-flag catalog"},
     {"WSVK", ".wsvk",  "spellfx",   "SpellVisualKit.dbc + SpellVisFx",  "Spell visual kit (cast/proj/impact effects)"},
     {"WWUI", ".wwui",  "ui",        "WorldStateUI.dbc + world_state",   "World-state UI (BG scoreboards / siege counters)"},
+    {"WPCN", ".wpcn",  "logic",     "PlayerCondition.dbc + conditions", "Player condition (gates, AND/OR/NOT chains)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
