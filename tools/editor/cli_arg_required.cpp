@@ -352,6 +352,7 @@ const char* const kArgRequired[] = {
     "--export-wspv-json", "--import-wspv-json",
     "--gen-vox", "--gen-vox-boss", "--gen-vox-vendor",
     "--info-wvox", "--validate-wvox",
+    "--export-wvox-json", "--import-wvox-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

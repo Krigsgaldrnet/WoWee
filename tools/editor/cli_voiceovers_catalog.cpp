@@ -157,6 +157,184 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseEventKindToken(const std::string& s) {
+    using V = wowee::pipeline::WoweeVoiceovers;
+    if (s == "greeting")      return V::Greeting;
+    if (s == "aggro")         return V::Aggro;
+    if (s == "death")         return V::Death;
+    if (s == "queststart")    return V::QuestStart;
+    if (s == "questprogress") return V::QuestProgress;
+    if (s == "questcomplete") return V::QuestComplete;
+    if (s == "goodbye")       return V::Goodbye;
+    if (s == "special")       return V::Special;
+    if (s == "phase")         return V::Phase;
+    return -1;
+}
+
+int parseGenderHintToken(const std::string& s) {
+    using V = wowee::pipeline::WoweeVoiceovers;
+    if (s == "male")   return V::Male;
+    if (s == "female") return V::Female;
+    if (s == "both")   return V::Both;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wvox-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWvoxExt(base);
+    if (out.empty()) out = base + ".wvox.json";
+    if (!wowee::pipeline::WoweeVoiceoversLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wvox-json: WVOX not found: %s.wvox\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeVoiceoversLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WVOX";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"voiceId", e.voiceId},
+            {"name", e.name},
+            {"description", e.description},
+            {"npcId", e.npcId},
+            {"eventKind", e.eventKind},
+            {"eventKindName", eventKindName(e.eventKind)},
+            {"genderHint", e.genderHint},
+            {"genderHintName", genderHintName(e.genderHint)},
+            {"variantIndex", e.variantIndex},
+            {"audioPath", e.audioPath},
+            {"transcript", e.transcript},
+            {"durationMs", e.durationMs},
+            {"volumeDb", e.volumeDb},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wvox-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu voice clips)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wvox.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wvox");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wvox-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wvox-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeVoiceovers c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wvox-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeVoiceovers::Entry e;
+        e.voiceId = je.value("voiceId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.npcId = je.value("npcId", 0u);
+        if (!readEnumField(je, "eventKind", "eventKindName",
+                            parseEventKindToken, "eventKind",
+                            e.voiceId, e.eventKind)) return 1;
+        if (!readEnumField(je, "genderHint", "genderHintName",
+                            parseGenderHintToken, "genderHint",
+                            e.voiceId, e.genderHint)) return 1;
+        e.variantIndex = static_cast<uint8_t>(
+            je.value("variantIndex", 0u));
+        e.audioPath = je.value("audioPath", std::string{});
+        e.transcript = je.value("transcript", std::string{});
+        e.durationMs = je.value("durationMs", 0u);
+        e.volumeDb = static_cast<int8_t>(
+            je.value("volumeDb", 0));
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeVoiceoversLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wvox-json: failed to save %s.wvox\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wvox (%zu voice clips)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -303,6 +481,12 @@ bool handleVoiceoversCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wvox") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wvox-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wvox-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

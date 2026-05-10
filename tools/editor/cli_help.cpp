@@ -2359,6 +2359,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WVOX entries (id / npcId / eventKind / gender / variant / duration ms / volume dB / name) plus per-entry transcript\n");
     std::printf("  --validate-wvox <wvox-base> [--json]\n");
     std::printf("                         Static checks: id+name+npcId required, eventKind 0..8, genderHint 0..2, audioPath non-empty, no duplicate voiceIds, no two clips at same (npcId, eventKind, variantIndex) triple (random pick at trigger time would be ambiguous); warns on durationMs=0 (subtitle sync impossible), volumeDb outside [-20,+6] (clip risk), empty transcript (TTS+chat-bubble blank)\n");
+    std::printf("  --export-wvox-json <wvox-base> [out.json]\n");
+    std::printf("                         Export binary .wvox to a human-editable JSON sidecar (defaults to <base>.wvox.json; emits eventKind and genderHint as both int AND name string; transcript as plain string for accessibility editing)\n");
+    std::printf("  --import-wvox-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wvox.json sidecar back into binary .wvox (eventKind int OR \"greeting\"/\"aggro\"/\"death\"/\"queststart\"/\"questprogress\"/\"questcomplete\"/\"goodbye\"/\"special\"/\"phase\"; genderHint int OR \"male\"/\"female\"/\"both\"; volumeDb is signed int8)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
