@@ -142,6 +142,7 @@
 #include "cli_action_bars_catalog.hpp"
 #include "cli_group_compositions_catalog.hpp"
 #include "cli_hearth_binds_catalog.hpp"
+#include "cli_server_broadcasts_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -325,6 +326,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleActionBarsCatalog,
     handleGroupCompositionsCatalog,
     handleHearthBindsCatalog,
+    handleServerBroadcastsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

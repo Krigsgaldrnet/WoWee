@@ -300,6 +300,8 @@ const char* const kArgRequired[] = {
     "--gen-hrt", "--gen-hrt-capitals", "--gen-hrt-inns",
     "--info-whrt", "--validate-whrt",
     "--export-whrt-json", "--import-whrt-json",
+    "--gen-scb", "--gen-scb-maintenance", "--gen-scb-helptips",
+    "--info-wscb", "--validate-wscb",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

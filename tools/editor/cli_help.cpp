@@ -2125,6 +2125,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .whrt to a human-editable JSON sidecar (defaults to <base>.whrt.json; emits both bindKind/factionMask ints AND name strings)\n");
     std::printf("  --import-whrt-json <json-path> [out-base]\n");
     std::printf("                         Import a .whrt.json sidecar back into binary .whrt (accepts bindKind int OR \"inn\"/\"capital\"/\"quest\"/\"guild\"/\"specialport\"/\"faction\"; factionMask int OR \"alliance\"/\"horde\"/\"both\")\n");
+    std::printf("  --gen-scb <wscb-base> [name]\n");
+    std::printf("                         Emit .wscb 4 login-MOTD entries (welcome banner / patch notes summary / Discord link / forum link)\n");
+    std::printf("  --gen-scb-maintenance <wscb-base> [name]\n");
+    std::printf("                         Emit .wscb 3 RaidWarning entries for restart countdown (15min / 5min / 60sec, intervalSeconds=0 — fired by external scheduler)\n");
+    std::printf("  --gen-scb-helptips <wscb-base> [name]\n");
+    std::printf("                         Emit .wscb 6 HelpTip channel rotating tips on 600s cycle (talents / mounts / auction / professions / dungeon finder / hearthstone, level-gated)\n");
+    std::printf("  --info-wscb <wscb-base> [--json]\n");
+    std::printf("                         Print WSCB entries (id / channel / faction / interval / level range / name)\n");
+    std::printf("  --validate-wscb <wscb-base> [--json]\n");
+    std::printf("                         Static checks: id+name+messageText required, factionFilter 1..3, channelKind 0..4, min<=max level, no duplicate ids, intervalSeconds>=10 (errors below); warns on interval>0 with login/MOTD (timer ignored), interval<60 (spammy), text>255 chars (truncation)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
