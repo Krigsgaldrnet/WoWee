@@ -162,6 +162,7 @@ const char* const kArgRequired[] = {
     "--export-wgtp-json", "--import-wgtp-json",
     "--gen-cmp", "--gen-cmp-rare", "--gen-cmp-faction",
     "--info-wcmp", "--validate-wcmp",
+    "--export-wcmp-json", "--import-wcmp-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

@@ -1481,6 +1481,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCMP entries (id / creature / kind / rarity / faction / learn spell+item / idle sound / name)\n");
     std::printf("  --validate-wcmp <wcmp-base> [--json]\n");
     std::printf("                         Static checks: id+name+creatureId+learnSpellId required, kind 0..7, rarity 0..3, faction 0..2, Epic-no-itemId warning\n");
+    std::printf("  --export-wcmp-json <wcmp-base> [out.json]\n");
+    std::printf("                         Export binary .wcmp to a human-editable JSON sidecar (defaults to <base>.wcmp.json)\n");
+    std::printf("  --import-wcmp-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcmp.json sidecar back into binary .wcmp (accepts companionKind/rarity/factionRestriction int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

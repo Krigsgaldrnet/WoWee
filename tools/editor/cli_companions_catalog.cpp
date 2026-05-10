@@ -127,6 +127,166 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each companion emits all 9 scalar fields
+    // plus dual int + name forms for companionKind / rarity
+    // / factionRestriction so hand-edits can use either.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWcmpExt(base);
+    if (outPath.empty()) outPath = base + ".wcmp.json";
+    if (!wowee::pipeline::WoweeCompanionLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcmp-json: WCMP not found: %s.wcmp\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCompanionLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"companionId", e.companionId},
+            {"creatureId", e.creatureId},
+            {"name", e.name},
+            {"description", e.description},
+            {"iconPath", e.iconPath},
+            {"companionKind", e.companionKind},
+            {"companionKindName", wowee::pipeline::WoweeCompanion::companionKindName(e.companionKind)},
+            {"rarity", e.rarity},
+            {"rarityName", wowee::pipeline::WoweeCompanion::rarityName(e.rarity)},
+            {"factionRestriction", e.factionRestriction},
+            {"factionRestrictionName", wowee::pipeline::WoweeCompanion::factionRestrictionName(e.factionRestriction)},
+            {"learnSpellId", e.learnSpellId},
+            {"itemId", e.itemId},
+            {"idleSoundId", e.idleSoundId},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wcmp-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source     : %s.wcmp\n", base.c_str());
+    std::printf("  companions : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wcmp.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWcmpExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wcmp-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wcmp-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "critter")    return wowee::pipeline::WoweeCompanion::Critter;
+        if (s == "mechanical") return wowee::pipeline::WoweeCompanion::Mechanical;
+        if (s == "dragon")     return wowee::pipeline::WoweeCompanion::DragonHatchling;
+        if (s == "demonic")    return wowee::pipeline::WoweeCompanion::Demonic;
+        if (s == "spectral")   return wowee::pipeline::WoweeCompanion::Spectral;
+        if (s == "elemental")  return wowee::pipeline::WoweeCompanion::Elemental;
+        if (s == "plush")      return wowee::pipeline::WoweeCompanion::Plush;
+        if (s == "undead")     return wowee::pipeline::WoweeCompanion::UndeadCritter;
+        return wowee::pipeline::WoweeCompanion::Critter;
+    };
+    auto rarityFromName = [](const std::string& s) -> uint8_t {
+        if (s == "common")   return wowee::pipeline::WoweeCompanion::Common;
+        if (s == "uncommon") return wowee::pipeline::WoweeCompanion::Uncommon;
+        if (s == "rare")     return wowee::pipeline::WoweeCompanion::Rare;
+        if (s == "epic")     return wowee::pipeline::WoweeCompanion::Epic;
+        return wowee::pipeline::WoweeCompanion::Common;
+    };
+    auto factionFromName = [](const std::string& s) -> uint8_t {
+        if (s == "any")      return wowee::pipeline::WoweeCompanion::AnyFaction;
+        if (s == "alliance") return wowee::pipeline::WoweeCompanion::AllianceOnly;
+        if (s == "horde")    return wowee::pipeline::WoweeCompanion::HordeOnly;
+        return wowee::pipeline::WoweeCompanion::AnyFaction;
+    };
+    wowee::pipeline::WoweeCompanion c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeCompanion::Entry e;
+            e.companionId = je.value("companionId", 0u);
+            e.creatureId = je.value("creatureId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            if (je.contains("companionKind") &&
+                je["companionKind"].is_number_integer()) {
+                e.companionKind = static_cast<uint8_t>(
+                    je["companionKind"].get<int>());
+            } else if (je.contains("companionKindName") &&
+                       je["companionKindName"].is_string()) {
+                e.companionKind = kindFromName(
+                    je["companionKindName"].get<std::string>());
+            }
+            if (je.contains("rarity") &&
+                je["rarity"].is_number_integer()) {
+                e.rarity = static_cast<uint8_t>(
+                    je["rarity"].get<int>());
+            } else if (je.contains("rarityName") &&
+                       je["rarityName"].is_string()) {
+                e.rarity = rarityFromName(
+                    je["rarityName"].get<std::string>());
+            }
+            if (je.contains("factionRestriction") &&
+                je["factionRestriction"].is_number_integer()) {
+                e.factionRestriction = static_cast<uint8_t>(
+                    je["factionRestriction"].get<int>());
+            } else if (je.contains("factionRestrictionName") &&
+                       je["factionRestrictionName"].is_string()) {
+                e.factionRestriction = factionFromName(
+                    je["factionRestrictionName"].get<std::string>());
+            }
+            e.learnSpellId = je.value("learnSpellId", 0u);
+            e.itemId = je.value("itemId", 0u);
+            e.idleSoundId = je.value("idleSoundId", 0u);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeCompanionLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcmp-json: failed to save %s.wcmp\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wcmp\n", outBase.c_str());
+    std::printf("  source     : %s\n", jsonPath.c_str());
+    std::printf("  companions : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -234,6 +394,12 @@ bool handleCompanionsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wcmp") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcmp-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcmp-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
