@@ -1319,6 +1319,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wvhc to a human-editable JSON sidecar with nested seat arrays (defaults to <base>.wvhc.json)\n");
     std::printf("  --import-wvhc-json <json-path> [out-base]\n");
     std::printf("                         Import a .wvhc.json sidecar back into binary .wvhc (accepts vehicleKind/movementKind/powerType int OR name string)\n");
+    std::printf("  --gen-holidays <whol-base> [name]\n");
+    std::printf("                         Emit .whol starter: 3 seasonal holidays (Hallow's End / Brewfest / Winter Veil) with boss+reward+quest cross-refs\n");
+    std::printf("  --gen-holidays-weekly <whol-base> [name]\n");
+    std::printf("                         Emit .whol 3 weekly call-to-arms BG bonus windows (Warsong Gulch / Arathi Basin / Eye of the Storm)\n");
+    std::printf("  --gen-holidays-special <whol-base> [name]\n");
+    std::printf("                         Emit .whol 3 special events (Wintergrasp world-PvP / Lunar Festival / Children's Week)\n");
+    std::printf("  --info-whol <whol-base> [--json]\n");
+    std::printf("                         Print WHOL entries (id / kind / recurrence / start MM/DD / duration / quest+boss+reward IDs / name)\n");
+    std::printf("  --validate-whol <whol-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, kind 0..5, recurrence 0..3, duration>0, valid month/day for non-weekly, calendar-only warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
