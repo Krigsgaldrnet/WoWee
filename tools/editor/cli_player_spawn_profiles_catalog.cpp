@@ -140,6 +140,150 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWpspExt(base);
+    if (!wowee::pipeline::WoweePlayerSpawnProfileLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wpsp-json: WPSP not found: %s.wpsp\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweePlayerSpawnProfileLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wpsp.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["profileId"] = e.profileId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["raceMask"] = e.raceMask;
+        je["classMask"] = e.classMask;
+        je["mapId"] = e.mapId;
+        je["zoneId"] = e.zoneId;
+        je["spawnX"] = e.spawnX;
+        je["spawnY"] = e.spawnY;
+        je["spawnZ"] = e.spawnZ;
+        je["spawnFacing"] = e.spawnFacing;
+        je["bindMapId"] = e.bindMapId;
+        je["bindZoneId"] = e.bindZoneId;
+        je["startingItem1Id"] = e.startingItem1Id;
+        je["startingItem1Count"] = e.startingItem1Count;
+        je["startingItem2Id"] = e.startingItem2Id;
+        je["startingItem2Count"] = e.startingItem2Count;
+        je["startingItem3Id"] = e.startingItem3Id;
+        je["startingItem3Count"] = e.startingItem3Count;
+        je["startingItem4Id"] = e.startingItem4Id;
+        je["startingItem4Count"] = e.startingItem4Count;
+        je["startingSpell1Id"] = e.startingSpell1Id;
+        je["startingSpell2Id"] = e.startingSpell2Id;
+        je["startingSpell3Id"] = e.startingSpell3Id;
+        je["startingSpell4Id"] = e.startingSpell4Id;
+        je["startingLevel"] = e.startingLevel;
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wpsp-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog  : %s\n", c.name.c_str());
+    std::printf("  profiles : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wpsp-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wpsp-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweePlayerSpawnProfile c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweePlayerSpawnProfile::Entry e;
+            if (je.contains("profileId"))    e.profileId = je["profileId"].get<uint32_t>();
+            if (je.contains("name"))         e.name = je["name"].get<std::string>();
+            if (je.contains("description"))  e.description = je["description"].get<std::string>();
+            if (je.contains("raceMask"))     e.raceMask = je["raceMask"].get<uint32_t>();
+            if (je.contains("classMask"))    e.classMask = je["classMask"].get<uint32_t>();
+            if (je.contains("mapId"))        e.mapId = je["mapId"].get<uint32_t>();
+            if (je.contains("zoneId"))       e.zoneId = je["zoneId"].get<uint32_t>();
+            if (je.contains("spawnX"))       e.spawnX = je["spawnX"].get<float>();
+            if (je.contains("spawnY"))       e.spawnY = je["spawnY"].get<float>();
+            if (je.contains("spawnZ"))       e.spawnZ = je["spawnZ"].get<float>();
+            if (je.contains("spawnFacing"))  e.spawnFacing = je["spawnFacing"].get<float>();
+            if (je.contains("bindMapId"))    e.bindMapId = je["bindMapId"].get<uint32_t>();
+            if (je.contains("bindZoneId"))   e.bindZoneId = je["bindZoneId"].get<uint32_t>();
+            if (je.contains("startingItem1Id"))    e.startingItem1Id = je["startingItem1Id"].get<uint32_t>();
+            if (je.contains("startingItem1Count")) e.startingItem1Count = je["startingItem1Count"].get<uint32_t>();
+            if (je.contains("startingItem2Id"))    e.startingItem2Id = je["startingItem2Id"].get<uint32_t>();
+            if (je.contains("startingItem2Count")) e.startingItem2Count = je["startingItem2Count"].get<uint32_t>();
+            if (je.contains("startingItem3Id"))    e.startingItem3Id = je["startingItem3Id"].get<uint32_t>();
+            if (je.contains("startingItem3Count")) e.startingItem3Count = je["startingItem3Count"].get<uint32_t>();
+            if (je.contains("startingItem4Id"))    e.startingItem4Id = je["startingItem4Id"].get<uint32_t>();
+            if (je.contains("startingItem4Count")) e.startingItem4Count = je["startingItem4Count"].get<uint32_t>();
+            if (je.contains("startingSpell1Id"))   e.startingSpell1Id = je["startingSpell1Id"].get<uint32_t>();
+            if (je.contains("startingSpell2Id"))   e.startingSpell2Id = je["startingSpell2Id"].get<uint32_t>();
+            if (je.contains("startingSpell3Id"))   e.startingSpell3Id = je["startingSpell3Id"].get<uint32_t>();
+            if (je.contains("startingSpell4Id"))   e.startingSpell4Id = je["startingSpell4Id"].get<uint32_t>();
+            if (je.contains("startingLevel"))      e.startingLevel = je["startingLevel"].get<uint8_t>();
+            if (je.contains("iconColorRGBA"))      e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wpsp.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWpspExt(outBase);
+    if (!wowee::pipeline::WoweePlayerSpawnProfileLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wpsp-json: failed to save %s.wpsp\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wpsp\n", outBase.c_str());
+    std::printf("  catalog  : %s\n", c.name.c_str());
+    std::printf("  profiles : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -269,6 +413,12 @@ bool handlePlayerSpawnProfilesCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wpsp") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wpsp-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wpsp-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

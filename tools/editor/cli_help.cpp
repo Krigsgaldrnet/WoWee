@@ -1829,6 +1829,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPSP entries (id / raceMask / classMask / map / zone / startingLevel / spawn coords / name)\n");
     std::printf("  --validate-wpsp <wpsp-base> [--json]\n");
     std::printf("                         Static checks: id+name+race+class+startingLevel required, no duplicate ids; warns on (0,0,0) spawn, item id/count mismatch, lvl>80, DK not at 55\n");
+    std::printf("  --export-wpsp-json <wpsp-base> [out.json]\n");
+    std::printf("                         Export binary .wpsp to a human-editable JSON sidecar (defaults to <base>.wpsp.json)\n");
+    std::printf("  --import-wpsp-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wpsp.json sidecar back into binary .wpsp (all per-entry fields preserved verbatim including spawn/bind coords and item/spell ids)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
