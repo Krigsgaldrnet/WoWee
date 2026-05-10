@@ -184,6 +184,7 @@ const char* const kArgRequired[] = {
     "--export-wchf-json", "--import-wchf-json",
     "--gen-pvp", "--gen-pvp-alliance", "--gen-pvp-arena",
     "--info-wpvp", "--validate-wpvp",
+    "--export-wpvp-json", "--import-wpvp-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

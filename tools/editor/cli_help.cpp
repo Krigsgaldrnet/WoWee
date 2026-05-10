@@ -1583,6 +1583,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPVP entries (id / kind / threshold / emblem reward / title+chest cross-refs / alliance / horde names)\n");
     std::printf("  --validate-wpvp <wpvp-base> [--json]\n");
     std::printf("                         Static checks: id+name required, kind 0..4, level range valid, faction alt names paired, threshold monotonic within kind, arena>=1500\n");
+    std::printf("  --export-wpvp-json <wpvp-base> [out.json]\n");
+    std::printf("                         Export binary .wpvp to a human-editable JSON sidecar (defaults to <base>.wpvp.json)\n");
+    std::printf("  --import-wpvp-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wpvp.json sidecar back into binary .wpvp (accepts rankKind int OR name string; bracket level defaults to 1..80)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
