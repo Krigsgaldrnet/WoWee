@@ -2573,6 +2573,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wprt to a human-editable JSON sidecar (defaults to <base>.wprt.json; emits factionAccess and portalKind as int + name string; floats preserved bit-for-bit)\n");
     std::printf("  --import-wprt-json <json-path> [out-base]\n");
     std::printf("                         Import a .wprt.json sidecar back into binary .wprt (factionAccess int OR \"both\"/\"alliance\"/\"horde\"/\"neutral\"; portalKind int OR \"teleport\"/\"portal\")\n");
+    std::printf("  --gen-cst-warrior <wcst-base> [name]\n");
+    std::printf("                         Emit .wcst Warrior (classId=1) sparse base-stats sample at levels 1/10/20/30/40/60. baseMana=0 (Warrior uses Rage)\n");
+    std::printf("  --gen-cst-mage <wcst-base> [name]\n");
+    std::printf("                         Emit .wcst Mage (classId=8) sparse base-stats sample at the same 6 levels with mana growth tracking Intellect\n");
+    std::printf("  --gen-cst-starting <wcst-base> [name]\n");
+    std::printf("                         Emit .wcst all 9 vanilla classes at level 1 — illustrates per-class flat starting-stat differences (Warrior/Paladin high Str, Hunter/Rogue high Agi, Mage/Priest/Warlock high Int, Shaman/Druid balanced)\n");
+    std::printf("  --info-wcst <wcst-base> [--json]\n");
+    std::printf("                         Print WCST entries (statId / class / level / hp / mana / Str/Agi/Sta/Int/Spi / armor)\n");
+    std::printf("  --validate-wcst <wcst-base> [--json]\n");
+    std::printf("                         Static checks: statId+classId+level required, classId 1..11, level 1..60, no zero baseHealth (player would die instantly), no duplicate statIds, no duplicate (classId,level) pairs (runtime stat-lookup tie); warns on classId 6/10 (DK/Monk gap unused in vanilla), Warrior/Rogue baseMana > 0 (these classes use Rage/Energy not mana — likely typo), and per-class monotonicity violations across all 8 stats (any stat regressing as level increases)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

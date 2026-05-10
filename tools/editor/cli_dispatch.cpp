@@ -174,6 +174,7 @@
 #include "cli_player_movement_anim_catalog.hpp"
 #include "cli_transit_schedule_catalog.hpp"
 #include "cli_mage_portals_catalog.hpp"
+#include "cli_combat_stats_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -393,6 +394,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handlePlayerMovementAnimCatalog,
     handleTransitScheduleCatalog,
     handleMagePortalsCatalog,
+    handleCombatStatsCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,
