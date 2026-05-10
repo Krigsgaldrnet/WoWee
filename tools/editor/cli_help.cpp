@@ -1711,6 +1711,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSCT entries (id / kind / baseMs / perLevelMs / minMs / maxMs / iconColor / name)\n");
     std::printf("  --validate-wsct <wsct-base> [--json]\n");
     std::printf("                         Static checks: id+name required, castKind 0..4, baseMs>=0, min<=max, no duplicate ids; warns on Instant+nonzero base, errors on Channel+0 base\n");
+    std::printf("  --export-wsct-json <wsct-base> [out.json]\n");
+    std::printf("                         Export binary .wsct to a human-editable JSON sidecar (defaults to <base>.wsct.json)\n");
+    std::printf("  --import-wsct-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsct.json sidecar back into binary .wsct (accepts castKind int OR castKindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
