@@ -126,6 +126,140 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWumvExt(base);
+    if (outPath.empty()) outPath = base + ".wumv.json";
+    if (!wowee::pipeline::WoweeUnitMovementLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wumv-json: WUMV not found: %s.wumv\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeUnitMovementLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"moveTypeId", e.moveTypeId},
+            {"name", e.name},
+            {"description", e.description},
+            {"iconPath", e.iconPath},
+            {"movementCategory", e.movementCategory},
+            {"movementCategoryName", wowee::pipeline::WoweeUnitMovement::movementCategoryName(e.movementCategory)},
+            {"requiresFlight", e.requiresFlight},
+            {"canStackBuffs", e.canStackBuffs},
+            {"baseSpeed", e.baseSpeed},
+            {"baseMultiplier", e.baseMultiplier},
+            {"maxMultiplier", e.maxMultiplier},
+            {"defaultDurationMs", e.defaultDurationMs},
+            {"stackingPriority", e.stackingPriority},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wumv-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wumv\n", base.c_str());
+    std::printf("  types  : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wumv.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWumvExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wumv-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wumv-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto categoryFromName = [](const std::string& s) -> uint8_t {
+        if (s == "walk")        return wowee::pipeline::WoweeUnitMovement::Walk;
+        if (s == "run")         return wowee::pipeline::WoweeUnitMovement::Run;
+        if (s == "backward")    return wowee::pipeline::WoweeUnitMovement::Backward;
+        if (s == "swim")        return wowee::pipeline::WoweeUnitMovement::Swim;
+        if (s == "swim-back")   return wowee::pipeline::WoweeUnitMovement::SwimBack;
+        if (s == "turn")        return wowee::pipeline::WoweeUnitMovement::Turn;
+        if (s == "flight")      return wowee::pipeline::WoweeUnitMovement::Flight;
+        if (s == "flight-back") return wowee::pipeline::WoweeUnitMovement::FlightBack;
+        if (s == "pitch")       return wowee::pipeline::WoweeUnitMovement::Pitch;
+        if (s == "fly")         return wowee::pipeline::WoweeUnitMovement::Fly;
+        if (s == "fly-back")    return wowee::pipeline::WoweeUnitMovement::FlyBack;
+        if (s == "temp-buff")   return wowee::pipeline::WoweeUnitMovement::TempBuff;
+        return wowee::pipeline::WoweeUnitMovement::Run;
+    };
+    wowee::pipeline::WoweeUnitMovement c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeUnitMovement::Entry e;
+            e.moveTypeId = je.value("moveTypeId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            if (je.contains("movementCategory") &&
+                je["movementCategory"].is_number_integer()) {
+                e.movementCategory = static_cast<uint8_t>(
+                    je["movementCategory"].get<int>());
+            } else if (je.contains("movementCategoryName") &&
+                       je["movementCategoryName"].is_string()) {
+                e.movementCategory = categoryFromName(
+                    je["movementCategoryName"].get<std::string>());
+            }
+            e.requiresFlight = static_cast<uint8_t>(
+                je.value("requiresFlight", 0));
+            e.canStackBuffs = static_cast<uint8_t>(
+                je.value("canStackBuffs", 1));
+            e.baseSpeed = je.value("baseSpeed", 7.0f);
+            e.baseMultiplier = je.value("baseMultiplier", 1.0f);
+            e.maxMultiplier = je.value("maxMultiplier", 1.4f);
+            e.defaultDurationMs = je.value("defaultDurationMs", 0u);
+            e.stackingPriority = static_cast<uint8_t>(
+                je.value("stackingPriority", 0));
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeUnitMovementLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wumv-json: failed to save %s.wumv\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wumv\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  types  : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -245,6 +379,12 @@ bool handleUnitMovementCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wumv") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wumv-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wumv-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

@@ -1667,6 +1667,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WUMV entries (id / category / baseSpeed / multipliers / duration / priority / flight+stack flags / name)\n");
     std::printf("  --validate-wumv <wumv-base> [--json]\n");
     std::printf("                         Static checks: id+name required, category 0..11, baseMultiplier > 0, max >= base, baseline categories need baseSpeed > 0\n");
+    std::printf("  --export-wumv-json <wumv-base> [out.json]\n");
+    std::printf("                         Export binary .wumv to a human-editable JSON sidecar (defaults to <base>.wumv.json)\n");
+    std::printf("  --import-wumv-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wumv.json sidecar back into binary .wumv (accepts movementCategory int OR name string; multipliers default to 1.0/1.4)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
