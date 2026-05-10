@@ -1121,6 +1121,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtrg to a human-editable JSON sidecar (defaults to <base>.wtrg.json)\n");
     std::printf("  --import-wtrg-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtrg.json sidecar back into binary .wtrg (accepts shape/kind int OR name forms)\n");
+    std::printf("  --gen-titles <wtit-base> [name]\n");
+    std::printf("                         Emit .wtit starter: 4 titles covering Achievement / Pvp / Raid / Event categories\n");
+    std::printf("  --gen-titles-pvp <wtit-base> [name]\n");
+    std::printf("                         Emit .wtit Honor System ladder: 14 Alliance + 14 Horde rank titles (Private..Grand Marshal / Scout..High Warlord)\n");
+    std::printf("  --gen-titles-achievement <wtit-base> [name]\n");
+    std::printf("                         Emit .wtit achievement titles incl. 'the Versatile' (matches WACH meta-achievement 250 titleReward)\n");
+    std::printf("  --info-wtit <wtit-base> [--json]\n");
+    std::printf("                         Print WTIT entries (id / sort / prefix vs suffix / category / canonical name)\n");
+    std::printf("  --validate-wtit <wtit-base> [--json]\n");
+    std::printf("                         Static checks: titleId>0+unique, name not empty, category in 0..7, gender variants paired\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
