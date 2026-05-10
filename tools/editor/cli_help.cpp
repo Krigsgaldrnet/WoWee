@@ -1133,6 +1133,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTIT entries (id / sort / prefix vs suffix / category / canonical name)\n");
     std::printf("  --validate-wtit <wtit-base> [--json]\n");
     std::printf("                         Static checks: titleId>0+unique, name not empty, category in 0..7, gender variants paired\n");
+    std::printf("  --export-wtit-json <wtit-base> [out.json]\n");
+    std::printf("                         Export binary .wtit to a human-editable JSON sidecar (defaults to <base>.wtit.json)\n");
+    std::printf("  --import-wtit-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtit.json sidecar back into binary .wtit (accepts category/prefix int OR name forms)\n");
     std::printf("  --gen-events <wsea-base> [name]\n");
     std::printf("                         Emit .wsea starter: 3 events (Brawl Week / Fishing Extravaganza / Anniversary) covering kind categories\n");
     std::printf("  --gen-events-yearly <wsea-base> [name]\n");

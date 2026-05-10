@@ -121,6 +121,129 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each title emits all 8 scalar fields
+    // plus dual int + name forms for category and prefix.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWtitExt(base);
+    if (outPath.empty()) outPath = base + ".wtit.json";
+    if (!wowee::pipeline::WoweeTitleLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtit-json: WTIT not found: %s.wtit\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTitleLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"titleId", e.titleId},
+            {"name", e.name},
+            {"nameMale", e.nameMale},
+            {"nameFemale", e.nameFemale},
+            {"iconPath", e.iconPath},
+            {"prefix", e.prefix},
+            {"prefixName", e.prefix ? "prefix" : "suffix"},
+            {"category", e.category},
+            {"categoryName", wowee::pipeline::WoweeTitle::categoryName(e.category)},
+            {"sortOrder", e.sortOrder},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wtit-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wtit\n", base.c_str());
+    std::printf("  titles : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wtit.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWtitExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wtit-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wtit-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto categoryFromName = [](const std::string& s) -> uint8_t {
+        if (s == "achievement") return wowee::pipeline::WoweeTitle::Achievement;
+        if (s == "pvp")         return wowee::pipeline::WoweeTitle::Pvp;
+        if (s == "raid")        return wowee::pipeline::WoweeTitle::Raid;
+        if (s == "class")       return wowee::pipeline::WoweeTitle::ClassTitle;
+        if (s == "event")       return wowee::pipeline::WoweeTitle::Event;
+        if (s == "profession")  return wowee::pipeline::WoweeTitle::Profession;
+        if (s == "lore")        return wowee::pipeline::WoweeTitle::Lore;
+        if (s == "custom")      return wowee::pipeline::WoweeTitle::Custom;
+        return wowee::pipeline::WoweeTitle::Achievement;
+    };
+    wowee::pipeline::WoweeTitle c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeTitle::Entry e;
+            e.titleId = je.value("titleId", 0u);
+            e.name = je.value("name", std::string{});
+            e.nameMale = je.value("nameMale", std::string{});
+            e.nameFemale = je.value("nameFemale", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            if (je.contains("prefix") && je["prefix"].is_number_integer()) {
+                e.prefix = static_cast<uint8_t>(je["prefix"].get<int>());
+            } else if (je.contains("prefixName") && je["prefixName"].is_string()) {
+                e.prefix = je["prefixName"].get<std::string>() == "prefix" ? 1 : 0;
+            }
+            if (je.contains("category") && je["category"].is_number_integer()) {
+                e.category = static_cast<uint8_t>(je["category"].get<int>());
+            } else if (je.contains("categoryName") && je["categoryName"].is_string()) {
+                e.category = categoryFromName(je["categoryName"].get<std::string>());
+            }
+            e.sortOrder = static_cast<uint16_t>(je.value("sortOrder", 0));
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeTitleLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtit-json: failed to save %s.wtit\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtit\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  titles : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -214,6 +337,12 @@ bool handleTitlesCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wtit") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtit-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtit-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
