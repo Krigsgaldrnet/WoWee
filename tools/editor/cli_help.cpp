@@ -2065,6 +2065,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSTC entries (id / displayOrder / minLevelToUnlock / cost (formatted) / premium flag / name)\n");
     std::printf("  --validate-wstc <wstc-base> [--json]\n");
     std::printf("                         Static checks: id+name required, no duplicate ids; warns on lvl>80 (unreachable), Premium+nonzero cost (donor slots are free), duplicate displayOrder (UI collision)\n");
+    std::printf("  --export-wstc-json <wstc-base> [out.json]\n");
+    std::printf("                         Export binary .wstc to a human-editable JSON sidecar (defaults to <base>.wstc.json)\n");
+    std::printf("  --import-wstc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wstc.json sidecar back into binary .wstc (isPremium accepts bool OR int)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
