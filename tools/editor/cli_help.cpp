@@ -2209,6 +2209,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtbd to a human-editable JSON sidecar (defaults to <base>.wtbd.json; emits both backgroundPattern/borderPattern ints AND name strings; all 3 colors as 0xAARRGGBB uint32)\n");
     std::printf("  --import-wtbd-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtbd.json sidecar back into binary .wtbd (backgroundPattern int OR \"solid\"/\"gradient\"/\"chevron\"/\"quartered\"/\"starburst\"; borderPattern int OR \"none\"/\"thin\"/\"thick\"/\"decorative\"; isApproved bool OR int)\n");
+    std::printf("  --gen-spm <wspm-base> [name]\n");
+    std::printf("                         Emit .wspm 4 mage AoE ground markers (Blizzard / Flamestrike / BlastWave ring / Frost Nova ring)\n");
+    std::printf("  --gen-spm-raid <wspm-base> [name]\n");
+    std::printf("                         Emit .wspm 5 boss-arena hazard zones (Putricide poison pool / Sindragosa frost tomb / Saurfang Mark zone / Putricide shadow puddle / Marrowgar Bone Storm)\n");
+    std::printf("  --gen-spm-env <wspm-base> [name]\n");
+    std::printf("                         Emit .wspm 3 environmental ground effects (Wintergrasp lightning / Silithus sandstorm cone / open-world blizzard zone)\n");
+    std::printf("  --info-wspm <wspm-base> [--json]\n");
+    std::printf("                         Print WSPM entries (id / spell / radius / duration / tick interval / fade mode / stack-flag / destroy-on-cancel / name)\n");
+    std::printf("  --validate-wspm <wspm-base> [--json]\n");
+    std::printf("                         Static checks: id+name+spellId+texturePath required, radius>0, edgeFadeMode 0..2, no duplicate markerIds, no duplicate spellIds (spell-cast lookup ambiguity); warns on radius>100yd, tickIntervalMs<100ms (perf risk for stackable), decalColor alpha=0 (invisible)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
