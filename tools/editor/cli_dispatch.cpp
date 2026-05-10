@@ -177,6 +177,7 @@
 #include "cli_combat_stats_catalog.hpp"
 #include "cli_guild_bank_catalog.hpp"
 #include "cli_quest_graph_catalog.hpp"
+#include "cli_crafting_recipes_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -399,6 +400,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleCombatStatsCatalog,
     handleGuildBankCatalog,
     handleQuestGraphCatalog,
+    handleCraftingRecipesCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

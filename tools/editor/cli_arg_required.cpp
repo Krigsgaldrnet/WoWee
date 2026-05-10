@@ -407,6 +407,8 @@ const char* const kArgRequired[] = {
     "--gen-qgr-starter", "--gen-qgr-branched", "--gen-qgr-dailies",
     "--info-wqgr", "--validate-wqgr",
     "--export-wqgr-json", "--import-wqgr-json",
+    "--gen-cra-alchemy", "--gen-cra-engineering", "--gen-cra-blacksmithing",
+    "--info-wcra", "--validate-wcra",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

@@ -721,6 +721,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_combat_stats.cpp
     src/pipeline/wowee_guild_bank.cpp
     src/pipeline/wowee_quest_graph.cpp
+    src/pipeline/wowee_crafting_recipes.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1605,6 +1606,7 @@ add_executable(wowee_editor
     tools/editor/cli_combat_stats_catalog.cpp
     tools/editor/cli_guild_bank_catalog.cpp
     tools/editor/cli_quest_graph_catalog.cpp
+    tools/editor/cli_crafting_recipes_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
     tools/editor/cli_catalog_by_name.cpp
@@ -1808,6 +1810,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_combat_stats.cpp
     src/pipeline/wowee_guild_bank.cpp
     src/pipeline/wowee_quest_graph.cpp
+    src/pipeline/wowee_crafting_recipes.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
