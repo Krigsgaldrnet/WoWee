@@ -1203,6 +1203,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGEM gems (id / color / stat / item) + enchantments (id / slot / stat / duration / charges)\n");
     std::printf("  --validate-wgem <wgem-base> [--json]\n");
     std::printf("                         Static checks: ids>0+unique, name not empty, color/slot in range, stat-only entries need non-zero value\n");
+    std::printf("  --gen-guilds <wgld-base> [name]\n");
+    std::printf("                         Emit .wgld starter: 1 guild (Sentinels of Dawn) with default 5-rank ladder + 3 members\n");
+    std::printf("  --gen-guilds-full <wgld-base> [name]\n");
+    std::printf("                         Emit .wgld fleshed-out guild: 6 ranks + 8 members + 4 bank tabs (officer-only on tabs 3+4) + 3 perks\n");
+    std::printf("  --gen-guilds-pair <wgld-base> [name]\n");
+    std::printf("                         Emit .wgld 2 guilds: 1 Alliance (Light's Vanguard) + 1 Horde (Bloodfang Warband) with parallel ranks\n");
+    std::printf("  --info-wgld <wgld-base> [--json]\n");
+    std::printf("                         Print WGLD entries (id / faction / level / leader + motd / rank+member+tab+perk counts)\n");
+    std::printf("  --validate-wgld <wgld-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name+leader not empty, faction 0..1, members reference valid ranks, unique tab indices\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
