@@ -128,6 +128,154 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each world state emits all 11 scalar
+    // fields plus dual int + name forms for displayKind
+    // and panelPosition so hand-edits can use either.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWwuiExt(base);
+    if (outPath.empty()) outPath = base + ".wwui.json";
+    if (!wowee::pipeline::WoweeWorldStateUILoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wwui-json: WWUI not found: %s.wwui\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeWorldStateUILoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"worldStateId", e.worldStateId},
+            {"name", e.name},
+            {"description", e.description},
+            {"iconPath", e.iconPath},
+            {"displayKind", e.displayKind},
+            {"displayKindName", wowee::pipeline::WoweeWorldStateUI::displayKindName(e.displayKind)},
+            {"panelPosition", e.panelPosition},
+            {"panelPositionName", wowee::pipeline::WoweeWorldStateUI::panelPositionName(e.panelPosition)},
+            {"alwaysVisible", e.alwaysVisible},
+            {"hideWhenZero", e.hideWhenZero},
+            {"mapId", e.mapId},
+            {"areaId", e.areaId},
+            {"variableIndex", e.variableIndex},
+            {"defaultValue", e.defaultValue},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wwui-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wwui\n", base.c_str());
+    std::printf("  states : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wwui.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWwuiExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wwui-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wwui-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "counter")       return wowee::pipeline::WoweeWorldStateUI::Counter;
+        if (s == "timer")         return wowee::pipeline::WoweeWorldStateUI::Timer;
+        if (s == "flag-icon")     return wowee::pipeline::WoweeWorldStateUI::FlagIcon;
+        if (s == "progress-bar")  return wowee::pipeline::WoweeWorldStateUI::ProgressBar;
+        if (s == "two-sided")     return wowee::pipeline::WoweeWorldStateUI::TwoSidedScore;
+        if (s == "custom")        return wowee::pipeline::WoweeWorldStateUI::Custom;
+        return wowee::pipeline::WoweeWorldStateUI::Counter;
+    };
+    auto posFromName = [](const std::string& s) -> uint8_t {
+        if (s == "top")       return wowee::pipeline::WoweeWorldStateUI::Top;
+        if (s == "bottom")    return wowee::pipeline::WoweeWorldStateUI::Bottom;
+        if (s == "top-left")  return wowee::pipeline::WoweeWorldStateUI::TopLeft;
+        if (s == "top-right") return wowee::pipeline::WoweeWorldStateUI::TopRight;
+        if (s == "center")    return wowee::pipeline::WoweeWorldStateUI::Center;
+        return wowee::pipeline::WoweeWorldStateUI::Top;
+    };
+    wowee::pipeline::WoweeWorldStateUI c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeWorldStateUI::Entry e;
+            e.worldStateId = je.value("worldStateId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            if (je.contains("displayKind") &&
+                je["displayKind"].is_number_integer()) {
+                e.displayKind = static_cast<uint8_t>(
+                    je["displayKind"].get<int>());
+            } else if (je.contains("displayKindName") &&
+                       je["displayKindName"].is_string()) {
+                e.displayKind = kindFromName(
+                    je["displayKindName"].get<std::string>());
+            }
+            if (je.contains("panelPosition") &&
+                je["panelPosition"].is_number_integer()) {
+                e.panelPosition = static_cast<uint8_t>(
+                    je["panelPosition"].get<int>());
+            } else if (je.contains("panelPositionName") &&
+                       je["panelPositionName"].is_string()) {
+                e.panelPosition = posFromName(
+                    je["panelPositionName"].get<std::string>());
+            }
+            e.alwaysVisible = static_cast<uint8_t>(je.value("alwaysVisible", 0));
+            e.hideWhenZero = static_cast<uint8_t>(je.value("hideWhenZero", 0));
+            e.mapId = je.value("mapId", 0u);
+            e.areaId = je.value("areaId", 0u);
+            e.variableIndex = je.value("variableIndex", 0u);
+            e.defaultValue = je.value("defaultValue", 0);
+            e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeWorldStateUILoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wwui-json: failed to save %s.wwui\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wwui\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  states : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -249,6 +397,12 @@ bool handleWorldStateUICatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wwui") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wwui-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wwui-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

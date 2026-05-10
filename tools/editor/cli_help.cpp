@@ -1393,6 +1393,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WWUI entries (id / kind / panel position / always-visible / hide-when-zero / map+area / variableIndex / default / name)\n");
     std::printf("  --validate-wwui <wwui-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, kind 0..5, position 0..4, alwaysVis+hideZero conflict, (mapId, varIdx) collision warning\n");
+    std::printf("  --export-wwui-json <wwui-base> [out.json]\n");
+    std::printf("                         Export binary .wwui to a human-editable JSON sidecar (defaults to <base>.wwui.json)\n");
+    std::printf("  --import-wwui-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wwui.json sidecar back into binary .wwui (accepts displayKind/panelPosition int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
