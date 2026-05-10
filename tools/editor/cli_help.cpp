@@ -2167,6 +2167,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wmsp to a human-editable JSON sidecar (defaults to <base>.wmsp.json; emits all 4 enums as both int AND name string + a versionString \"x.y.z\" convenience field)\n");
     std::printf("  --import-wmsp-json <json-path> [out-base]\n");
     std::printf("                         Import a .wmsp.json sidecar back into binary .wmsp (realmType int OR \"normal\"/\"pvp\"/\"rp\"/\"rppvp\"/\"test\"; realmCategory \"public\"/\"private\"/\"beta\"/\"dev\"; expansion \"vanilla\"/\"tbc\"/\"wotlk\"/\"cata\"; population \"low\"/\"medium\"/\"high\"/\"full\"/\"locked\")\n");
+    std::printf("  --gen-emo <wemo-base> [name]\n");
+    std::printf("                         Emit .wemo 8 universal social emotes (wave / bow / laugh / cheer / cry / sleep / kneel / applaud)\n");
+    std::printf("  --gen-emo-combat <wemo-base> [name]\n");
+    std::printf("                         Emit .wemo 5 combat-themed emotes (roar / threaten / charge / victory / surrender)\n");
+    std::printf("  --gen-emo-rp <wemo-base> [name]\n");
+    std::printf("                         Emit .wemo 6 roleplay emotes (bonk / ponder / soothe / plead / shoo / scoff)\n");
+    std::printf("  --info-wemo <wemo-base> [--json]\n");
+    std::printf("                         Print WEMO entries (id / slash command / kind / animation / sound / sex filter / TTS hint)\n");
+    std::printf("  --validate-wemo <wemo-base> [--json]\n");
+    std::printf("                         Static checks: id+name+slashCommand required, slash must be lowercase + no leading '/' (chat parser case-folds before lookup), emoteKind 0..3, sex 0..2, ttsHint 0..3, no duplicate ids OR commands; warns on targetMessage with !=2 %s tokens, noTargetMessage with !=1\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");

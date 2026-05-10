@@ -310,6 +310,8 @@ const char* const kArgRequired[] = {
     "--gen-msp", "--gen-msp-cluster", "--gen-msp-multi",
     "--info-wmsp", "--validate-wmsp",
     "--export-wmsp-json", "--import-wmsp-json",
+    "--gen-emo", "--gen-emo-combat", "--gen-emo-rp",
+    "--info-wemo", "--validate-wemo",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

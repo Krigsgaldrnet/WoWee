@@ -125,6 +125,7 @@ constexpr FormatRow kFormats[] = {
     {"WSCB", ".wscb",  "server",    "MOTD + scheduled SMSG_NOTIFICATION","Server channel broadcast catalog"},
     {"WCMG", ".wcmg",  "spells",    "Stance/Form/Aspect mutex tables",  "Combat maneuver group catalog (mutex spells)"},
     {"WMSP", ".wmsp",  "server",    "realmlist + SMSG_REALM_LIST data",  "Master server profile / realmlist catalog"},
+    {"WEMO", ".wemo",  "social",    "EmotesText.dbc + EmotesTextSound", "Emote definition catalog (/dance, /wave, etc.)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
