@@ -295,6 +295,120 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWcstExt(base);
+    if (out.empty()) out = base + ".wcst.json";
+    if (!wowee::pipeline::WoweeCombatStatsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcst-json: WCST not found: %s.wcst\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCombatStatsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WCST";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"statId", e.statId},
+            {"classId", e.classId},
+            {"className", classIdName(e.classId)},
+            {"level", e.level},
+            {"baseHealth", e.baseHealth},
+            {"baseMana", e.baseMana},
+            {"baseStrength", e.baseStrength},
+            {"baseAgility", e.baseAgility},
+            {"baseStamina", e.baseStamina},
+            {"baseIntellect", e.baseIntellect},
+            {"baseSpirit", e.baseSpirit},
+            {"baseArmor", e.baseArmor},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wcst-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu entries)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wcst.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wcst");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wcst-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wcst-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeCombatStats c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wcst-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeCombatStats::Entry e;
+        e.statId = je.value("statId", 0u);
+        e.classId = static_cast<uint8_t>(je.value("classId", 0));
+        e.level = static_cast<uint8_t>(je.value("level", 0));
+        e.baseHealth = je.value("baseHealth", 0u);
+        e.baseMana = je.value("baseMana", 0u);
+        e.baseStrength = static_cast<uint16_t>(
+            je.value("baseStrength", 0));
+        e.baseAgility = static_cast<uint16_t>(
+            je.value("baseAgility", 0));
+        e.baseStamina = static_cast<uint16_t>(
+            je.value("baseStamina", 0));
+        e.baseIntellect = static_cast<uint16_t>(
+            je.value("baseIntellect", 0));
+        e.baseSpirit = static_cast<uint16_t>(
+            je.value("baseSpirit", 0));
+        e.baseArmor = je.value("baseArmor", 0u);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeCombatStatsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcst-json: failed to save %s.wcst\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wcst (%zu entries)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleCombatStatsCatalog(int& i, int argc, char** argv,
@@ -317,6 +431,14 @@ bool handleCombatStatsCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wcst") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcst-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcst-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

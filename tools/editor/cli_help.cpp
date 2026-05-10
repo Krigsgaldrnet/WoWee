@@ -2583,6 +2583,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCST entries (statId / class / level / hp / mana / Str/Agi/Sta/Int/Spi / armor)\n");
     std::printf("  --validate-wcst <wcst-base> [--json]\n");
     std::printf("                         Static checks: statId+classId+level required, classId 1..11, level 1..60, no zero baseHealth (player would die instantly), no duplicate statIds, no duplicate (classId,level) pairs (runtime stat-lookup tie); warns on classId 6/10 (DK/Monk gap unused in vanilla), Warrior/Rogue baseMana > 0 (these classes use Rage/Energy not mana — likely typo), and per-class monotonicity violations across all 8 stats (any stat regressing as level increases)\n");
+    std::printf("  --export-wcst-json <wcst-base> [out.json]\n");
+    std::printf("                         Export binary .wcst to a human-editable JSON sidecar (defaults to <base>.wcst.json; emits classId as int + className string for readability)\n");
+    std::printf("  --import-wcst-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcst.json sidecar back into binary .wcst (className field is informational; classId int is authoritative — round-trips per-class per-level stat tables byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
