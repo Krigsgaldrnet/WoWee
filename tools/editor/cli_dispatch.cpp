@@ -138,6 +138,7 @@
 #include "cli_boss_encounters_catalog.hpp"
 #include "cli_instance_lockouts_catalog.hpp"
 #include "cli_stable_slots_catalog.hpp"
+#include "cli_stat_curves_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -317,6 +318,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleBossEncountersCatalog,
     handleInstanceLockoutsCatalog,
     handleStableSlotsCatalog,
+    handleStatCurvesCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

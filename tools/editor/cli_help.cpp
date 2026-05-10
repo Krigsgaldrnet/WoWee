@@ -2069,6 +2069,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wstc to a human-editable JSON sidecar (defaults to <base>.wstc.json)\n");
     std::printf("  --import-wstc-json <json-path> [out-base]\n");
     std::printf("                         Import a .wstc.json sidecar back into binary .wstc (isPremium accepts bool OR int)\n");
+    std::printf("  --gen-stm <wstm-base> [name]\n");
+    std::printf("                         Emit .wstm 5 crit curves (MeleeCrit / RangedCrit / SpellCrit / Parry / Dodge) with canonical 3.3.5a base+per-level scaling\n");
+    std::printf("  --gen-stm-regen <wstm-base> [name]\n");
+    std::printf("                         Emit .wstm 4 regen curves (ManaPerSpirit / HpPerSpirit / EnergyPerSec / RageDecay) with stock formulas\n");
+    std::printf("  --gen-stm-armor <wstm-base> [name]\n");
+    std::printf("                         Emit .wstm 3 armor/mitigation curves (BaseArmorPerLevel / ArmorMitigationPct / ResistancePerLevel)\n");
+    std::printf("  --info-wstm <wstm-base> [--json]\n");
+    std::printf("                         Print WSTM entries (id / kind / minLvl / maxLvl / baseValue / perLevelDelta / multiplier / value@lvl80 sample / name)\n");
+    std::printf("  --validate-wstm <wstm-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, curveKind 0..6, minLevel<=maxLevel, no duplicate ids; warns on maxLevel>80, multiplier=0 (always 0), multiplier<0 (inverts), perLevelDelta<0 (shrinks)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
