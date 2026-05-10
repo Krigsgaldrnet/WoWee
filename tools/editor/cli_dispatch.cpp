@@ -94,6 +94,7 @@
 #include "cli_lfg_catalog.hpp"
 #include "cli_catalog_grep.hpp"
 #include "cli_macros_catalog.hpp"
+#include "cli_char_features_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -229,6 +230,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleLFGCatalog,
     handleCatalogGrep,
     handleMacrosCatalog,
+    handleCharFeaturesCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

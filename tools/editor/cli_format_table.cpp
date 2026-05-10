@@ -61,6 +61,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','S','C','H'}, ".wsch",  "spells",    "--info-wsch",      "Spell school / damage type catalog"},
     {{'W','L','F','G'}, ".wlfg",  "social",    "--info-wlfg",      "LFG / Dungeon Finder catalog"},
     {{'W','M','A','C'}, ".wmac",  "ui",        "--info-wmac",      "Macro / slash command catalog"},
+    {{'W','C','H','F'}, ".wchf",  "chars",     "--info-wchf",      "Character hair / face customization catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

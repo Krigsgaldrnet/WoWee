@@ -1559,6 +1559,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wmac to a human-editable JSON sidecar (defaults to <base>.wmac.json; multi-line bodies escape \\n)\n");
     std::printf("  --import-wmac-json <json-path> [out-base]\n");
     std::printf("                         Import a .wmac.json sidecar back into binary .wmac (accepts macroKind int OR name string; maxLength defaults to 255)\n");
+    std::printf("  --gen-chf <wchf-base> [name]\n");
+    std::printf("                         Emit .wchf starter: 5 Human Male features (1 skin / 1 face / 2 hair styles / 1 facial hair)\n");
+    std::printf("  --gen-chf-bloodelf <wchf-base> [name]\n");
+    std::printf("                         Emit .wchf 8 Blood Elf Female hair styles (TBC iconic feature, requiresExpansion=TBC)\n");
+    std::printf("  --gen-chf-tauren <wchf-base> [name]\n");
+    std::printf("                         Emit .wchf 6 Tauren Male features (3 horn variants + 3 facial hair) using race-specific kinds\n");
+    std::printf("  --info-wchf <wchf-base> [--json]\n");
+    std::printf("                         Print WCHF entries (id / race / sex / kind / variation / geoset bits / expansion / name)\n");
+    std::printf("  --validate-wchf <wchf-base> [--json]\n");
+    std::printf("                         Static checks: id+name+raceId+texturePath required, kind 0..8 / sex 0..1 / expansion 0..3, unique (race,sex,kind,variation) tuples\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
