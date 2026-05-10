@@ -158,6 +158,7 @@
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
+#include "cli_catalog_id_range.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -357,6 +358,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,
+    handleCatalogIdRange,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

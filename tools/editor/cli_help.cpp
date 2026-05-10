@@ -2313,6 +2313,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Search every catalog file under <directory> for an entry with the given id (recursive walk). Prints all hits as [WXXX] file:fieldName=id name. Use --magic to limit search to one format family when the same id is a primary key in multiple\n");
     std::printf("  --catalog-by-name <directory> <substring> [--magic <WXXX>] [--ignore-case] [--json]\n");
     std::printf("                         Search every catalog file under <directory> for entries whose name contains the substring. Complements --catalog-find (id-based) and --catalog-grep (catalog-header label only). --ignore-case for fuzzy substring matching\n");
+    std::printf("  --catalog-id-range <directory> [--magic <WXXX>] [--json]\n");
+    std::printf("                         For every catalog file under <directory>, print entry count, min/max primary-key id, gap count, first gap, and a recommended next id (smallest gap if any, else max+1). Useful when adding new entries without ID conflicts. --magic narrows to one format family\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
