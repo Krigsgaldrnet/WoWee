@@ -2037,6 +2037,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WBOS entries (id / boss creature / map / difficulty / phases / size / ilvl / soft-enrage minutes / berserk spell / name)\n");
     std::printf("  --validate-wbos <wbos-base> [--json]\n");
     std::printf("                         Static checks: id+name+boss+map+phases+size required, no duplicate ids; warns on non-standard party size, berserkSpellId set without enrageTimerMs, enrage > 30 min\n");
+    std::printf("  --export-wbos-json <wbos-base> [out.json]\n");
+    std::printf("                         Export binary .wbos to a human-editable JSON sidecar (defaults to <base>.wbos.json)\n");
+    std::printf("  --import-wbos-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wbos.json sidecar back into binary .wbos (all per-entry fields preserved verbatim)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

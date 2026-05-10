@@ -131,6 +131,120 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWbosExt(base);
+    if (!wowee::pipeline::WoweeBossEncounterLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wbos-json: WBOS not found: %s.wbos\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeBossEncounterLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wbos.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["encounterId"] = e.encounterId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["bossCreatureId"] = e.bossCreatureId;
+        je["mapId"] = e.mapId;
+        je["difficultyId"] = e.difficultyId;
+        je["berserkSpellId"] = e.berserkSpellId;
+        je["enrageTimerMs"] = e.enrageTimerMs;
+        je["phaseCount"] = e.phaseCount;
+        je["requiredPartySize"] = e.requiredPartySize;
+        je["recommendedItemLevel"] = e.recommendedItemLevel;
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wbos-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog    : %s\n", c.name.c_str());
+    std::printf("  encounters : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wbos-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wbos-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeBossEncounter c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeBossEncounter::Entry e;
+            if (je.contains("encounterId"))    e.encounterId = je["encounterId"].get<uint32_t>();
+            if (je.contains("name"))           e.name = je["name"].get<std::string>();
+            if (je.contains("description"))    e.description = je["description"].get<std::string>();
+            if (je.contains("bossCreatureId")) e.bossCreatureId = je["bossCreatureId"].get<uint32_t>();
+            if (je.contains("mapId"))          e.mapId = je["mapId"].get<uint32_t>();
+            if (je.contains("difficultyId"))   e.difficultyId = je["difficultyId"].get<uint32_t>();
+            if (je.contains("berserkSpellId")) e.berserkSpellId = je["berserkSpellId"].get<uint32_t>();
+            if (je.contains("enrageTimerMs"))  e.enrageTimerMs = je["enrageTimerMs"].get<uint32_t>();
+            if (je.contains("phaseCount"))     e.phaseCount = je["phaseCount"].get<uint8_t>();
+            if (je.contains("requiredPartySize")) e.requiredPartySize = je["requiredPartySize"].get<uint8_t>();
+            if (je.contains("recommendedItemLevel")) e.recommendedItemLevel = je["recommendedItemLevel"].get<uint16_t>();
+            if (je.contains("iconColorRGBA")) e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wbos.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWbosExt(outBase);
+    if (!wowee::pipeline::WoweeBossEncounterLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wbos-json: failed to save %s.wbos\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wbos\n", outBase.c_str());
+    std::printf("  catalog    : %s\n", c.name.c_str());
+    std::printf("  encounters : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -256,6 +370,12 @@ bool handleBossEncountersCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wbos") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wbos-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wbos-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
