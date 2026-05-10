@@ -1343,6 +1343,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WLIQ entries (id / kind / fog RGB / density / viscosity / DPS / spell+sound IDs / name)\n");
     std::printf("  --validate-wliq <wliq-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name+shader+material not empty, kind 0..9, fog/visc 0..1, hazardous-no-damage warning\n");
+    std::printf("  --export-wliq-json <wliq-base> [out.json]\n");
+    std::printf("                         Export binary .wliq to a human-editable JSON sidecar (defaults to <base>.wliq.json)\n");
+    std::printf("  --import-wliq-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wliq.json sidecar back into binary .wliq (accepts liquidKind int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

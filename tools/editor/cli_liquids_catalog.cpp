@@ -133,6 +133,151 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each liquid emits all 14 scalar fields
+    // (including 3-byte fog color) plus a dual int + name
+    // form for liquidKind so hand-edits can use either.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWliqExt(base);
+    if (outPath.empty()) outPath = base + ".wliq.json";
+    if (!wowee::pipeline::WoweeLiquidLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wliq-json: WLIQ not found: %s.wliq\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeLiquidLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"liquidId", e.liquidId},
+            {"name", e.name},
+            {"description", e.description},
+            {"shaderPath", e.shaderPath},
+            {"materialPath", e.materialPath},
+            {"liquidKind", e.liquidKind},
+            {"liquidKindName", wowee::pipeline::WoweeLiquid::liquidKindName(e.liquidKind)},
+            {"fogColorR", e.fogColorR},
+            {"fogColorG", e.fogColorG},
+            {"fogColorB", e.fogColorB},
+            {"fogDensity", e.fogDensity},
+            {"ambientSoundId", e.ambientSoundId},
+            {"splashSoundId", e.splashSoundId},
+            {"damageSpellId", e.damageSpellId},
+            {"damagePerSecond", e.damagePerSecond},
+            {"minimapColor", e.minimapColor},
+            {"flowDirection", e.flowDirection},
+            {"flowSpeed", e.flowSpeed},
+            {"viscosity", e.viscosity},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wliq-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source  : %s.wliq\n", base.c_str());
+    std::printf("  liquids : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wliq.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWliqExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wliq-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wliq-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "water")      return wowee::pipeline::WoweeLiquid::Water;
+        if (s == "magma")      return wowee::pipeline::WoweeLiquid::Magma;
+        if (s == "slime")      return wowee::pipeline::WoweeLiquid::Slime;
+        if (s == "ocean")      return wowee::pipeline::WoweeLiquid::OceanSalt;
+        if (s == "fel-fire")   return wowee::pipeline::WoweeLiquid::FelFire;
+        if (s == "holy-light") return wowee::pipeline::WoweeLiquid::HolyLight;
+        if (s == "tar")        return wowee::pipeline::WoweeLiquid::TarOil;
+        if (s == "acid")       return wowee::pipeline::WoweeLiquid::AcidBog;
+        if (s == "frozen")     return wowee::pipeline::WoweeLiquid::FrozenWater;
+        if (s == "underworld") return wowee::pipeline::WoweeLiquid::UnderworldGoo;
+        return wowee::pipeline::WoweeLiquid::Water;
+    };
+    wowee::pipeline::WoweeLiquid c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeLiquid::Entry e;
+            e.liquidId = je.value("liquidId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.shaderPath = je.value("shaderPath", std::string{});
+            e.materialPath = je.value("materialPath", std::string{});
+            if (je.contains("liquidKind") &&
+                je["liquidKind"].is_number_integer()) {
+                e.liquidKind = static_cast<uint8_t>(
+                    je["liquidKind"].get<int>());
+            } else if (je.contains("liquidKindName") &&
+                       je["liquidKindName"].is_string()) {
+                e.liquidKind = kindFromName(
+                    je["liquidKindName"].get<std::string>());
+            }
+            e.fogColorR = static_cast<uint8_t>(je.value("fogColorR", 0));
+            e.fogColorG = static_cast<uint8_t>(je.value("fogColorG", 0));
+            e.fogColorB = static_cast<uint8_t>(je.value("fogColorB", 0));
+            e.fogDensity = je.value("fogDensity", 0.0f);
+            e.ambientSoundId = je.value("ambientSoundId", 0u);
+            e.splashSoundId = je.value("splashSoundId", 0u);
+            e.damageSpellId = je.value("damageSpellId", 0u);
+            e.damagePerSecond = je.value("damagePerSecond", 0u);
+            e.minimapColor = je.value("minimapColor", 0u);
+            e.flowDirection = je.value("flowDirection", 0.0f);
+            e.flowSpeed = je.value("flowSpeed", 0.0f);
+            e.viscosity = je.value("viscosity", 0.0f);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeLiquidLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wliq-json: failed to save %s.wliq\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wliq\n", outBase.c_str());
+    std::printf("  source  : %s\n", jsonPath.c_str());
+    std::printf("  liquids : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -252,6 +397,12 @@ bool handleLiquidsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wliq") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wliq-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wliq-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
