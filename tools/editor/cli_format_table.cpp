@@ -114,6 +114,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','R','P','R'}, ".wrpr",  "factions",  "--info-wrpr",      "Reputation reward tier catalog"},
     {{'W','M','N','L'}, ".wmnl",  "worldmap",  "--info-wmnl",      "Minimap multi-level catalog"},
     {{'W','P','C','R'}, ".wpcr",  "pets",      "--info-wpcr",      "Pet care + action catalog"},
+    {{'W','M','V','C'}, ".wmvc",  "cinematic", "--info-wmvc",      "Movie credits roll catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

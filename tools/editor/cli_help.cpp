@@ -2321,6 +2321,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wpcr to a human-editable JSON sidecar (defaults to <base>.wpcr.json; emits actionKind as both int AND name string; requiresPet/requiresStableNPC as bool)\n");
     std::printf("  --import-wpcr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wpcr.json sidecar back into binary .wpcr (actionKind int OR \"revive\"/\"mend\"/\"feed\"/\"dismiss\"/\"tame\"/\"beastlore\"/\"stable\"/\"untrain\"/\"rename\"/\"abandon\"/\"summon\"; bool fields accept bool OR int)\n");
+    std::printf("  --gen-mvc <wmvc-base> [name]\n");
+    std::printf("                         Emit .wmvc 5 WotLK intro cinematic credit blocks (Production / Direction / Music / Voice Cast / Special Thanks) — first format with variable-length string arrays\n");
+    std::printf("  --gen-mvc-quest <wmvc-base> [name]\n");
+    std::printf("                         Emit .wmvc 3 quest cinematic credit blocks (Quest Designer / Voice / Cinematic Director)\n");
+    std::printf("  --gen-mvc-starter <wmvc-base> [name]\n");
+    std::printf("                         Emit .wmvc 4 starter cinematic credit blocks (Production / Engineering / Art / Special Thanks) — generic template\n");
+    std::printf("  --info-wmvc <wmvc-base> [--json]\n");
+    std::printf("                         Print WMVC entries (id / cinematicId / category / orderHint / line count / name) plus per-block credit lines\n");
+    std::printf("  --validate-wmvc <wmvc-base> [--json]\n");
+    std::printf("                         Static checks: id+name+cinematicId required, category 0..6, lines[] non-empty, no duplicate rollIds, no two blocks at same (cinematicId, orderHint) slot (would render in non-deterministic order); warns on empty lines (blank renders) or lines > 80 chars (text-buffer wrap)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
