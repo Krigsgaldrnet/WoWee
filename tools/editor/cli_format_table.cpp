@@ -148,6 +148,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','C','M','D'}, ".wcmd",  "chat",      "--info-wcmd",      "Chat slash command catalog"},
     {{'W','C','A','M'}, ".wcam",  "camera",    "--info-wcam",      "Camera preset catalog"},
     {{'W','C','F','R'}, ".wcfr",  "stats",     "--info-wcfr",      "Combat formula catalog"},
+    {{'W','L','N','K'}, ".wlnk",  "chat",      "--info-wlnk",      "Chat hyperlink template catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

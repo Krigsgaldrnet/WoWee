@@ -170,6 +170,7 @@ constexpr FormatRow kFormats[] = {
     {"WCMD", ".wcmd",  "chat",      "ChatFrame.lua + per-command CommandHandler","Chat slash command catalog (security-gated registry + aliases + throttle)"},
     {"WCAM", ".wcam",  "camera",    "CameraMgr hard-coded camera profiles","Camera preset catalog (per-purpose FOV/distance/pitch/damping)"},
     {"WCFR", ".wcfr",  "stats",     "gtChanceTo*.dbc + StatSystem constants","Combat formula catalog (per-class stat conversion ratios in fixed-point)"},
+    {"WLNK", ".wlnk",  "chat",      "ChatFrame_OnHyperlinkClick LUA",      "Chat hyperlink template catalog (sprintf-style %d/%s link composition)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
