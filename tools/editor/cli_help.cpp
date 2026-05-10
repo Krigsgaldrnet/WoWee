@@ -2695,6 +2695,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPRC entries (id / sourceSpellId / procEffectSpellId / triggerEvent / procChancePct / ICD ms / max stacks / flags / name)\n");
     std::printf("  --validate-wprc <wprc-base> [--json]\n");
     std::printf("                         Static checks: id+name+sourceSpellId+procEffectSpellId required, triggerEvent 0..8, procChancePct in 1..10000 (basis points; 0 = never fires, > 10000 = > 100%%); CRITICAL: sourceSpellId == procEffectSpellId on OnCast trigger errors (infinite proc loop — effect re-casts itself). Warns on 100%% chance + 0ms ICD on high-frequency event (OnHit/OnCrit/OnTakeDamage) — would spam every swing without rate limiting (performance footgun)\n");
+    std::printf("  --export-wprc-json <wprc-base> [out.json]\n");
+    std::printf("                         Export binary .wprc to a human-editable JSON sidecar (defaults to <base>.wprc.json; emits triggerEvent as int + name string)\n");
+    std::printf("  --import-wprc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wprc.json sidecar back into binary .wprc (triggerEvent int OR \"onhit\"/\"oncrit\"/\"oncast\"/\"ontakedamage\"/\"onheal\"/\"ondodge\"/\"onparry\"/\"onblock\"/\"onkill\" — round-trips proc rule tables byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
