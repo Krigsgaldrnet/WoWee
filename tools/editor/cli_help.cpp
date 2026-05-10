@@ -2055,6 +2055,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .whld to a human-editable JSON sidecar (defaults to <base>.whld.json)\n");
     std::printf("  --import-whld-json <json-path> [out-base]\n");
     std::printf("                         Import a .whld.json sidecar back into binary .whld (accepts raidLockoutKind int OR raidLockoutKindName string)\n");
+    std::printf("  --gen-stc <wstc-base> [name]\n");
+    std::printf("                         Emit .wstc 5 canonical hunter stable slots (Active + 4 stabled, unlocking lvl 10/20/30/40/50 with 0/10s/50s/2g/10g costs)\n");
+    std::printf("  --gen-stc-cata <wstc-base> [name]\n");
+    std::printf("                         Emit .wstc 6 Cata-style slots (Active + 5 stabled), with slot 5 unlocking at lvl 60 for 25g\n");
+    std::printf("  --gen-stc-premium <wstc-base> [name]\n");
+    std::printf("                         Emit .wstc 4 server-custom donator-only slots (premium=1, no level/gold gate)\n");
+    std::printf("  --info-wstc <wstc-base> [--json]\n");
+    std::printf("                         Print WSTC entries (id / displayOrder / minLevelToUnlock / cost (formatted) / premium flag / name)\n");
+    std::printf("  --validate-wstc <wstc-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, no duplicate ids; warns on lvl>80 (unreachable), Premium+nonzero cost (donor slots are free), duplicate displayOrder (UI collision)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
