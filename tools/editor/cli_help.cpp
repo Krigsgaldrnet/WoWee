@@ -2163,6 +2163,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMSP entries (id / type / category / expansion / population / cap / GM-only / build / address / name)\n");
     std::printf("  --validate-wmsp <wmsp-base> [--json]\n");
     std::printf("                         Static checks: id+name+address required, realmType in {0,1,4,6,8}, realmCategory 0..3, expansion 0..3, population 0..4, characterCap>0, no duplicate ids OR names; warns on no-port address, build<5000\n");
+    std::printf("  --export-wmsp-json <wmsp-base> [out.json]\n");
+    std::printf("                         Export binary .wmsp to a human-editable JSON sidecar (defaults to <base>.wmsp.json; emits all 4 enums as both int AND name string + a versionString \"x.y.z\" convenience field)\n");
+    std::printf("  --import-wmsp-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wmsp.json sidecar back into binary .wmsp (realmType int OR \"normal\"/\"pvp\"/\"rp\"/\"rppvp\"/\"test\"; realmCategory \"public\"/\"private\"/\"beta\"/\"dev\"; expansion \"vanilla\"/\"tbc\"/\"wotlk\"/\"cata\"; population \"low\"/\"medium\"/\"high\"/\"full\"/\"locked\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
