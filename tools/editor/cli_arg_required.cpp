@@ -153,6 +153,7 @@ const char* const kArgRequired[] = {
     "--export-wtsk-json", "--import-wtsk-json",
     "--gen-ceq", "--gen-ceq-bosses", "--gen-ceq-ranged",
     "--info-wceq", "--validate-wceq",
+    "--export-wceq-json", "--import-wceq-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

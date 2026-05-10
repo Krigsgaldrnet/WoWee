@@ -1437,6 +1437,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCEQ entries (id / creatureId / mainhand+offhand+ranged item IDs / equipFlags / visualKitId / name)\n");
     std::printf("  --validate-wceq <wceq-base> [--json]\n");
     std::printf("                         Static checks: id+creatureId>0+unique, dual-wield/shield/2H polearm flag coherence, mutually-exclusive flag combos\n");
+    std::printf("  --export-wceq-json <wceq-base> [out.json]\n");
+    std::printf("                         Export binary .wceq to a human-editable JSON sidecar (defaults to <base>.wceq.json)\n");
+    std::printf("  --import-wceq-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wceq.json sidecar back into binary .wceq (slot fields default to canonical 16/17/18 if omitted)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

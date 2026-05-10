@@ -123,6 +123,124 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each loadout emits all 11 scalar fields —
+    // no enum widening needed (all fields are raw numerics
+    // or item ID cross-refs to other catalogs).
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWceqExt(base);
+    if (outPath.empty()) outPath = base + ".wceq.json";
+    if (!wowee::pipeline::WoweeCreatureEquipmentLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wceq-json: WCEQ not found: %s.wceq\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCreatureEquipmentLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"equipmentId", e.equipmentId},
+            {"creatureId", e.creatureId},
+            {"name", e.name},
+            {"description", e.description},
+            {"mainHandItemId", e.mainHandItemId},
+            {"offHandItemId", e.offHandItemId},
+            {"rangedItemId", e.rangedItemId},
+            {"mainHandSlot", e.mainHandSlot},
+            {"offHandSlot", e.offHandSlot},
+            {"rangedSlot", e.rangedSlot},
+            {"equipFlags", e.equipFlags},
+            {"mainHandVisualId", e.mainHandVisualId},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wceq-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source   : %s.wceq\n", base.c_str());
+    std::printf("  loadouts : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wceq.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWceqExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wceq-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wceq-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeCreatureEquipment c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeCreatureEquipment::Entry e;
+            e.equipmentId = je.value("equipmentId", 0u);
+            e.creatureId = je.value("creatureId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.mainHandItemId = je.value("mainHandItemId", 0u);
+            e.offHandItemId = je.value("offHandItemId", 0u);
+            e.rangedItemId = je.value("rangedItemId", 0u);
+            // Slot defaults match the canonical attachment table
+            // (mainhand=16, offhand=17, ranged=18) so a sidecar
+            // that omits these fields still produces sensible
+            // binaries.
+            e.mainHandSlot = static_cast<uint8_t>(je.value("mainHandSlot",
+                wowee::pipeline::WoweeCreatureEquipment::kSlotMainHand));
+            e.offHandSlot = static_cast<uint8_t>(je.value("offHandSlot",
+                wowee::pipeline::WoweeCreatureEquipment::kSlotOffHand));
+            e.rangedSlot = static_cast<uint8_t>(je.value("rangedSlot",
+                wowee::pipeline::WoweeCreatureEquipment::kSlotRanged));
+            e.equipFlags = static_cast<uint8_t>(je.value("equipFlags", 0));
+            e.mainHandVisualId = je.value("mainHandVisualId", 0u);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeCreatureEquipmentLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wceq-json: failed to save %s.wceq\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wceq\n", outBase.c_str());
+    std::printf("  source   : %s\n", jsonPath.c_str());
+    std::printf("  loadouts : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -251,6 +369,12 @@ bool handleCreatureEquipmentCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wceq") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wceq-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wceq-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
