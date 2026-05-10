@@ -270,6 +270,8 @@ const char* const kArgRequired[] = {
     "--gen-bkd", "--gen-bkd-battle", "--gen-bkd-profession",
     "--info-wbkd", "--validate-wbkd",
     "--export-wbkd-json", "--import-wbkd-json",
+    "--gen-tbr", "--gen-tbr-pvp", "--gen-tbr-faction",
+    "--info-wtbr", "--validate-wtbr",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

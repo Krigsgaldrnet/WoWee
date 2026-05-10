@@ -1985,6 +1985,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wbkd to a human-editable JSON sidecar (defaults to <base>.wbkd.json)\n");
     std::printf("  --import-wbkd-json <json-path> [out-base]\n");
     std::printf("                         Import a .wbkd.json sidecar back into binary .wbkd (accepts serviceKind int OR serviceKindName string)\n");
+    std::printf("  --gen-tbr <wtbr-base> [name]\n");
+    std::printf("                         Emit .wtbr 5 raid tier-token redemptions (T9 Conqueror's helm / Vanquisher's chest / T10 Protector's legs / Trophy Gloves) consuming Trophy of the Crusade and Emblem of Frost\n");
+    std::printf("  --gen-tbr-pvp <wtbr-base> [name]\n");
+    std::printf("                         Emit .wtbr 5 PvP token redemptions (BG mount / Arena weapon / Wrathful PvP helm / Combatant title / PvP tabard)\n");
+    std::printf("  --gen-tbr-faction <wtbr-base> [name]\n");
+    std::printf("                         Emit .wtbr 5 faction-rep-gated rewards (Argent tabard @ Honored / Hodir mammoth @ Exalted / Cenarion ring @ Revered / Argent title @ Exalted / Wintergrasp pet @ Honored)\n");
+    std::printf("  --info-wtbr <wtbr-base> [--json]\n");
+    std::printf("                         Print WTBR entries (id / spent token x count / reward kind / rewardId / faction@standing gate / name)\n");
+    std::printf("  --validate-wtbr <wtbr-base> [--json]\n");
+    std::printf("                         Static checks: id+name+spentTokenItemId+count required, rewardKind 0..7, requiredFactionStanding 0..7, no duplicate ids; warns on rewardId=0 (no actual reward), standing>Neutral with factionId=0, Currency conversion item->itself\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

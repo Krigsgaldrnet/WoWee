@@ -132,6 +132,7 @@
 #include "cli_skill_costs_catalog.hpp"
 #include "cli_item_flags_catalog.hpp"
 #include "cli_npc_services_catalog.hpp"
+#include "cli_token_rewards_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -305,6 +306,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSkillCostsCatalog,
     handleItemFlagsCatalog,
     handleNPCServicesCatalog,
+    handleTokenRewardsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

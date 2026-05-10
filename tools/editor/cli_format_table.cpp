@@ -90,6 +90,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','S','C','S'}, ".wscs",  "skills",    "--info-wscs",      "Skill cost / training tier catalog"},
     {{'W','I','F','S'}, ".wifs",  "items",     "--info-wifs",      "Item flag bit catalog"},
     {{'W','B','K','D'}, ".wbkd",  "npcs",      "--info-wbkd",      "NPC service definition catalog"},
+    {{'W','T','B','R'}, ".wtbr",  "tokens",    "--info-wtbr",      "Token reward redemption catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},
