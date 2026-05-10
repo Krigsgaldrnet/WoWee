@@ -2415,6 +2415,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WLMA entries (id / kind / threshold quality / master-looter required / idle skip seconds / fallback kind / name)\n");
     std::printf("  --validate-wlma <wlma-base> [--json]\n");
     std::printf("                         Static checks: id+name required, modeKind 0..5, thresholdQuality 0..7, no duplicate modeIds, MasterLoot kind REQUIRES masterLooterRequired=1 (else self-contradicting); warns on Personal kind with masterLooterRequired=1 (no-op flag), timeoutFallbackKind == modeKind (fallback to self is no-op)\n");
+    std::printf("  --export-wlma-json <wlma-base> [out.json]\n");
+    std::printf("                         Export binary .wlma to a human-editable JSON sidecar (defaults to <base>.wlma.json; emits both modeKind and timeoutFallbackKind as int + name string; thresholdQuality also gets a derived qualityName string)\n");
+    std::printf("  --import-wlma-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wlma.json sidecar back into binary .wlma (modeKind / timeoutFallbackKind int OR \"freeforall\"/\"roundrobin\"/\"masterloot\"/\"needbeforegreed\"/\"personal\"/\"disenchant\"; masterLooterRequired accepts bool OR int)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

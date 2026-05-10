@@ -156,6 +156,181 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseModeKindToken(const std::string& s) {
+    using L = wowee::pipeline::WoweeLootModes;
+    if (s == "freeforall")      return L::FreeForAll;
+    if (s == "roundrobin")      return L::RoundRobin;
+    if (s == "masterloot")      return L::MasterLoot;
+    if (s == "needbeforegreed") return L::NeedBeforeGreed;
+    if (s == "personal")        return L::Personal;
+    if (s == "disenchant")      return L::Disenchant;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wlma-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWlmaExt(base);
+    if (out.empty()) out = base + ".wlma.json";
+    if (!wowee::pipeline::WoweeLootModesLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wlma-json: WLMA not found: %s.wlma\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeLootModesLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WLMA";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"modeId", e.modeId},
+            {"name", e.name},
+            {"description", e.description},
+            {"modeKind", e.modeKind},
+            {"modeKindName", modeKindName(e.modeKind)},
+            {"thresholdQuality", e.thresholdQuality},
+            {"thresholdQualityName",
+                qualityName(e.thresholdQuality)},
+            {"masterLooterRequired",
+                e.masterLooterRequired != 0},
+            {"idleSkipSec", e.idleSkipSec},
+            {"timeoutFallbackKind", e.timeoutFallbackKind},
+            {"timeoutFallbackKindName",
+                modeKindName(e.timeoutFallbackKind)},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wlma-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu modes)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wlma.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wlma");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wlma-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wlma-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeLootModes c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wlma-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeLootModes::Entry e;
+        e.modeId = je.value("modeId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        if (!readEnumField(je, "modeKind", "modeKindName",
+                            parseModeKindToken, "modeKind",
+                            e.modeId, e.modeKind)) return 1;
+        e.thresholdQuality = static_cast<uint8_t>(
+            je.value("thresholdQuality", 2u));
+        if (je.contains("masterLooterRequired")) {
+            const auto& v = je["masterLooterRequired"];
+            if (v.is_boolean())
+                e.masterLooterRequired = v.get<bool>() ? 1 : 0;
+            else if (v.is_number_integer())
+                e.masterLooterRequired = static_cast<uint8_t>(
+                    v.get<int>() != 0 ? 1 : 0);
+        }
+        e.idleSkipSec = static_cast<uint8_t>(
+            je.value("idleSkipSec", 0u));
+        if (!readEnumField(je, "timeoutFallbackKind",
+                            "timeoutFallbackKindName",
+                            parseModeKindToken,
+                            "timeoutFallbackKind",
+                            e.modeId,
+                            e.timeoutFallbackKind)) return 1;
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeLootModesLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wlma-json: failed to save %s.wlma\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wlma (%zu modes)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -292,6 +467,12 @@ bool handleLootModesCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wlma") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wlma-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wlma-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

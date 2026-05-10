@@ -364,6 +364,7 @@ const char* const kArgRequired[] = {
     "--export-wmar-json", "--import-wmar-json",
     "--gen-lma", "--gen-lma-raid", "--gen-lma-afk",
     "--info-wlma", "--validate-wlma",
+    "--export-wlma-json", "--import-wlma-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
