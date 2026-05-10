@@ -2751,6 +2751,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTUR entries (id / step / triggerEvent+value / hide-after sec / body length / title)\n");
     std::printf("  --validate-wtur <wtur-base> [--json]\n");
     std::printf("                         Static checks: id+name+title+body required, triggerEvent 0..4, stepIndex > 0 (sequence starts at 1), no duplicate tutIds, no duplicate (event,value,step) triples (sequence ordering tie); hideAfterSec MUST be 0 (no auto-dismiss) OR >= 5s (else popup vanishes before player can read it). Warns on Login event with non-zero triggerValue (dead data, Login is unconditional), non-Login event with triggerValue=0 (would fire for ALL events of that kind), and body length < 10 chars (likely placeholder)\n");
+    std::printf("  --export-wtur-json <wtur-base> [out.json]\n");
+    std::printf("                         Export binary .wtur to a human-editable JSON sidecar (defaults to <base>.wtur.json; emits triggerEvent as int + name string; multibyte strings preserved)\n");
+    std::printf("  --import-wtur-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtur.json sidecar back into binary .wtur (triggerEvent int OR \"login\"/\"zoneenter\"/\"levelup\"/\"itempickup\"/\"skilltrain\" — round-trips title/body/target text byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

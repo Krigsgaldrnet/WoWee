@@ -142,6 +142,54 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseTriggerEventToken(const std::string& s) {
+    using T = wowee::pipeline::WoweeTutorialSteps;
+    if (s == "login")      return T::Login;
+    if (s == "zoneenter")  return T::ZoneEnter;
+    if (s == "levelup")    return T::LevelUp;
+    if (s == "itempickup") return T::ItemPickup;
+    if (s == "skilltrain") return T::SkillTrain;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wtur-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -287,6 +335,121 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWturExt(base);
+    if (out.empty()) out = base + ".wtur.json";
+    if (!wowee::pipeline::WoweeTutorialStepsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtur-json: WTUR not found: %s.wtur\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTutorialStepsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WTUR";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"tutId", e.tutId},
+            {"name", e.name},
+            {"stepIndex", e.stepIndex},
+            {"triggerEvent", e.triggerEvent},
+            {"triggerEventName",
+                triggerEventName(e.triggerEvent)},
+            {"triggerValue", e.triggerValue},
+            {"iconIndex", e.iconIndex},
+            {"hideAfterSec", e.hideAfterSec},
+            {"title", e.title},
+            {"body", e.body},
+            {"targetUIElementName",
+                e.targetUIElementName},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wtur-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu steps)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wtur.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wtur");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wtur-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wtur-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeTutorialSteps c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wtur-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeTutorialSteps::Entry e;
+        e.tutId = je.value("tutId", 0u);
+        e.name = je.value("name", std::string{});
+        e.stepIndex = static_cast<uint8_t>(
+            je.value("stepIndex", 0));
+        if (!readEnumField(je, "triggerEvent",
+                            "triggerEventName",
+                            parseTriggerEventToken,
+                            "triggerEvent", e.tutId,
+                            e.triggerEvent)) return 1;
+        e.triggerValue = je.value("triggerValue", 0u);
+        e.iconIndex = je.value("iconIndex", 0u);
+        e.hideAfterSec = je.value("hideAfterSec", 0u);
+        e.title = je.value("title", std::string{});
+        e.body = je.value("body", std::string{});
+        e.targetUIElementName =
+            je.value("targetUIElementName", std::string{});
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeTutorialStepsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtur-json: failed to save %s.wtur\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtur (%zu steps)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleTutorialStepsCatalog(int& i, int argc, char** argv,
@@ -309,6 +472,14 @@ bool handleTutorialStepsCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wtur") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtur-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtur-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

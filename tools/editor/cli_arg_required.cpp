@@ -436,6 +436,7 @@ const char* const kArgRequired[] = {
     "--export-wswp-json", "--import-wswp-json",
     "--gen-tut-newbie", "--gen-tut-levelup", "--gen-tut-bg",
     "--info-wtur", "--validate-wtur",
+    "--export-wtur-json", "--import-wtur-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
