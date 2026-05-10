@@ -1629,6 +1629,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wlds to a human-editable JSON sidecar (defaults to <base>.wlds.json)\n");
     std::printf("  --import-wlds-json <json-path> [out-base]\n");
     std::printf("                         Import a .wlds.json sidecar back into binary .wlds (accepts expansionRequired int OR name string)\n");
+    std::printf("  --gen-suf <wsuf-base> [name]\n");
+    std::printf("                         Emit .wsuf starter: 3 stat-suffix entries (of the Bear STR+STA / of the Eagle INT+SPI / of the Tiger STR+AGI)\n");
+    std::printf("  --gen-suf-magical <wsuf-base> [name]\n");
+    std::printf("                         Emit .wsuf 4 elemental suffixes (of Fire / of Frost / of Shadow / of Arcane) — flat per-school spell power\n");
+    std::printf("  --gen-suf-pvp <wsuf-base> [name]\n");
+    std::printf("                         Emit .wsuf 3 PvPSuffix-category entries (of the Champion / of the Gladiator / of Resilience) blue+ only\n");
+    std::printf("  --info-wsuf <wsuf-base> [--json]\n");
+    std::printf("                         Print WSUF entries (id / category / quality range / restricted slot mask / # populated stat slots / name)\n");
+    std::printf("  --validate-wsuf <wsuf-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, category 0..4, quality range valid (0..7), stat-kind/value pairing, no-stats warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

@@ -194,6 +194,8 @@ const char* const kArgRequired[] = {
     "--gen-lds", "--gen-lds-instances", "--gen-lds-raid",
     "--info-wlds", "--validate-wlds",
     "--export-wlds-json", "--import-wlds-json",
+    "--gen-suf", "--gen-suf-magical", "--gen-suf-pvp",
+    "--info-wsuf", "--validate-wsuf",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

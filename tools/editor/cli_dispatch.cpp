@@ -99,6 +99,7 @@
 #include "cli_bags_catalog.hpp"
 #include "cli_runes_catalog.hpp"
 #include "cli_loading_screens_catalog.hpp"
+#include "cli_item_suffixes_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -239,6 +240,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleBagsCatalog,
     handleRunesCatalog,
     handleLoadingScreensCatalog,
+    handleItemSuffixesCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
