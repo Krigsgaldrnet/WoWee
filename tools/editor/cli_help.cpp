@@ -1245,6 +1245,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPET families (id / petType / atkSpd / dmg+arm mult / diet) + minions (id / summon / creatureId)\n");
     std::printf("  --validate-wpet <wpet-base> [--json]\n");
     std::printf("                         Static checks: ids>0+unique, name not empty, petType 0..2, atkSpeed>0, minion needs summon+creatureId\n");
+    std::printf("  --export-wpet-json <wpet-base> [out.json]\n");
+    std::printf("                         Export binary .wpet to a human-editable JSON sidecar (defaults to <base>.wpet.json)\n");
+    std::printf("  --import-wpet-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wpet.json sidecar back into binary .wpet (accepts petType int OR name string)\n");
     std::printf("  --gen-auction <wauc-base> [name]\n");
     std::printf("                         Emit .wauc starter: 1 neutral house with stock 12h/24h/48h tiers and 5%% house cut\n");
     std::printf("  --gen-auction-pair <wauc-base> [name]\n");

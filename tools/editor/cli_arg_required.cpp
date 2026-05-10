@@ -112,6 +112,7 @@ const char* const kArgRequired[] = {
     "--export-wpcd-json", "--import-wpcd-json",
     "--gen-pets", "--gen-pets-hunter", "--gen-pets-warlock",
     "--info-wpet", "--validate-wpet",
+    "--export-wpet-json", "--import-wpet-json",
     "--gen-auction", "--gen-auction-pair", "--gen-auction-restricted",
     "--info-wauc", "--validate-wauc",
     "--gen-weather-temperate", "--gen-weather-arctic",
