@@ -2093,6 +2093,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WACT entries (id / classMask / barMode / buttonSlot / spellId / itemId / name)\n");
     std::printf("  --validate-wact <wact-base> [--json]\n");
     std::printf("                         Static checks: id+name+classMask required, barMode 0..6, no duplicate ids; warns on slot>143, both spellId+itemId set, both 0 (empty button), and (classMask+barMode+slot) collisions for overlapping classes\n");
+    std::printf("  --export-wact-json <wact-base> [out.json]\n");
+    std::printf("                         Export binary .wact to a human-editable JSON sidecar (defaults to <base>.wact.json)\n");
+    std::printf("  --import-wact-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wact.json sidecar back into binary .wact (accepts barMode int OR barModeName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
