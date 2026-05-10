@@ -144,6 +144,155 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseTreeKindToken(const std::string& s) {
+    using P = wowee::pipeline::WoweePetTalents;
+    if (s == "cunning")  return P::Cunning;
+    if (s == "ferocity") return P::Ferocity;
+    if (s == "tenacity") return P::Tenacity;
+    return -1;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWpttExt(base);
+    if (out.empty()) out = base + ".wptt.json";
+    if (!wowee::pipeline::WoweePetTalentsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wptt-json: WPTT not found: %s.wptt\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweePetTalentsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WPTT";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"talentId", e.talentId},
+            {"name", e.name},
+            {"description", e.description},
+            {"treeKind", e.treeKind},
+            {"treeKindName", treeKindName(e.treeKind)},
+            {"tier", e.tier},
+            {"column", e.column},
+            {"maxRank", e.maxRank},
+            {"prerequisiteTalentId", e.prerequisiteTalentId},
+            {"requiredLoyalty", e.requiredLoyalty},
+            {"iconColorRGBA", e.iconColorRGBA},
+            {"spellIdsByRank", e.spellIdsByRank},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wptt-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu talents)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wptt.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wptt");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wptt-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wptt-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweePetTalents c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wptt-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweePetTalents::Entry e;
+        e.talentId = je.value("talentId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        if (je.contains("treeKind")) {
+            const auto& v = je["treeKind"];
+            if (v.is_string()) {
+                int parsed = parseTreeKindToken(
+                    v.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-wptt-json: unknown "
+                        "treeKind token '%s' on entry "
+                        "id=%u\n",
+                        v.get<std::string>().c_str(),
+                        e.talentId);
+                    return 1;
+                }
+                e.treeKind = static_cast<uint8_t>(parsed);
+            } else if (v.is_number_integer()) {
+                e.treeKind = static_cast<uint8_t>(v.get<int>());
+            }
+        } else if (je.contains("treeKindName") &&
+                   je["treeKindName"].is_string()) {
+            int parsed = parseTreeKindToken(
+                je["treeKindName"].get<std::string>());
+            if (parsed >= 0)
+                e.treeKind = static_cast<uint8_t>(parsed);
+        }
+        e.tier = static_cast<uint8_t>(je.value("tier", 0u));
+        e.column = static_cast<uint8_t>(je.value("column", 0u));
+        e.maxRank = static_cast<uint8_t>(je.value("maxRank", 1u));
+        e.prerequisiteTalentId = je.value(
+            "prerequisiteTalentId", 0u);
+        e.requiredLoyalty = static_cast<uint8_t>(
+            je.value("requiredLoyalty", 0u));
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        if (je.contains("spellIdsByRank") &&
+            je["spellIdsByRank"].is_array()) {
+            for (const auto& s : je["spellIdsByRank"]) {
+                if (s.is_number_integer())
+                    e.spellIdsByRank.push_back(s.get<uint32_t>());
+            }
+        }
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweePetTalentsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wptt-json: failed to save %s.wptt\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wptt (%zu talents)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -336,6 +485,12 @@ bool handlePetTalentsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wptt") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wptt-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wptt-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

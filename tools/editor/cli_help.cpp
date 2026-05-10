@@ -2261,6 +2261,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPTT entries (id / tree / tier / column / max ranks / prereq talentId / loyalty req / name) plus per-talent rank-spell IDs\n");
     std::printf("  --validate-wptt <wptt-base> [--json]\n");
     std::printf("                         Static checks: id+name required, treeKind 0..2, tier 0..6, column 0..2, maxRank 1..5, no duplicate talentIds, no two talents in same (tree,tier,col) cell, no self-referencing prereqs, prereqs resolve to existing entries IN SAME TREE at EARLIER TIER, spellIdsByRank.size() == maxRank, no zero-spell-id within array\n");
+    std::printf("  --export-wptt-json <wptt-base> [out.json]\n");
+    std::printf("                         Export binary .wptt to a human-editable JSON sidecar (defaults to <base>.wptt.json; emits treeKind as both int AND name string; spellIdsByRank as a JSON array of spell IDs)\n");
+    std::printf("  --import-wptt-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wptt.json sidecar back into binary .wptt (treeKind int OR \"cunning\"/\"ferocity\"/\"tenacity\")\n");
     std::printf("  --gen-hrd <whrd-base> [name]\n");
     std::printf("                         Emit .whrd 5 WotLK 5-man Heroic scalings (Utgarde Keep / Nexus / Azjol-Nerub / Ahn'kahet / Drak'Tharon — +13 ilvl, 2x Emblem of Heroism)\n");
     std::printf("  --gen-hrd-raid25 <whrd-base> [name]\n");
