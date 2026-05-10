@@ -1857,6 +1857,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCTR entries (id / kind / itemId / max+weekly caps / categoryId / accountWide / name)\n");
     std::printf("  --validate-wctr <wctr-base> [--json]\n");
     std::printf("                         Static checks: id+name required, currencyKind 0..5, no duplicate ids; warns on weekly>absolute, FactionToken+cat=0, no caps+no item+no icon\n");
+    std::printf("  --export-wctr-json <wctr-base> [out.json]\n");
+    std::printf("                         Export binary .wctr to a human-editable JSON sidecar (defaults to <base>.wctr.json)\n");
+    std::printf("  --import-wctr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wctr.json sidecar back into binary .wctr (accepts currencyKind int OR currencyKindName string; isAccountWide bool OR int)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
