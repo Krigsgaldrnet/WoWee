@@ -5,6 +5,7 @@
 #include "pipeline/wowee_spell_cooldowns.hpp"
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -138,6 +139,177 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWscdExt(base);
+    if (!wowee::pipeline::WoweeSpellCooldownLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wscd-json: WSCD not found: %s.wscd\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellCooldownLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wscd.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        std::string flagNames;
+        appendFlagNames(e.categoryFlags, flagNames);
+        nlohmann::json je;
+        je["bucketId"] = e.bucketId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["bucketKind"] = e.bucketKind;
+        je["bucketKindName"] =
+            wowee::pipeline::WoweeSpellCooldown::bucketKindName(e.bucketKind);
+        je["cooldownMs"] = e.cooldownMs;
+        je["categoryFlags"] = e.categoryFlags;
+        je["categoryFlagsLabels"] = flagNames;
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wscd-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  buckets : %zu\n", c.entries.size());
+    return 0;
+}
+
+uint8_t parseBucketKindToken(const nlohmann::json& jv,
+                             uint8_t fallback) {
+    if (jv.is_number_integer() || jv.is_number_unsigned()) {
+        int v = jv.get<int>();
+        if (v < 0 || v > wowee::pipeline::WoweeSpellCooldown::Misc)
+            return fallback;
+        return static_cast<uint8_t>(v);
+    }
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        for (auto& ch : s) ch = static_cast<char>(std::tolower(ch));
+        if (s == "spell")  return wowee::pipeline::WoweeSpellCooldown::Spell;
+        if (s == "item")   return wowee::pipeline::WoweeSpellCooldown::Item;
+        if (s == "class")  return wowee::pipeline::WoweeSpellCooldown::Class;
+        if (s == "global") return wowee::pipeline::WoweeSpellCooldown::Global;
+        if (s == "misc")   return wowee::pipeline::WoweeSpellCooldown::Misc;
+    }
+    return fallback;
+}
+
+// Parse the categoryFlags field accepting either an int
+// bitfield OR a "Pipe|Separated|Labels" string. The label
+// form makes JSON sidecars easier to hand-edit; the int
+// form preserves any unknown flag bits during round-trip.
+uint32_t parseCategoryFlagsField(const nlohmann::json& jv) {
+    using F = wowee::pipeline::WoweeSpellCooldown;
+    if (jv.is_number_integer() || jv.is_number_unsigned())
+        return jv.get<uint32_t>();
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        uint32_t out = 0;
+        size_t pos = 0;
+        while (pos < s.size()) {
+            size_t end = s.find('|', pos);
+            if (end == std::string::npos) end = s.size();
+            std::string tok = s.substr(pos, end - pos);
+            for (auto& ch : tok) ch = static_cast<char>(std::tolower(ch));
+            if (tok == "affectedbyhaste")          out |= F::AffectedByHaste;
+            else if (tok == "sharedwithitems")     out |= F::SharedWithItems;
+            else if (tok == "ongcdstart")          out |= F::OnGCDStart;
+            else if (tok == "ignorescooldownreduction") out |= F::IgnoresCooldownReduction;
+            // unknown labels silently ignored — they're
+            // already filtered by the validator's warning
+            pos = end + 1;
+        }
+        return out;
+    }
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wscd-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wscd-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSpellCooldown c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSpellCooldown::Entry e;
+            if (je.contains("bucketId"))    e.bucketId = je["bucketId"].get<uint32_t>();
+            if (je.contains("name"))        e.name = je["name"].get<std::string>();
+            if (je.contains("description")) e.description = je["description"].get<std::string>();
+            uint8_t kind = wowee::pipeline::WoweeSpellCooldown::Spell;
+            if (je.contains("bucketKind"))
+                kind = parseBucketKindToken(je["bucketKind"], kind);
+            else if (je.contains("bucketKindName"))
+                kind = parseBucketKindToken(je["bucketKindName"], kind);
+            e.bucketKind = kind;
+            if (je.contains("cooldownMs")) e.cooldownMs = je["cooldownMs"].get<uint32_t>();
+            // Prefer the int form of categoryFlags when both
+            // are present — it preserves unknown bits across
+            // round-trip; fall back to the label form when
+            // only that's present (hand-edited sidecars).
+            if (je.contains("categoryFlags"))
+                e.categoryFlags = parseCategoryFlagsField(je["categoryFlags"]);
+            else if (je.contains("categoryFlagsLabels"))
+                e.categoryFlags = parseCategoryFlagsField(je["categoryFlagsLabels"]);
+            if (je.contains("iconColorRGBA")) e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wscd.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWscdExt(outBase);
+    if (!wowee::pipeline::WoweeSpellCooldownLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wscd-json: failed to save %s.wscd\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wscd\n", outBase.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  buckets : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -250,6 +422,12 @@ bool handleSpellCooldownsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wscd") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wscd-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wscd-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

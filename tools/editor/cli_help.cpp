@@ -1741,6 +1741,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSCD entries (id / kind / cooldownMs / category flags / name) — flags decoded as label list\n");
     std::printf("  --validate-wscd <wscd-base> [--json]\n");
     std::printf("                         Static checks: id+name required, bucketKind 0..4, no duplicate ids; warns on Global without OnGCDStart and Spell with SharedWithItems\n");
+    std::printf("  --export-wscd-json <wscd-base> [out.json]\n");
+    std::printf("                         Export binary .wscd to a human-editable JSON sidecar (defaults to <base>.wscd.json)\n");
+    std::printf("  --import-wscd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wscd.json sidecar back into binary .wscd (accepts bucketKind int OR name; categoryFlags as int OR pipe-separated label string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
