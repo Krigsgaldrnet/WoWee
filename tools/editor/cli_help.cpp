@@ -1813,6 +1813,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMAT entries (id / kind / weight / foley/impact sound ids / material flags / name) — flags decoded as label list\n");
     std::printf("  --validate-wmat <wmat-base> [--json]\n");
     std::printf("                         Static checks: id+name required, materialKind 0..11, weightCategory 0..2, no duplicate ids; warns on Holy+Cursed combo, Plate non-heavy, Cloth non-light\n");
+    std::printf("  --export-wmat-json <wmat-base> [out.json]\n");
+    std::printf("                         Export binary .wmat to a human-editable JSON sidecar (defaults to <base>.wmat.json)\n");
+    std::printf("  --import-wmat-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wmat.json sidecar back into binary .wmat (accepts materialKind/weightCategory int OR name; materialFlags int OR pipe-separated label string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

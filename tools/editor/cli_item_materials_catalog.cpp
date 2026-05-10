@@ -5,6 +5,7 @@
 #include "pipeline/wowee_item_materials.hpp"
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -144,6 +145,206 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWmatExt(base);
+    if (!wowee::pipeline::WoweeItemMaterialLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wmat-json: WMAT not found: %s.wmat\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeItemMaterialLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wmat.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        std::string flagNames;
+        appendMaterialFlagNames(e.materialFlags, flagNames);
+        nlohmann::json je;
+        je["materialId"] = e.materialId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["materialKind"] = e.materialKind;
+        je["materialKindName"] =
+            wowee::pipeline::WoweeItemMaterial::materialKindName(e.materialKind);
+        je["weightCategory"] = e.weightCategory;
+        je["weightCategoryName"] =
+            wowee::pipeline::WoweeItemMaterial::weightCategoryName(e.weightCategory);
+        je["foleySoundId"] = e.foleySoundId;
+        je["impactSoundId"] = e.impactSoundId;
+        je["materialFlags"] = e.materialFlags;
+        je["materialFlagsLabels"] = flagNames;
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wmat-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog   : %s\n", c.name.c_str());
+    std::printf("  materials : %zu\n", c.entries.size());
+    return 0;
+}
+
+uint8_t parseMaterialKindToken(const nlohmann::json& jv,
+                               uint8_t fallback) {
+    if (jv.is_number_integer() || jv.is_number_unsigned()) {
+        int v = jv.get<int>();
+        if (v < 0 || v > wowee::pipeline::WoweeItemMaterial::Hide)
+            return fallback;
+        return static_cast<uint8_t>(v);
+    }
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        for (auto& ch : s) ch = static_cast<char>(std::tolower(ch));
+        if (s == "cloth")    return wowee::pipeline::WoweeItemMaterial::Cloth;
+        if (s == "leather")  return wowee::pipeline::WoweeItemMaterial::Leather;
+        if (s == "mail")     return wowee::pipeline::WoweeItemMaterial::Mail;
+        if (s == "plate")    return wowee::pipeline::WoweeItemMaterial::Plate;
+        if (s == "wood")     return wowee::pipeline::WoweeItemMaterial::Wood;
+        if (s == "stone")    return wowee::pipeline::WoweeItemMaterial::Stone;
+        if (s == "metal")    return wowee::pipeline::WoweeItemMaterial::Metal;
+        if (s == "liquid")   return wowee::pipeline::WoweeItemMaterial::Liquid;
+        if (s == "organic")  return wowee::pipeline::WoweeItemMaterial::Organic;
+        if (s == "crystal")  return wowee::pipeline::WoweeItemMaterial::Crystal;
+        if (s == "ethereal") return wowee::pipeline::WoweeItemMaterial::Ethereal;
+        if (s == "hide")     return wowee::pipeline::WoweeItemMaterial::Hide;
+    }
+    return fallback;
+}
+
+uint8_t parseWeightCategoryToken(const nlohmann::json& jv,
+                                 uint8_t fallback) {
+    if (jv.is_number_integer() || jv.is_number_unsigned()) {
+        int v = jv.get<int>();
+        if (v < 0 || v > wowee::pipeline::WoweeItemMaterial::Heavy)
+            return fallback;
+        return static_cast<uint8_t>(v);
+    }
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        for (auto& ch : s) ch = static_cast<char>(std::tolower(ch));
+        if (s == "light")  return wowee::pipeline::WoweeItemMaterial::Light;
+        if (s == "medium") return wowee::pipeline::WoweeItemMaterial::Medium;
+        if (s == "heavy")  return wowee::pipeline::WoweeItemMaterial::Heavy;
+    }
+    return fallback;
+}
+
+uint32_t parseMaterialFlagsField(const nlohmann::json& jv) {
+    using F = wowee::pipeline::WoweeItemMaterial;
+    if (jv.is_number_integer() || jv.is_number_unsigned())
+        return jv.get<uint32_t>();
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        uint32_t out = 0;
+        size_t pos = 0;
+        while (pos < s.size()) {
+            size_t end = s.find('|', pos);
+            if (end == std::string::npos) end = s.size();
+            std::string tok = s.substr(pos, end - pos);
+            for (auto& ch : tok) ch = static_cast<char>(std::tolower(ch));
+            if (tok == "isbreakable")        out |= F::IsBreakable;
+            else if (tok == "ismagical")     out |= F::IsMagical;
+            else if (tok == "isflammable")   out |= F::IsFlammable;
+            else if (tok == "isconductive")  out |= F::IsConductive;
+            else if (tok == "isholycharged") out |= F::IsHolyCharged;
+            else if (tok == "iscursed")      out |= F::IsCursed;
+            pos = end + 1;
+        }
+        return out;
+    }
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wmat-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wmat-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeItemMaterial c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeItemMaterial::Entry e;
+            if (je.contains("materialId"))   e.materialId = je["materialId"].get<uint32_t>();
+            if (je.contains("name"))         e.name = je["name"].get<std::string>();
+            if (je.contains("description"))  e.description = je["description"].get<std::string>();
+            uint8_t kind = wowee::pipeline::WoweeItemMaterial::Cloth;
+            if (je.contains("materialKind"))
+                kind = parseMaterialKindToken(je["materialKind"], kind);
+            else if (je.contains("materialKindName"))
+                kind = parseMaterialKindToken(je["materialKindName"], kind);
+            e.materialKind = kind;
+            uint8_t weight = wowee::pipeline::WoweeItemMaterial::Light;
+            if (je.contains("weightCategory"))
+                weight = parseWeightCategoryToken(je["weightCategory"], weight);
+            else if (je.contains("weightCategoryName"))
+                weight = parseWeightCategoryToken(je["weightCategoryName"], weight);
+            e.weightCategory = weight;
+            if (je.contains("foleySoundId"))   e.foleySoundId = je["foleySoundId"].get<uint32_t>();
+            if (je.contains("impactSoundId"))  e.impactSoundId = je["impactSoundId"].get<uint32_t>();
+            if (je.contains("materialFlags"))
+                e.materialFlags = parseMaterialFlagsField(je["materialFlags"]);
+            else if (je.contains("materialFlagsLabels"))
+                e.materialFlags = parseMaterialFlagsField(je["materialFlagsLabels"]);
+            if (je.contains("iconColorRGBA"))
+                e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wmat.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWmatExt(outBase);
+    if (!wowee::pipeline::WoweeItemMaterialLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wmat-json: failed to save %s.wmat\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wmat\n", outBase.c_str());
+    std::printf("  catalog   : %s\n", c.name.c_str());
+    std::printf("  materials : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -268,6 +469,12 @@ bool handleItemMaterialsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wmat") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wmat-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wmat-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
