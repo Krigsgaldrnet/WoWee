@@ -1329,6 +1329,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WHOL entries (id / kind / recurrence / start MM/DD / duration / quest+boss+reward IDs / name)\n");
     std::printf("  --validate-whol <whol-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, kind 0..5, recurrence 0..3, duration>0, valid month/day for non-weekly, calendar-only warning\n");
+    std::printf("  --export-whol-json <whol-base> [out.json]\n");
+    std::printf("                         Export binary .whol to a human-editable JSON sidecar (defaults to <base>.whol.json)\n");
+    std::printf("  --import-whol-json <json-path> [out-base]\n");
+    std::printf("                         Import a .whol.json sidecar back into binary .whol (accepts holidayKind/recurrence int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
