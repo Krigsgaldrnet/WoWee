@@ -1715,6 +1715,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsct to a human-editable JSON sidecar (defaults to <base>.wsct.json)\n");
     std::printf("  --import-wsct-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsct.json sidecar back into binary .wsct (accepts castKind int OR castKindName string)\n");
+    std::printf("  --gen-sdr <wsdr-base> [name]\n");
+    std::printf("                         Emit .wsdr starter: 5 baseline duration buckets (Instant 0 / Short 5s / Medium 30s / Long 5min / OneHour 60min)\n");
+    std::printf("  --gen-sdr-buffs <wsdr-base> [name]\n");
+    std::printf("                         Emit .wsdr 4 long-duration buffs (PartyBuff 30m / RaidBuff 60m / WorldBuff 4hr / UntilDeath -1)\n");
+    std::printf("  --gen-sdr-dot <wsdr-base> [name]\n");
+    std::printf("                         Emit .wsdr 4 DoT/HoT buckets (4-tick 12s / 5-tick 15s / 6-tick 18s / 8-tick 24s)\n");
+    std::printf("  --info-wsdr <wsdr-base> [--json]\n");
+    std::printf("                         Print WSDR entries (id / kind / baseMs / perLevelMs / maxMs / iconColor / name)\n");
+    std::printf("  --validate-wsdr <wsdr-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, durationKind 0..4, base>0 for Timed/TickBased, base<0 for permanent kinds, max>=base, no duplicate ids\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

@@ -212,6 +212,8 @@ const char* const kArgRequired[] = {
     "--gen-sct", "--gen-sct-channel", "--gen-sct-ramp",
     "--info-wsct", "--validate-wsct",
     "--export-wsct-json", "--import-wsct-json",
+    "--gen-sdr", "--gen-sdr-buffs", "--gen-sdr-dot",
+    "--info-wsdr", "--validate-wsdr",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

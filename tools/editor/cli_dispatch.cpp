@@ -106,6 +106,7 @@
 #include "cli_quest_sorts_catalog.hpp"
 #include "cli_spell_ranges_catalog.hpp"
 #include "cli_spell_cast_times_catalog.hpp"
+#include "cli_spell_durations_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -253,6 +254,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleQuestSortsCatalog,
     handleSpellRangesCatalog,
     handleSpellCastTimesCatalog,
+    handleSpellDurationsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
