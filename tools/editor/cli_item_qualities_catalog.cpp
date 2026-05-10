@@ -123,6 +123,122 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWiqrExt(base);
+    if (!wowee::pipeline::WoweeItemQualityLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wiqr-json: WIQR not found: %s.wiqr\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeItemQualityLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wiqr.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["qualityId"] = e.qualityId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["nameColorRGBA"] = e.nameColorRGBA;
+        je["borderColorRGBA"] = e.borderColorRGBA;
+        je["vendorPriceMultiplier"] = e.vendorPriceMultiplier;
+        je["minLevelToDrop"] = e.minLevelToDrop;
+        je["maxLevelToDrop"] = e.maxLevelToDrop;
+        je["canBeDisenchanted"] = e.canBeDisenchanted != 0;
+        je["inventoryBorderTexture"] = e.inventoryBorderTexture;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wiqr-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  tiers   : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wiqr-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wiqr-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeItemQuality c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeItemQuality::Entry e;
+            if (je.contains("qualityId"))    e.qualityId = je["qualityId"].get<uint32_t>();
+            if (je.contains("name"))         e.name = je["name"].get<std::string>();
+            if (je.contains("description"))  e.description = je["description"].get<std::string>();
+            if (je.contains("nameColorRGBA"))   e.nameColorRGBA = je["nameColorRGBA"].get<uint32_t>();
+            if (je.contains("borderColorRGBA")) e.borderColorRGBA = je["borderColorRGBA"].get<uint32_t>();
+            if (je.contains("vendorPriceMultiplier")) e.vendorPriceMultiplier = je["vendorPriceMultiplier"].get<float>();
+            if (je.contains("minLevelToDrop")) e.minLevelToDrop = je["minLevelToDrop"].get<uint8_t>();
+            if (je.contains("maxLevelToDrop")) e.maxLevelToDrop = je["maxLevelToDrop"].get<uint8_t>();
+            if (je.contains("canBeDisenchanted")) {
+                if (je["canBeDisenchanted"].is_boolean())
+                    e.canBeDisenchanted = je["canBeDisenchanted"].get<bool>() ? 1 : 0;
+                else
+                    e.canBeDisenchanted = je["canBeDisenchanted"].get<uint8_t>() ? 1 : 0;
+            }
+            if (je.contains("inventoryBorderTexture"))
+                e.inventoryBorderTexture = je["inventoryBorderTexture"].get<std::string>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wiqr.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWiqrExt(outBase);
+    if (!wowee::pipeline::WoweeItemQualityLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wiqr-json: failed to save %s.wiqr\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wiqr\n", outBase.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  tiers   : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -233,6 +349,12 @@ bool handleItemQualitiesCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wiqr") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wiqr-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wiqr-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

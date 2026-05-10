@@ -1933,6 +1933,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WIQR entries (id / name / nameColor RGBA / vendor multiplier / minLevel / maxLevel / disenchant flag / border texture)\n");
     std::printf("  --validate-wiqr <wiqr-base> [--json]\n");
     std::printf("                         Static checks: name required, no duplicate ids, vendor>=0, min<=max; warns on lvl>80 (unreachable), vendor>100x (sanity), alpha=0 nameColor (invisible)\n");
+    std::printf("  --export-wiqr-json <wiqr-base> [out.json]\n");
+    std::printf("                         Export binary .wiqr to a human-editable JSON sidecar (defaults to <base>.wiqr.json). Colors as RGBA uint32, easy to paste hex values\n");
+    std::printf("  --import-wiqr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wiqr.json sidecar back into binary .wiqr (canBeDisenchanted accepts bool OR int)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
