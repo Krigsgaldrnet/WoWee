@@ -169,6 +169,67 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseOutputStatKindToken(const std::string& s) {
+    using F = wowee::pipeline::WoweeCombatFormulas;
+    if (s == "ap")        return F::AttackPower;
+    if (s == "sp")        return F::SpellPower;
+    if (s == "crit")      return F::CritPct;
+    if (s == "dodge")     return F::DodgePct;
+    if (s == "parry")     return F::ParryPct;
+    if (s == "hit")       return F::HitPct;
+    if (s == "spellcrit") return F::SpellCritPct;
+    if (s == "haste")     return F::HastePct;
+    return -1;
+}
+
+int parseInputStatKindToken(const std::string& s) {
+    using F = wowee::pipeline::WoweeCombatFormulas;
+    if (s == "str") return F::Strength;
+    if (s == "agi") return F::Agility;
+    if (s == "sta") return F::Stamina;
+    if (s == "int") return F::Intellect;
+    if (s == "spi") return F::Spirit;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wcfr-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -299,6 +360,125 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWcfrExt(base);
+    if (out.empty()) out = base + ".wcfr.json";
+    if (!wowee::pipeline::WoweeCombatFormulasLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcfr-json: WCFR not found: %s.wcfr\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCombatFormulasLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WCFR";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"formulaId", e.formulaId},
+            {"name", e.name},
+            {"outputStatKind", e.outputStatKind},
+            {"outputStatKindName",
+                outputStatKindName(e.outputStatKind)},
+            {"inputStatKind", e.inputStatKind},
+            {"inputStatKindName",
+                inputStatKindName(e.inputStatKind)},
+            {"levelMin", e.levelMin},
+            {"levelMax", e.levelMax},
+            {"classRestriction", e.classRestriction},
+            {"conversionRatioFp_x100",
+                e.conversionRatioFp_x100},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wcfr-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu formulas)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wcfr.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wcfr");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wcfr-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wcfr-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeCombatFormulas c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wcfr-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeCombatFormulas::Entry e;
+        e.formulaId = je.value("formulaId", 0u);
+        e.name = je.value("name", std::string{});
+        if (!readEnumField(je, "outputStatKind",
+                            "outputStatKindName",
+                            parseOutputStatKindToken,
+                            "outputStatKind", e.formulaId,
+                            e.outputStatKind)) return 1;
+        if (!readEnumField(je, "inputStatKind",
+                            "inputStatKindName",
+                            parseInputStatKindToken,
+                            "inputStatKind", e.formulaId,
+                            e.inputStatKind)) return 1;
+        e.levelMin = static_cast<uint8_t>(
+            je.value("levelMin", 0));
+        e.levelMax = static_cast<uint8_t>(
+            je.value("levelMax", 0));
+        e.classRestriction = static_cast<uint16_t>(
+            je.value("classRestriction", 0));
+        e.conversionRatioFp_x100 =
+            je.value("conversionRatioFp_x100", 0u);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeCombatFormulasLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcfr-json: failed to save %s.wcfr\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wcfr (%zu formulas)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleCombatFormulasCatalog(int& i, int argc, char** argv,
@@ -321,6 +501,14 @@ bool handleCombatFormulasCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wcfr") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcfr-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcfr-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

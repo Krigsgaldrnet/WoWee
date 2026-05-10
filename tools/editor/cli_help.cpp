@@ -2793,6 +2793,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCFR entries (id / output stat / input stat / class bitmask / level range / conversionRatio fp_x100 / name)\n");
     std::printf("  --validate-wcfr <wcfr-base> [--json]\n");
     std::printf("                         Static checks: id+name required, outputStatKind 0..7, inputStatKind 0..4, no duplicate formulaIds, no zero conversionRatio (no-op formula); CRITICAL: no duplicate (output, input, classMask, levelMin) quad — runtime stat-compute would apply both formulas, doubling the contribution. levelMax >= levelMin when set. Warns on conversionRatio > 100x (likely units-mismatch typo — forgot to divide by 100 when porting from a percentage table)\n");
+    std::printf("  --export-wcfr-json <wcfr-base> [out.json]\n");
+    std::printf("                         Export binary .wcfr to a human-editable JSON sidecar (defaults to <base>.wcfr.json; emits both outputStatKind and inputStatKind as int + name string)\n");
+    std::printf("  --import-wcfr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcfr.json sidecar back into binary .wcfr (outputStatKind int OR \"ap\"/\"sp\"/\"crit\"/\"dodge\"/\"parry\"/\"hit\"/\"spellcrit\"/\"haste\"; inputStatKind int OR \"str\"/\"agi\"/\"sta\"/\"int\"/\"spi\"; conversionRatio fp_x100 preserved)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
