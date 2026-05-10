@@ -2349,6 +2349,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wspv to a human-editable JSON sidecar (defaults to <base>.wspv.json; emits conditionKind as both int AND name string; conditionValue stays as raw uint32 — its semantics depend on conditionKind so no general-purpose pretty-printing)\n");
     std::printf("  --import-wspv-json <json-path> [out-base]\n");
     std::printf("                         Import a .wspv.json sidecar back into binary .wspv (conditionKind int OR \"stance\"/\"form\"/\"talent\"/\"race\"/\"equippedweapon\"/\"auraactive\")\n");
+    std::printf("  --gen-vox <wvox-base> [name]\n");
+    std::printf("                         Emit .wvox 5 questgiver voice clips (Greeting / QuestStart / QuestProgress / QuestComplete / Goodbye)\n");
+    std::printf("  --gen-vox-boss <wvox-base> [name]\n");
+    std::printf("                         Emit .wvox 6 boss voice clips with phase milestones (Aggro / 75%% Phase / 50%% Phase / 25%% Phase / Special Mechanic / Death) — Lich King example\n");
+    std::printf("  --gen-vox-vendor <wvox-base> [name]\n");
+    std::printf("                         Emit .wvox 4 vendor voice clips (Greeting / Buy / Sell / Goodbye)\n");
+    std::printf("  --info-wvox <wvox-base> [--json]\n");
+    std::printf("                         Print WVOX entries (id / npcId / eventKind / gender / variant / duration ms / volume dB / name) plus per-entry transcript\n");
+    std::printf("  --validate-wvox <wvox-base> [--json]\n");
+    std::printf("                         Static checks: id+name+npcId required, eventKind 0..8, genderHint 0..2, audioPath non-empty, no duplicate voiceIds, no two clips at same (npcId, eventKind, variantIndex) triple (random pick at trigger time would be ambiguous); warns on durationMs=0 (subtitle sync impossible), volumeDb outside [-20,+6] (clip risk), empty transcript (TTS+chat-bubble blank)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
