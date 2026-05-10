@@ -110,6 +110,7 @@ constexpr FormatRow kFormats[] = {
     {"WAUR", ".waur",  "spells",    "SpellEffect.EffectAuraType",       "Spell aura type catalog"},
     {"WIQR", ".wiqr",  "items",     "Item quality tier colors+rules",   "Item quality tier catalog"},
     {"WSCS", ".wscs",  "skills",    "SkillCostsData.dbc + train tiers", "Skill cost / training tier catalog"},
+    {"WIFS", ".wifs",  "items",     "Item.dbc Flags bit meanings",      "Item flag bit catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

@@ -1953,6 +1953,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wscs to a human-editable JSON sidecar (defaults to <base>.wscs.json)\n");
     std::printf("  --import-wscs-json <json-path> [out-base]\n");
     std::printf("                         Import a .wscs.json sidecar back into binary .wscs (accepts costKind int OR costKindName string)\n");
+    std::printf("  --gen-ifs <wifs-base> [name]\n");
+    std::printf("                         Emit .wifs 8 canonical Item.dbc flag bits (NoLoot / Conjured / Lootable / Wrapped / Heroic / Deprecated / NoUserDestroy / NoEquipCooldown)\n");
+    std::printf("  --gen-ifs-binding <wifs-base> [name]\n");
+    std::printf("                         Emit .wifs 5 binding-related flags (BindOnPickup / BindOnEquip / BindOnUse / BindToAccount / Soulbound) — all isPositive=0 (restrict trading)\n");
+    std::printf("  --gen-ifs-server <wifs-base> [name]\n");
+    std::printf("                         Emit .wifs 5 server-custom flag bits in upper range (Donator / EventReward / Anniversary / Honored / Heroic25man)\n");
+    std::printf("  --info-wifs <wifs-base> [--json]\n");
+    std::printf("                         Print WIFS entries (id / bitMask hex / kind / +/- positivity / name) — handy for decoding raw item.flags integers\n");
+    std::printf("  --validate-wifs <wifs-base> [--json]\n");
+    std::printf("                         Static checks: id+name+bitMask required, flagKind 0..6, no duplicate ids, no duplicate bitMasks (collision); warns on multi-bit masks (unusual, usually want a single bit)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

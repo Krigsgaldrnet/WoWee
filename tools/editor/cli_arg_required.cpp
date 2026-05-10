@@ -263,6 +263,8 @@ const char* const kArgRequired[] = {
     "--gen-scs", "--gen-scs-weapon", "--gen-scs-riding",
     "--info-wscs", "--validate-wscs",
     "--export-wscs-json", "--import-wscs-json",
+    "--gen-ifs", "--gen-ifs-binding", "--gen-ifs-server",
+    "--info-wifs", "--validate-wifs",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
