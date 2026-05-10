@@ -102,6 +102,7 @@
 #include "cli_item_suffixes_catalog.hpp"
 #include "cli_combat_ratings_catalog.hpp"
 #include "cli_unit_movement_catalog.hpp"
+#include "cli_quest_sorts_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -245,6 +246,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleItemSuffixesCatalog,
     handleCombatRatingsCatalog,
     handleUnitMovementCatalog,
+    handleQuestSortsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

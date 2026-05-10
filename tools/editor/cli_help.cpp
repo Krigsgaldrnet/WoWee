@@ -1671,6 +1671,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wumv to a human-editable JSON sidecar (defaults to <base>.wumv.json)\n");
     std::printf("  --import-wumv-json <json-path> [out-base]\n");
     std::printf("                         Import a .wumv.json sidecar back into binary .wumv (accepts movementCategory int OR name string; multipliers default to 1.0/1.4)\n");
+    std::printf("  --gen-qso <wqso-base> [name]\n");
+    std::printf("                         Emit .wqso starter: 3 generic sorts (General catch-all / Daily reset / Repeatable non-daily)\n");
+    std::printf("  --gen-qso-class <wqso-base> [name]\n");
+    std::printf("                         Emit .wqso 10 class-specific sorts (Warrior / Paladin / Hunter / Rogue / Priest / DK / Shaman / Mage / Warlock / Druid)\n");
+    std::printf("  --gen-qso-profession <wqso-base> [name]\n");
+    std::printf("                         Emit .wqso 8 profession sorts (Blacksmithing / Tailoring / Engineering / Alchemy / Enchanting / Leatherworking / Jewelcrafting / Inscription)\n");
+    std::printf("  --info-wqso <wqso-base> [--json]\n");
+    std::printf("                         Print WQSO entries (id / kind / display priority / classMask / profession / faction / displayName)\n");
+    std::printf("  --validate-wqso <wqso-base> [--json]\n");
+    std::printf("                         Static checks: id+name+displayName required, kind 0..11, ClassQuest needs classMask>0, Reputation needs factionId>0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

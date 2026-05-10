@@ -91,6 +91,7 @@ constexpr FormatRow kFormats[] = {
     {"WSUF", ".wsuf",  "items",     "ItemRandomProperties + Suffix",    "Item random-suffix bonus catalog"},
     {"WCRR", ".wcrr",  "stats",     "gtCombatRatings.dbc + curves",     "Combat rating conversion catalog"},
     {"WUMV", ".wumv",  "stats",     "UnitMovement.dbc + speed mods",    "Unit movement type / speed catalog"},
+    {"WQSO", ".wqso",  "quests",    "QuestSort.dbc + QuestInfo cats",   "Quest sort / category catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

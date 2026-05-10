@@ -69,6 +69,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','S','U','F'}, ".wsuf",  "items",     "--info-wsuf",      "Item random-suffix catalog"},
     {{'W','C','R','R'}, ".wcrr",  "stats",     "--info-wcrr",      "Combat rating conversion catalog"},
     {{'W','U','M','V'}, ".wumv",  "stats",     "--info-wumv",      "Unit movement type catalog"},
+    {{'W','Q','S','O'}, ".wqso",  "quests",    "--info-wqso",      "Quest sort / category catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},
