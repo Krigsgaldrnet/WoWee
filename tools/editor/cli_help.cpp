@@ -1499,6 +1499,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsmc to a human-editable JSON sidecar (defaults to <base>.wsmc.json)\n");
     std::printf("  --import-wsmc-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsmc.json sidecar back into binary .wsmc (accepts drCategory/dispelType int OR name string)\n");
+    std::printf("  --gen-kbd <wkbd-base> [name]\n");
+    std::printf("                         Emit .wkbd starter: 3 essential bindings (MOVE_FORWARD / TARGET_NEAREST_ENEMY / TOGGLE_CHARACTER)\n");
+    std::printf("  --gen-kbd-movement <wkbd-base> [name]\n");
+    std::printf("                         Emit .wkbd 8 movement bindings (WASD / arrow keys / jump / autorun) with primary+alternate keys\n");
+    std::printf("  --gen-kbd-ui <wkbd-base> [name]\n");
+    std::printf("                         Emit .wkbd 10 UI panel bindings (Character C / Inventory I / Bags B / Spellbook P / Talents N / etc)\n");
+    std::printf("  --info-wkbd <wkbd-base> [--json]\n");
+    std::printf("                         Print WKBD entries (id / category / user-overridable / sort / default key + alt / actionName)\n");
+    std::printf("  --validate-wkbd <wkbd-base> [--json]\n");
+    std::printf("                         Static checks: id+actionName+defaultKey required, category 0..8, alt!=default, unique action names + primary keys\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

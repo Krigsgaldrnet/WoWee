@@ -88,6 +88,7 @@
 #include "cli_game_tips_catalog.hpp"
 #include "cli_companions_catalog.hpp"
 #include "cli_spell_mechanics_catalog.hpp"
+#include "cli_keybindings_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -217,6 +218,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleGameTipsCatalog,
     handleCompanionsCatalog,
     handleSpellMechanicsCatalog,
+    handleKeybindingsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
