@@ -727,6 +727,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_creature_behavior.cpp
     src/pipeline/wowee_random_property.cpp
     src/pipeline/wowee_spell_proc_rules.cpp
+    src/pipeline/wowee_auction_houses.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1617,6 +1618,7 @@ add_executable(wowee_editor
     tools/editor/cli_creature_behavior_catalog.cpp
     tools/editor/cli_random_property_catalog.cpp
     tools/editor/cli_spell_proc_rules_catalog.cpp
+    tools/editor/cli_auction_houses_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
     tools/editor/cli_catalog_by_name.cpp
@@ -1826,6 +1828,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_creature_behavior.cpp
     src/pipeline/wowee_random_property.cpp
     src/pipeline/wowee_spell_proc_rules.cpp
+    src/pipeline/wowee_auction_houses.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

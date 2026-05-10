@@ -163,6 +163,7 @@ constexpr FormatRow kFormats[] = {
     {"WBHV", ".wbhv",  "ai",        "creature_template.AIName + ScriptMgr","Creature behavior catalog (combat AI archetypes + special abilities)"},
     {"WIRC", ".wirc",  "loot",      "ItemRandomProperties.dbc + LootMgr",  "Item random-property pool catalog (weighted suffix enchants)"},
     {"WPRC", ".wprc",  "spells",    "SpellProcEvents + per-spell procFlags","Spell proc rules catalog (event triggers + ICD + self-loop guard)"},
+    {"WAUH", ".wauh",  "economy",   "AuctionHouse.dbc + AuctionMgr",       "Auction house config catalog (deposit/cut rates + duration tiers)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

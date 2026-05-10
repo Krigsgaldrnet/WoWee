@@ -2699,6 +2699,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wprc to a human-editable JSON sidecar (defaults to <base>.wprc.json; emits triggerEvent as int + name string)\n");
     std::printf("  --import-wprc-json <json-path> [out-base]\n");
     std::printf("                         Import a .wprc.json sidecar back into binary .wprc (triggerEvent int OR \"onhit\"/\"oncrit\"/\"oncast\"/\"ontakedamage\"/\"onheal\"/\"ondodge\"/\"onparry\"/\"onblock\"/\"onkill\" — round-trips proc rule tables byte-identical)\n");
+    std::printf("  --gen-auh-stormwind <wauh-base> [name]\n");
+    std::printf("                         Emit .wauh Stormwind Trade District AH (Alliance, vanilla 5%% deposit + 5%% cut + 12-48hr durations, NPC Auctioneer Tricket 8666)\n");
+    std::printf("  --gen-auh-orgrimmar <wauh-base> [name]\n");
+    std::printf("                         Emit .wauh Orgrimmar Valley of Strength AH (Horde, same vanilla rates as Stormwind, NPC Auctioneer Tahesh 9856)\n");
+    std::printf("  --gen-auh-bootybay <wauh-base> [name]\n");
+    std::printf("                         Emit .wauh Booty Bay Neutral AH (Neutral cross-faction, famous 15%% deposit + 15%% cut penalty rates, NPC Auctioneer Beardo 9858)\n");
+    std::printf("  --info-wauh <wauh-base> [--json]\n");
+    std::printf("                         Print WAUH entries (id / faction / depositPct / cutPct / hour range / fee / npcAuctioneerId / name)\n");
+    std::printf("  --validate-wauh <wauh-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, factionAccess 0..3, depositRatePct + cutPct each in 0..10000 (basis points), no duplicate ahIds, no duplicate (faction,name) pairs, no duplicate npcAuctioneerId (gossip dispatch tie), maxListingDuration > 0 and minListing <= maxListing; CRITICAL: combined depositRatePct + cutPct < 10000 (else seller loses money on every sale). Warns on combined > 50%% (sellers may abandon AH; verify intentional like neutral AH penalty)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

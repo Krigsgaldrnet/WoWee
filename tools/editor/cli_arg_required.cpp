@@ -425,6 +425,8 @@ const char* const kArgRequired[] = {
     "--gen-prc-weapon", "--gen-prc-ret", "--gen-prc-rage",
     "--info-wprc", "--validate-wprc",
     "--export-wprc-json", "--import-wprc-json",
+    "--gen-auh-stormwind", "--gen-auh-orgrimmar", "--gen-auh-bootybay",
+    "--info-wauh", "--validate-wauh",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
