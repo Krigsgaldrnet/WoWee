@@ -2279,6 +2279,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .whrd to a human-editable JSON sidecar (defaults to <base>.whrd.json; emits bonusQualityChance as both raw basis points AND derived bonusQualityPct float convenience field)\n");
     std::printf("  --import-whrd-json <json-path> [out-base]\n");
     std::printf("                         Import a .whrd.json sidecar back into binary .whrd (bonusQualityChance accepts raw basis points int OR bonusQualityPct float — converts pct *100 -> basis points; itemLevelDelta is signed int16; dropChanceMultiplier is float)\n");
+    std::printf("  --gen-rpr <wrpr-base> [name]\n");
+    std::printf("                         Emit .wrpr 4 Argent Crusade reputation tiers (Friendly 3000 / Honored 9000 / Revered 21000 / Exalted 42000) with progressive item + recipe unlocks plus tabard at Honored and Argent Charger mount at Exalted\n");
+    std::printf("  --gen-rpr-kaluak <wrpr-base> [name]\n");
+    std::printf("                         Emit .wrpr 4 Kalu'ak fishing-themed reputation tiers with cooking recipe unlocks (Sweet Potato / Imperial Manta Steak / Pygmy Suit cosmetic at Exalted)\n");
+    std::printf("  --gen-rpr-accord <wrpr-base> [name]\n");
+    std::printf("                         Emit .wrpr 3 Wyrmrest Accord tiers showcasing tabard + mount unlock flags (Honored items / Revered tabard / Exalted Reins of the Red Drake)\n");
+    std::printf("  --info-wrpr <wrpr-base> [--json]\n");
+    std::printf("                         Print WRPR entries (id / faction / standing / standing tier / discount %% / tabard flag / mount flag / item count / recipe count / name)\n");
+    std::printf("  --validate-wrpr <wrpr-base> [--json]\n");
+    std::printf("                         Static checks: id+name+factionId required, minStanding [-42000, 42000], no zero item/recipe IDs, no duplicate tierIds, no two tiers binding same (factionId,minStanding) tuple; warns on discountPct>20%% (exceeds Exalted cap), and PER-FACTION non-monotonic discount progression (higher standing should never give worse discount)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
