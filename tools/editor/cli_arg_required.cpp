@@ -138,6 +138,7 @@ const char* const kArgRequired[] = {
     "--bulk-rename-by-magic", "--touch-tree", "--tree-summary-md",
     "--catalog-grep", "--diff-headers", "--audit-tree",
     "--magic-fix", "--bulk-validate",
+    "--bulk-export-json", "--bulk-import-json",
     "--gen-animations", "--gen-animations-combat", "--gen-animations-movement",
     "--info-wani", "--validate-wani",
     "--export-wani-json", "--import-wani-json",

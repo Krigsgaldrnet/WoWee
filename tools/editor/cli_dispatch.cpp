@@ -97,6 +97,7 @@
 #include "cli_audit_tree.hpp"
 #include "cli_magic_fix.hpp"
 #include "cli_bulk_validate.hpp"
+#include "cli_bulk_json.hpp"
 #include "cli_macros_catalog.hpp"
 #include "cli_char_features_catalog.hpp"
 #include "cli_pvp_catalog.hpp"
@@ -257,6 +258,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleAuditTree,
     handleMagicFix,
     handleBulkValidate,
+    handleBulkJson,
     handleMacrosCatalog,
     handleCharFeaturesCatalog,
     handlePVPCatalog,

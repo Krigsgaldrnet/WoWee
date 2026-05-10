@@ -1371,6 +1371,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Auto-rename files whose extension doesn't match their magic to the canonical extension. Default is dry-run; pass --apply to commit. Skips collisions where the target already exists. Natural follow-up to --audit-tree\n");
     std::printf("  --bulk-validate <dir> [--json]\n");
     std::printf("                         Recursively run each format's --validate-X validator across every recognized .w* file. Reports per-file pass/fail counts; lists failure paths. Asset formats with no validator are skipped. Exit 1 if any failure\n");
+    std::printf("  --bulk-export-json <dir> [--json]\n");
+    std::printf("                         Recursively export every recognized .w* file to its JSON sidecar via the per-format --export-X-json flag. Useful for git-friendly diffs of binary catalogs. Exit 1 if any failure\n");
+    std::printf("  --bulk-import-json <dir> [--json]\n");
+    std::printf("                         Recursively import every .wXXX.json sidecar back to its binary .w* form via the per-format --import-X-json flag. Inverse of --bulk-export-json. Exit 1 if any failure\n");
     std::printf("  --gen-animations <wani-base> [name]\n");
     std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
     std::printf("  --gen-animations-combat <wani-base> [name]\n");
