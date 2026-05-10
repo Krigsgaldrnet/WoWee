@@ -191,9 +191,36 @@ int handleFind(int& i, int argc, char** argv) {
     size_t skippedNoFlag = 0;
     size_t skippedUnknownMagic = 0;
 
-    for (const auto& dirent :
-         fs::recursive_directory_iterator(dir)) {
-        if (!dirent.is_regular_file()) continue;
+    // skip_permission_denied prevents the iterator from
+    // throwing on unreadable subdirectories (common when
+    // walking /tmp or system trees that contain other-user
+    // files). Errors are swallowed silently — catalog-find
+    // is a best-effort search, not an audit.
+    std::error_code walkEc;
+    fs::recursive_directory_iterator it(
+        dir, fs::directory_options::skip_permission_denied,
+        walkEc);
+    fs::recursive_directory_iterator end;
+    if (walkEc) {
+        std::fprintf(stderr,
+            "catalog-find: cannot open directory '%s': %s\n",
+            dir.c_str(), walkEc.message().c_str());
+        return 1;
+    }
+    for (; it != end; it.increment(walkEc)) {
+        if (walkEc) {
+            // A subdirectory failed mid-walk; clear and
+            // continue. The skip_permission_denied option
+            // covers most cases but defensive code stays
+            // safer.
+            walkEc.clear();
+            continue;
+        }
+        const auto& dirent = *it;
+        if (!dirent.is_regular_file(walkEc)) {
+            walkEc.clear();
+            continue;
+        }
         char magic[4]{};
         if (!peekMagic(dirent.path(), magic)) continue;
         const FormatMagicEntry* fmt = findFormatByMagic(magic);

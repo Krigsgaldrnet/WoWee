@@ -690,6 +690,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_combat_maneuvers.cpp
     src/pipeline/wowee_realm_list.cpp
     src/pipeline/wowee_emotes.cpp
+    src/pipeline/wowee_buff_book.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1543,6 +1544,7 @@ add_executable(wowee_editor
     tools/editor/cli_combat_maneuvers_catalog.cpp
     tools/editor/cli_realm_list_catalog.cpp
     tools/editor/cli_emotes_catalog.cpp
+    tools/editor/cli_buff_book_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
     tools/editor/cli_quest_objective.cpp
@@ -1713,6 +1715,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_combat_maneuvers.cpp
     src/pipeline/wowee_realm_list.cpp
     src/pipeline/wowee_emotes.cpp
+    src/pipeline/wowee_buff_book.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

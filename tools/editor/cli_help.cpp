@@ -2181,6 +2181,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wemo to a human-editable JSON sidecar (defaults to <base>.wemo.json; emits all 3 enums as both int AND name string)\n");
     std::printf("  --import-wemo-json <json-path> [out-base]\n");
     std::printf("                         Import a .wemo.json sidecar back into binary .wemo (emoteKind int OR \"social\"/\"combat\"/\"roleplay\"/\"system\"; sex int OR \"both\"/\"male\"/\"female\"; ttsHint int OR \"talk\"/\"whisper\"/\"yell\"/\"silent\")\n");
+    std::printf("  --gen-bab <wbab-base> [name]\n");
+    std::printf("                         Emit .wbab 4 Mage Arcane Intellect rank chain (R1 +3 Int -> R4 +25 Int) with explicit prev/nextRankId edges\n");
+    std::printf("  --gen-bab-druid <wbab-base> [name]\n");
+    std::printf("                         Emit .wbab 5 Druid Mark of the Wild rank chain (R1 +3 stats -> R5 +18 stats) with explicit prev/nextRankId edges\n");
+    std::printf("  --gen-bab-raid <wbab-base> [name]\n");
+    std::printf("                         Emit .wbab 6 max-rank standalone raid buffs (Mark of the Wild R7 / Prayer of Fortitude R4 / Arcane Brilliance R2 / Greater Blessing of Kings / Battle Shout R9 / Trueshot Aura) — one per buffing class\n");
+    std::printf("  --info-wbab <wbab-base> [--json]\n");
+    std::printf("                         Print WBAB entries (id / spellId / classMask / target mask / stat kind / rank / amount / duration / prev+next rank ids / name)\n");
+    std::printf("  --validate-wbab <wbab-base> [--json]\n");
+    std::printf("                         Static checks: id+name+spellId+castClassMask+targetTypeMask required, statBonusKind 0..9 OR 255, no duplicate ids, no self-referencing rank edges, all next/prev IDs resolve to existing entries, AND back-edges symmetric (A.next=B implies B.prev=A); warns on rank=0, maxStackCount=0\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

@@ -313,6 +313,8 @@ const char* const kArgRequired[] = {
     "--gen-emo", "--gen-emo-combat", "--gen-emo-rp",
     "--info-wemo", "--validate-wemo",
     "--export-wemo-json", "--import-wemo-json",
+    "--gen-bab", "--gen-bab-druid", "--gen-bab-raid",
+    "--info-wbab", "--validate-wbab",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
