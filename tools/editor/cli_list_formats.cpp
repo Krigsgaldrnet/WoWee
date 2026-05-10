@@ -1,0 +1,129 @@
+#include "cli_list_formats.hpp"
+#include "cli_arg_parse.hpp"
+
+#include <nlohmann/json.hpp>
+
+#include <cstdio>
+#include <cstring>
+#include <string>
+
+namespace wowee {
+namespace editor {
+namespace cli {
+
+namespace {
+
+// Static catalog of every novel open format the editor can
+// currently emit, parse, and round-trip. Adding a new format
+// requires appending one row here so --list-formats stays
+// authoritative. The list is intentionally kept in
+// introduction order so users can correlate against the
+// commit history.
+struct FormatRow {
+    const char* magic;       // 4-char binary magic
+    const char* extension;   // file suffix (with dot)
+    const char* category;    // grouping label
+    const char* replaces;    // proprietary source(s)
+    const char* description;
+};
+
+constexpr FormatRow kFormats[] = {
+    // World / asset / pipeline foundations.
+    {"WOM ", ".wom",   "asset",     "M2",                              "M2 model — bones / vertices / animations"},
+    {"WOB ", ".wob",   "asset",     "WMO",                             "WMO building — groups / portals / collision"},
+    {"WHM ", ".whm",   "world",     "ADT heightmap",                   "ADT terrain heightmap tile"},
+    {"WOT ", ".wot",   "world",     "ADT textures",                    "ADT terrain texture splats + alpha layers"},
+    {"WOW ", ".wow",   "world",     "WDT/WDL",                         "Per-zone world manifest + weather"},
+
+    // Catalog / DBC replacements.
+    {"WITM", ".wit",   "items",     "Item.dbc + item_template",        "Item catalog (gear, consumables, quest items)"},
+    {"WCRT", ".wcrt",  "creatures", "creature_template",               "Creature catalog (NPCs, mobs, vendors)"},
+    {"WSPN", ".wspn",  "wspn",      "creature SQL",                    "Creature/object spawns by zone+coord"},
+    {"WLOT", ".wlot",  "loot",      "creature_loot_template",          "Loot tables and drop chances"},
+    {"WGOT", ".wgot",  "objects",   "gameobject_template",             "GameObject catalog (chests / doors)"},
+    {"WSND", ".wsnd",  "audio",     "SoundEntries.dbc",                "Sound entry catalog"},
+    {"WSPL", ".wspl",  "spells",    "Spell.dbc + spell_template",      "Spell catalog (effects, durations, costs)"},
+    {"WQTM", ".wqt",   "quests",    "quest_template + Quest*.dbc",     "Quest catalog (objectives, rewards)"},
+    {"WMSX", ".wms",   "maps",      "Map.dbc + AreaTable.dbc",         "Map and area catalog"},
+    {"WCHC", ".wchc",  "chars",     "ChrClasses.dbc + ChrRaces.dbc",   "Class + race catalog"},
+    {"WACH", ".wach",  "achieve",   "Achievement.dbc + Criteria.dbc",  "Achievement catalog with criteria"},
+    {"WTRN", ".wtrr",  "trainers",  "npc_trainer + Spell.dbc",         "Trainer catalog (spell teaching)"},
+    {"WGSP", ".wgoss", "gossip",    "gossip_menu + npc_gossip",        "Gossip menu / dialog tree catalog"},
+    {"WTAX", ".wtax",  "taxi",      "TaxiNodes.dbc + TaxiPath.dbc",    "Flight path catalog (taxi network)"},
+    {"WTAL", ".wtal",  "talents",   "Talent.dbc + TalentTab.dbc",      "Talent tree catalog"},
+    {"WTKN", ".wtkn",  "tokens",    "ItemExtendedCost + currency",     "Token / currency catalog"},
+    {"WTRG", ".wtrg",  "triggers",  "AreaTrigger.dbc + areatrigger",   "Area trigger catalog"},
+    {"WTIT", ".wttl",  "titles",    "CharTitles.dbc",                  "Player title catalog"},
+    {"WSEA", ".wevt",  "events",    "GameEvent + spell_script",        "Scripted event catalog"},
+    {"WMOU", ".wmnt",  "mounts",    "Mount.dbc + spell_mount",         "Mount catalog (ground+flying)"},
+    {"WBGD", ".wbgd",  "battle",    "BattlemasterList.dbc + bg_*",     "Battleground definition catalog"},
+    {"WMAL", ".wmal",  "mail",      "mail + mail_external",            "In-game mail message catalog"},
+    {"WGEM", ".wgem",  "gems",      "GemProperties.dbc + Enchant.dbc", "Gem + enchantment catalog"},
+    {"WGLD", ".wgld",  "guilds",    "guild + guild_member",            "Guild catalog (charters, ranks)"},
+    {"WPCD", ".wcnd",  "cond",      "Conditions + spell_proc_event",   "Reusable condition rule catalog"},
+    {"WPET", ".wpet",  "pets",      "CreatureFamily.dbc + pet SQL",    "Hunter pet + warlock minion catalog"},
+    {"WAUC", ".wauc",  "auction",   "auctionhouse + npc_auctioneer",   "Auction house rules catalog"},
+    {"WCHN", ".wchn",  "channels",  "ChatChannels.dbc + chat_channel", "Chat channel catalog"},
+    {"WCMS", ".wcms",  "cinematic", "Movie.dbc + CinematicCamera.dbc", "Cinematic catalog (videos, cutscenes)"},
+    {"WGLY", ".wgly",  "glyphs",    "GlyphProperties.dbc + GlyphSlot", "WotLK glyph catalog"},
+    {"WVHC", ".wvhc",  "vehicles",  "Vehicle.dbc + VehicleSeat.dbc",   "Vehicle + seat-layout catalog"},
+    {"WHOL", ".whol",  "holiday",   "Holidays.dbc + game_event",       "Calendar holiday + event catalog"},
+    {"WLIQ", ".wliq",  "liquids",   "LiquidType.dbc",                  "Liquid material catalog (water/lava/slime)"},
+
+    // Additional pipeline catalogs without the alternating
+    // gen/info/validate CLI surface (loaded by the engine
+    // directly).
+    {"WFAC", ".wfac",  "factions",  "Faction.dbc + FactionTemplate",   "Faction + reputation catalog"},
+    {"WLCK", ".wlck",  "locks",     "Lock.dbc",                        "Lock + key requirement catalog"},
+    {"WSKL", ".wskl",  "skills",    "SkillLine.dbc + SkillLineAbility","Skill / profession catalog"},
+    {"WOLA", ".wola",  "light",     "Light.dbc + LightParams.dbc",     "Outdoor lighting / sky color catalog"},
+    {"WOWA", ".wowa",  "weather",   "weather + LightParams",           "Per-zone weather schedule catalog"},
+    {"WMPX", ".wmpx",  "worldmap",  "WorldMapArea.dbc",                "World map / minimap zone catalog"},
+};
+
+constexpr size_t kFormatsCount =
+    sizeof(kFormats) / sizeof(kFormats[0]);
+
+int handleList(int& i, int argc, char** argv) {
+    bool jsonOut = consumeJsonFlag(i, argc, argv);
+    if (jsonOut) {
+        nlohmann::json j;
+        j["count"] = kFormatsCount;
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& row : kFormats) {
+            arr.push_back({
+                {"magic", row.magic},
+                {"extension", row.extension},
+                {"category", row.category},
+                {"replaces", row.replaces},
+                {"description", row.description},
+            });
+        }
+        j["formats"] = arr;
+        std::printf("%s\n", j.dump(2).c_str());
+        return 0;
+    }
+    std::printf("Wowee open formats: %zu total\n", kFormatsCount);
+    std::printf("\n");
+    std::printf("  magic    ext      category     replaces                          description\n");
+    std::printf("  -------  -------  -----------  --------------------------------  -----------\n");
+    for (const auto& row : kFormats) {
+        std::printf("  %-7s  %-7s  %-11s  %-32s  %s\n",
+                    row.magic, row.extension, row.category,
+                    row.replaces, row.description);
+    }
+    return 0;
+}
+
+} // namespace
+
+bool handleListFormats(int& i, int argc, char** argv, int& outRc) {
+    if (std::strcmp(argv[i], "--list-formats") == 0) {
+        outRc = handleList(i, argc, argv); return true;
+    }
+    return false;
+}
+
+} // namespace cli
+} // namespace editor
+} // namespace wowee

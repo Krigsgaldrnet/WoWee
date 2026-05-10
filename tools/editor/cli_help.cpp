@@ -1347,6 +1347,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wliq to a human-editable JSON sidecar (defaults to <base>.wliq.json)\n");
     std::printf("  --import-wliq-json <json-path> [out-base]\n");
     std::printf("                         Import a .wliq.json sidecar back into binary .wliq (accepts liquidKind int OR name string)\n");
+    std::printf("  --list-formats [--json]\n");
+    std::printf("                         Print the catalog of all novel open formats (magic / extension / category / replaces / description)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
