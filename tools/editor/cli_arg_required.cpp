@@ -403,6 +403,7 @@ const char* const kArgRequired[] = {
     "--export-wcst-json", "--import-wcst-json",
     "--gen-gbk", "--gen-gbk-raid", "--gen-gbk-small",
     "--info-wgbk", "--validate-wgbk",
+    "--export-wgbk-json", "--import-wgbk-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

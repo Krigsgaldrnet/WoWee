@@ -2597,6 +2597,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGBK entries (id / guildId / slotCount / depositOnly / per-rank-0..7 withdrawal limits / tabName)\n");
     std::printf("  --validate-wgbk <wgbk-base> [--json]\n");
     std::printf("                         Static checks: id+guildId+tabName required, slotCount 1..98 (vanilla cap), GM withdrawal limit > 0 (rank 0 cannot be locked out — almost certainly a typo), per-rank monotonicity (lower rank cannot exceed higher rank's cap), no duplicate tabIds, no duplicate (guildId,tabName) pairs (UI tab dispatch tie); warns on depositOnly flag set with non-zero rank-0 limit (self-contradiction — flag overrides at runtime but data is contradictory)\n");
+    std::printf("  --export-wgbk-json <wgbk-base> [out.json]\n");
+    std::printf("                         Export binary .wgbk to a human-editable JSON sidecar (defaults to <base>.wgbk.json; perRankWithdrawalLimit emitted as 8-element JSON int array, kUnlimited = 4294967295)\n");
+    std::printf("  --import-wgbk-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wgbk.json sidecar back into binary .wgbk (perRankWithdrawalLimit JSON int array, missing entries default to 0; round-trips per-rank caps byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

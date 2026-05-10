@@ -280,6 +280,127 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWgbkExt(base);
+    if (out.empty()) out = base + ".wgbk.json";
+    if (!wowee::pipeline::WoweeGuildBankLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wgbk-json: WGBK not found: %s.wgbk\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeGuildBankLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WGBK";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json limits = nlohmann::json::array();
+        for (uint32_t r = 0;
+             r < wowee::pipeline::WoweeGuildBank::
+                 kRankCount; ++r) {
+            limits.push_back(e.perRankWithdrawalLimit[r]);
+        }
+        arr.push_back({
+            {"tabId", e.tabId},
+            {"guildId", e.guildId},
+            {"tabName", e.tabName},
+            {"iconIndex", e.iconIndex},
+            {"depositOnly", e.depositOnly != 0},
+            {"slotCount", e.slotCount},
+            {"perRankWithdrawalLimit", limits},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wgbk-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu tabs)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wgbk.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wgbk");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wgbk-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wgbk-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeGuildBank c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wgbk-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeGuildBank::Entry e;
+        e.tabId = je.value("tabId", 0u);
+        e.guildId = je.value("guildId", 0u);
+        e.tabName = je.value("tabName", std::string{});
+        e.iconIndex = je.value("iconIndex", 0u);
+        e.depositOnly = je.value("depositOnly", false) ? 1 : 0;
+        e.slotCount = static_cast<uint16_t>(
+            je.value("slotCount", 0));
+        if (je.contains("perRankWithdrawalLimit") &&
+            je["perRankWithdrawalLimit"].is_array()) {
+            uint32_t r = 0;
+            for (const auto& v :
+                 je["perRankWithdrawalLimit"]) {
+                if (r >= wowee::pipeline::WoweeGuildBank::
+                          kRankCount) break;
+                if (v.is_number_unsigned() ||
+                    v.is_number_integer()) {
+                    e.perRankWithdrawalLimit[r] =
+                        v.get<uint32_t>();
+                }
+                ++r;
+            }
+        }
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeGuildBankLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wgbk-json: failed to save %s.wgbk\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wgbk (%zu tabs)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleGuildBankCatalog(int& i, int argc, char** argv,
@@ -301,6 +422,14 @@ bool handleGuildBankCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wgbk") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wgbk-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wgbk-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
