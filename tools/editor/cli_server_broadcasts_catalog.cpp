@@ -149,6 +149,181 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+// Token parser for channelKind. Returns -1 if unknown.
+int parseChannelKindToken(const std::string& s) {
+    using S = wowee::pipeline::WoweeServerBroadcasts;
+    if (s == "login")       return S::Login;
+    if (s == "system")      return S::SystemChannel;
+    if (s == "raidwarning") return S::RaidWarning;
+    if (s == "motd")        return S::MOTD;
+    if (s == "helptip")     return S::HelpTip;
+    return -1;
+}
+
+// Token parser for factionFilter. Returns -1 if unknown.
+int parseFactionFilterToken(const std::string& s) {
+    using S = wowee::pipeline::WoweeServerBroadcasts;
+    if (s == "alliance") return S::AllianceOnly;
+    if (s == "horde")    return S::HordeOnly;
+    if (s == "both")     return S::Both;
+    return -1;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWscbExt(base);
+    if (out.empty()) out = base + ".wscb.json";
+    if (!wowee::pipeline::WoweeServerBroadcastsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wscb-json: WSCB not found: %s.wscb\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeServerBroadcastsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WSCB";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"broadcastId", e.broadcastId},
+            {"name", e.name},
+            {"description", e.description},
+            {"messageText", e.messageText},
+            {"intervalSeconds", e.intervalSeconds},
+            {"channelKind", e.channelKind},
+            {"channelKindName", channelKindName(e.channelKind)},
+            {"factionFilter", e.factionFilter},
+            {"factionFilterName",
+                factionFilterName(e.factionFilter)},
+            {"minLevel", e.minLevel},
+            {"maxLevel", e.maxLevel},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wscb-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu broadcasts)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wscb.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wscb");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wscb-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wscb-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeServerBroadcasts c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wscb-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeServerBroadcasts::Entry e;
+        e.broadcastId = je.value("broadcastId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.messageText = je.value("messageText", std::string{});
+        e.intervalSeconds = je.value("intervalSeconds", 0u);
+        // channelKind: int OR token string.
+        if (je.contains("channelKind")) {
+            const auto& ck = je["channelKind"];
+            if (ck.is_string()) {
+                int parsed = parseChannelKindToken(ck.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-wscb-json: unknown channelKind "
+                        "token '%s' on entry id=%u\n",
+                        ck.get<std::string>().c_str(), e.broadcastId);
+                    return 1;
+                }
+                e.channelKind = static_cast<uint8_t>(parsed);
+            } else if (ck.is_number_integer()) {
+                e.channelKind = static_cast<uint8_t>(ck.get<int>());
+            }
+        } else if (je.contains("channelKindName") &&
+                   je["channelKindName"].is_string()) {
+            int parsed = parseChannelKindToken(
+                je["channelKindName"].get<std::string>());
+            if (parsed >= 0)
+                e.channelKind = static_cast<uint8_t>(parsed);
+        }
+        // factionFilter: int OR token string.
+        if (je.contains("factionFilter")) {
+            const auto& ff = je["factionFilter"];
+            if (ff.is_string()) {
+                int parsed = parseFactionFilterToken(
+                    ff.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-wscb-json: unknown factionFilter "
+                        "token '%s' on entry id=%u\n",
+                        ff.get<std::string>().c_str(),
+                        e.broadcastId);
+                    return 1;
+                }
+                e.factionFilter = static_cast<uint8_t>(parsed);
+            } else if (ff.is_number_integer()) {
+                e.factionFilter = static_cast<uint8_t>(ff.get<int>());
+            }
+        } else if (je.contains("factionFilterName") &&
+                   je["factionFilterName"].is_string()) {
+            int parsed = parseFactionFilterToken(
+                je["factionFilterName"].get<std::string>());
+            if (parsed >= 0)
+                e.factionFilter = static_cast<uint8_t>(parsed);
+        }
+        e.minLevel = static_cast<uint8_t>(je.value("minLevel", 0u));
+        e.maxLevel = static_cast<uint8_t>(je.value("maxLevel", 0u));
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeServerBroadcastsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wscb-json: failed to save %s.wscb\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wscb (%zu broadcasts)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -289,6 +464,12 @@ bool handleServerBroadcastsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wscb") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wscb-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wscb-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
