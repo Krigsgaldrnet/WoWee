@@ -1203,6 +1203,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGEM gems (id / color / stat / item) + enchantments (id / slot / stat / duration / charges)\n");
     std::printf("  --validate-wgem <wgem-base> [--json]\n");
     std::printf("                         Static checks: ids>0+unique, name not empty, color/slot in range, stat-only entries need non-zero value\n");
+    std::printf("  --export-wgem-json <wgem-base> [out.json]\n");
+    std::printf("                         Export binary .wgem to a human-editable JSON sidecar (defaults to <base>.wgem.json)\n");
+    std::printf("  --import-wgem-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wgem.json sidecar back into binary .wgem (accepts color/slot int OR name strings)\n");
     std::printf("  --gen-guilds <wgld-base> [name]\n");
     std::printf("                         Emit .wgld starter: 1 guild (Sentinels of Dawn) with default 5-rank ladder + 3 members\n");
     std::printf("  --gen-guilds-full <wgld-base> [name]\n");
