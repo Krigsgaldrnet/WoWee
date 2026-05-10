@@ -79,6 +79,7 @@
 #include "cli_spell_visuals_catalog.hpp"
 #include "cli_summary_dir.hpp"
 #include "cli_rename_magic.hpp"
+#include "cli_world_state_ui_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -199,6 +200,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSpellVisualsCatalog,
     handleSummaryDir,
     handleRenameMagic,
+    handleWorldStateUICatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

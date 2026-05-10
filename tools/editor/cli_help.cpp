@@ -1383,6 +1383,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsvk to a human-editable JSON sidecar (defaults to <base>.wsvk.json)\n");
     std::printf("  --import-wsvk-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsvk.json sidecar back into binary .wsvk\n");
+    std::printf("  --gen-wsui <wwui-base> [name]\n");
+    std::printf("                         Emit .wwui starter: 3 BG scoreboards (WSG flag captures, AB resources, EotS flag carrier)\n");
+    std::printf("  --gen-wsui-wintergrasp <wwui-base> [name]\n");
+    std::printf("                         Emit .wwui 4 Wintergrasp UI (alliance+horde tank counts, time remaining, towers controlled)\n");
+    std::printf("  --gen-wsui-dungeon <wwui-base> [name]\n");
+    std::printf("                         Emit .wwui 3 dungeon UI (boss progress bar, key fragments collected, treasure hunt counter)\n");
+    std::printf("  --info-wwui <wwui-base> [--json]\n");
+    std::printf("                         Print WWUI entries (id / kind / panel position / always-visible / hide-when-zero / map+area / variableIndex / default / name)\n");
+    std::printf("  --validate-wwui <wwui-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name not empty, kind 0..5, position 0..4, alwaysVis+hideZero conflict, (mapId, varIdx) collision warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

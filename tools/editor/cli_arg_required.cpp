@@ -141,6 +141,8 @@ const char* const kArgRequired[] = {
     "--gen-svk", "--gen-svk-combat", "--gen-svk-utility",
     "--info-wsvk", "--validate-wsvk",
     "--export-wsvk-json", "--import-wsvk-json",
+    "--gen-wsui", "--gen-wsui-wintergrasp", "--gen-wsui-dungeon",
+    "--info-wwui", "--validate-wwui",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
