@@ -84,6 +84,7 @@ constexpr FormatRow kFormats[] = {
     {"WLFG", ".wlfg",  "social",    "LFGDungeons.dbc + LFG rewards",    "LFG / Dungeon Finder catalog"},
     {"WMAC", ".wmac",  "ui",        "(client-side macro storage)",      "Macro / slash command catalog"},
     {"WCHF", ".wchf",  "chars",     "CharHairGeosets + CharFacialHair", "Character hair / face customization catalog"},
+    {"WPVP", ".wpvp",  "pvp",       "honor / arena rank tables",        "PvP honor rank + arena tier catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

@@ -1573,6 +1573,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wchf to a human-editable JSON sidecar (defaults to <base>.wchf.json)\n");
     std::printf("  --import-wchf-json <json-path> [out-base]\n");
     std::printf("                         Import a .wchf.json sidecar back into binary .wchf (accepts featureKind/sexId/requiresExpansion int OR name string)\n");
+    std::printf("  --gen-pvp <wpvp-base> [name]\n");
+    std::printf("                         Emit .wpvp starter: 3 vanilla honor entry tiers (Rank2-4 — Private/Scout, Corporal/Grunt, Sergeant)\n");
+    std::printf("  --gen-pvp-alliance <wpvp-base> [name]\n");
+    std::printf("                         Emit .wpvp 9 vanilla ranks 6-14 (Knight through Grand Marshal) with WTTL+WIT cross-refs for chest/gloves/shoulders\n");
+    std::printf("  --gen-pvp-arena <wpvp-base> [name]\n");
+    std::printf("                         Emit .wpvp 5 arena rating brackets (Combatant 1500 / Challenger 1750 / Rival 2000 / Duelist 2200 / Gladiator 2400)\n");
+    std::printf("  --info-wpvp <wpvp-base> [--json]\n");
+    std::printf("                         Print WPVP entries (id / kind / threshold / emblem reward / title+chest cross-refs / alliance / horde names)\n");
+    std::printf("  --validate-wpvp <wpvp-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, kind 0..4, level range valid, faction alt names paired, threshold monotonic within kind, arena>=1500\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

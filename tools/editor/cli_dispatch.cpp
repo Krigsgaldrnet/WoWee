@@ -95,6 +95,7 @@
 #include "cli_catalog_grep.hpp"
 #include "cli_macros_catalog.hpp"
 #include "cli_char_features_catalog.hpp"
+#include "cli_pvp_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -231,6 +232,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleCatalogGrep,
     handleMacrosCatalog,
     handleCharFeaturesCatalog,
+    handlePVPCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
