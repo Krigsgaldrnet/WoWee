@@ -80,6 +80,7 @@ constexpr FormatRow kFormats[] = {
     {"WCMP", ".wcmp",  "pets",      "CreatureFamily + companion SQL",   "Companion / vanity pet catalog"},
     {"WSMC", ".wsmc",  "spells",    "SpellMechanic.dbc + DR tables",    "Spell mechanic / CC category catalog"},
     {"WKBD", ".wkbd",  "input",     "KeyBinding.dbc + default binds",   "Default keybinding catalog"},
+    {"WSCH", ".wsch",  "spells",    "SpellSchools.dbc + Resistances",   "Spell school / damage type catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

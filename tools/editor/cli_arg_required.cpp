@@ -169,6 +169,8 @@ const char* const kArgRequired[] = {
     "--gen-kbd", "--gen-kbd-movement", "--gen-kbd-ui",
     "--info-wkbd", "--validate-wkbd",
     "--export-wkbd-json", "--import-wkbd-json",
+    "--gen-sch", "--gen-sch-magical", "--gen-sch-combined",
+    "--info-wsch", "--validate-wsch",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

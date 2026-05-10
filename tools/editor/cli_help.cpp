@@ -1515,6 +1515,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wkbd to a human-editable JSON sidecar (defaults to <base>.wkbd.json)\n");
     std::printf("  --import-wkbd-json <json-path> [out-base]\n");
     std::printf("                         Import a .wkbd.json sidecar back into binary .wkbd (accepts category int OR name string; isUserOverridable defaults to 1)\n");
+    std::printf("  --gen-sch <wsch-base> [name]\n");
+    std::printf("                         Emit .wsch starter: 3 base schools (Physical / Fire / Holy) with proper colors+resistance caps\n");
+    std::printf("  --gen-sch-magical <wsch-base> [name]\n");
+    std::printf("                         Emit .wsch 6 magical schools (Holy / Fire / Nature / Frost / Shadow / Arcane) with canonical schoolId bits\n");
+    std::printf("  --gen-sch-combined <wsch-base> [name]\n");
+    std::printf("                         Emit .wsch 3 hybrid schools (Spellfire / Spellshadow / Spellfrost) with combinedSchoolMask wiring\n");
+    std::printf("  --info-wsch <wsch-base> [--json]\n");
+    std::printf("                         Print WSCH entries (schoolId / immune+absorb+reflect+crit flags / resistance cap / combined-mask / name)\n");
+    std::printf("  --validate-wsch <wsch-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, reflected-without-absorbed warning, combined-mask references defined schools, no self-reference\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

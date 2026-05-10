@@ -90,6 +90,7 @@
 #include "cli_spell_mechanics_catalog.hpp"
 #include "cli_keybindings_catalog.hpp"
 #include "cli_tree_summary_md.hpp"
+#include "cli_spell_schools_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -221,6 +222,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSpellMechanicsCatalog,
     handleKeybindingsCatalog,
     handleTreeSummaryMd,
+    handleSpellSchoolsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
