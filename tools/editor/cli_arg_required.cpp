@@ -343,6 +343,7 @@ const char* const kArgRequired[] = {
     "--export-wmnl-json", "--import-wmnl-json",
     "--gen-pcr", "--gen-pcr-stable", "--gen-pcr-warlock",
     "--info-wpcr", "--validate-wpcr",
+    "--export-wpcr-json", "--import-wpcr-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

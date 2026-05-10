@@ -2317,6 +2317,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPCR entries (id / spellId / classFilter / actionKind / happiness / pet-required / stable-NPC required / cost copper / reagent / cast ms / name)\n");
     std::printf("  --validate-wpcr <wpcr-base> [--json]\n");
     std::printf("                         Static checks: id+name+classFilter required, actionKind 0..10, no duplicate actionIds, per-kind constraints (Tame and Summon REQUIRE no active pet, requiresPet must be 0); warns on happinessRestore outside +/-25, Stable kind without requiresStableNPC, Tame kind without cooldown (canonically 15 sec)\n");
+    std::printf("  --export-wpcr-json <wpcr-base> [out.json]\n");
+    std::printf("                         Export binary .wpcr to a human-editable JSON sidecar (defaults to <base>.wpcr.json; emits actionKind as both int AND name string; requiresPet/requiresStableNPC as bool)\n");
+    std::printf("  --import-wpcr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wpcr.json sidecar back into binary .wpcr (actionKind int OR \"revive\"/\"mend\"/\"feed\"/\"dismiss\"/\"tame\"/\"beastlore\"/\"stable\"/\"untrain\"/\"rename\"/\"abandon\"/\"summon\"; bool fields accept bool OR int)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

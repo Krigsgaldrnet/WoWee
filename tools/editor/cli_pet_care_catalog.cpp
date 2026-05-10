@@ -148,6 +148,176 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseActionKindToken(const std::string& s) {
+    using P = wowee::pipeline::WoweePetCare;
+    if (s == "revive")    return P::Revive;
+    if (s == "mend")      return P::Mend;
+    if (s == "feed")      return P::Feed;
+    if (s == "dismiss")   return P::Dismiss;
+    if (s == "tame")      return P::Tame;
+    if (s == "beastlore") return P::BeastLore;
+    if (s == "stable")    return P::Stable;
+    if (s == "untrain")   return P::Untrain;
+    if (s == "rename")    return P::Rename;
+    if (s == "abandon")   return P::Abandon;
+    if (s == "summon")    return P::Summon;
+    return -1;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWpcrExt(base);
+    if (out.empty()) out = base + ".wpcr.json";
+    if (!wowee::pipeline::WoweePetCareLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wpcr-json: WPCR not found: %s.wpcr\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweePetCareLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WPCR";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"actionId", e.actionId},
+            {"name", e.name},
+            {"description", e.description},
+            {"spellId", e.spellId},
+            {"classFilter", e.classFilter},
+            {"actionKind", e.actionKind},
+            {"actionKindName", actionKindName(e.actionKind)},
+            {"happinessRestore", e.happinessRestore},
+            {"requiresPet", e.requiresPet != 0},
+            {"requiresStableNPC", e.requiresStableNPC != 0},
+            {"costCopper", e.costCopper},
+            {"reagentItemId", e.reagentItemId},
+            {"castTimeMs", e.castTimeMs},
+            {"cooldownSec", e.cooldownSec},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wpcr-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu actions)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wpcr.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wpcr");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wpcr-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wpcr-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweePetCare c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wpcr-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweePetCare::Entry e;
+        e.actionId = je.value("actionId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.spellId = je.value("spellId", 0u);
+        e.classFilter = je.value("classFilter", 0u);
+        if (je.contains("actionKind")) {
+            const auto& v = je["actionKind"];
+            if (v.is_string()) {
+                int parsed = parseActionKindToken(
+                    v.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-wpcr-json: unknown "
+                        "actionKind token '%s' on entry "
+                        "id=%u\n",
+                        v.get<std::string>().c_str(),
+                        e.actionId);
+                    return 1;
+                }
+                e.actionKind = static_cast<uint8_t>(parsed);
+            } else if (v.is_number_integer()) {
+                e.actionKind = static_cast<uint8_t>(v.get<int>());
+            }
+        } else if (je.contains("actionKindName") &&
+                   je["actionKindName"].is_string()) {
+            int parsed = parseActionKindToken(
+                je["actionKindName"].get<std::string>());
+            if (parsed >= 0)
+                e.actionKind = static_cast<uint8_t>(parsed);
+        }
+        e.happinessRestore = static_cast<int8_t>(
+            je.value("happinessRestore", 0));
+        if (je.contains("requiresPet")) {
+            const auto& v = je["requiresPet"];
+            if (v.is_boolean())
+                e.requiresPet = v.get<bool>() ? 1 : 0;
+            else if (v.is_number_integer())
+                e.requiresPet = static_cast<uint8_t>(
+                    v.get<int>() != 0 ? 1 : 0);
+        }
+        if (je.contains("requiresStableNPC")) {
+            const auto& v = je["requiresStableNPC"];
+            if (v.is_boolean())
+                e.requiresStableNPC = v.get<bool>() ? 1 : 0;
+            else if (v.is_number_integer())
+                e.requiresStableNPC = static_cast<uint8_t>(
+                    v.get<int>() != 0 ? 1 : 0);
+        }
+        e.costCopper = je.value("costCopper", 0u);
+        e.reagentItemId = je.value("reagentItemId", 0u);
+        e.castTimeMs = je.value("castTimeMs", 0u);
+        e.cooldownSec = je.value("cooldownSec", 0u);
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweePetCareLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wpcr-json: failed to save %s.wpcr\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wpcr (%zu actions)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -280,6 +450,12 @@ bool handlePetCareCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wpcr") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wpcr-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wpcr-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
