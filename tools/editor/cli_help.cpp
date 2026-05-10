@@ -1147,6 +1147,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSEA entries (id / kind / duration / recurrence / xp bonus / token reward / name)\n");
     std::printf("  --validate-wsea <wsea-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, kind in 0..6, duration>0, no overlapping recurrence\n");
+    std::printf("  --export-wsea-json <wsea-base> [out.json]\n");
+    std::printf("                         Export binary .wsea to a human-editable JSON sidecar (defaults to <base>.wsea.json)\n");
+    std::printf("  --import-wsea-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsea.json sidecar back into binary .wsea (accepts kind/faction int OR name forms)\n");
     std::printf("  --gen-mounts <wmou-base> [name]\n");
     std::printf("                         Emit .wmou starter: 3 mounts (Brown Horse / Swift Gryphon / Riding Turtle) covering ground/flying/aquatic\n");
     std::printf("  --gen-mounts-racial <wmou-base> [name]\n");

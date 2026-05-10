@@ -128,6 +128,147 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each event emits all 11 scalar fields
+    // plus dual int + name forms for holidayKind and
+    // factionGroup.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWseaExt(base);
+    if (outPath.empty()) outPath = base + ".wsea.json";
+    if (!wowee::pipeline::WoweeEventLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wsea-json: WSEA not found: %s.wsea\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeEventLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"eventId", e.eventId},
+            {"name", e.name},
+            {"description", e.description},
+            {"iconPath", e.iconPath},
+            {"announceMessage", e.announceMessage},
+            {"startDate", e.startDate},
+            {"duration_seconds", e.duration_seconds},
+            {"recurrenceDays", e.recurrenceDays},
+            {"holidayKind", e.holidayKind},
+            {"holidayKindName", wowee::pipeline::WoweeEvent::holidayKindName(e.holidayKind)},
+            {"factionGroup", e.factionGroup},
+            {"factionGroupName", wowee::pipeline::WoweeEvent::factionGroupName(e.factionGroup)},
+            {"bonusXpPercent", e.bonusXpPercent},
+            {"tokenIdReward", e.tokenIdReward},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wsea-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wsea\n", base.c_str());
+    std::printf("  events : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wsea.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWseaExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wsea-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wsea-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "combat")      return wowee::pipeline::WoweeEvent::Combat;
+        if (s == "collection")  return wowee::pipeline::WoweeEvent::Collection;
+        if (s == "racial")      return wowee::pipeline::WoweeEvent::Racial;
+        if (s == "anniversary") return wowee::pipeline::WoweeEvent::Anniversary;
+        if (s == "fishing")     return wowee::pipeline::WoweeEvent::Fishing;
+        if (s == "cosmetic")    return wowee::pipeline::WoweeEvent::Cosmetic;
+        if (s == "world-event") return wowee::pipeline::WoweeEvent::WorldEvent;
+        return wowee::pipeline::WoweeEvent::Combat;
+    };
+    auto factionFromName = [](const std::string& s) -> uint8_t {
+        if (s == "both")     return wowee::pipeline::WoweeEvent::FactionBoth;
+        if (s == "alliance") return wowee::pipeline::WoweeEvent::FactionAlliance;
+        if (s == "horde")    return wowee::pipeline::WoweeEvent::FactionHorde;
+        return wowee::pipeline::WoweeEvent::FactionBoth;
+    };
+    wowee::pipeline::WoweeEvent c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeEvent::Entry e;
+            e.eventId = je.value("eventId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            e.announceMessage = je.value("announceMessage", std::string{});
+            e.startDate = je.value("startDate", static_cast<uint64_t>(0));
+            e.duration_seconds = je.value("duration_seconds", 0u);
+            e.recurrenceDays = static_cast<uint16_t>(
+                je.value("recurrenceDays", 0));
+            if (je.contains("holidayKind") && je["holidayKind"].is_number_integer()) {
+                e.holidayKind = static_cast<uint8_t>(je["holidayKind"].get<int>());
+            } else if (je.contains("holidayKindName") &&
+                       je["holidayKindName"].is_string()) {
+                e.holidayKind = kindFromName(je["holidayKindName"].get<std::string>());
+            }
+            if (je.contains("factionGroup") && je["factionGroup"].is_number_integer()) {
+                e.factionGroup = static_cast<uint8_t>(je["factionGroup"].get<int>());
+            } else if (je.contains("factionGroupName") &&
+                       je["factionGroupName"].is_string()) {
+                e.factionGroup = factionFromName(je["factionGroupName"].get<std::string>());
+            }
+            e.bonusXpPercent = static_cast<uint8_t>(
+                je.value("bonusXpPercent", 0));
+            e.tokenIdReward = je.value("tokenIdReward", 0u);
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeEventLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wsea-json: failed to save %s.wsea\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wsea\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  events : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -226,6 +367,12 @@ bool handleEventsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wsea") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wsea-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wsea-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
