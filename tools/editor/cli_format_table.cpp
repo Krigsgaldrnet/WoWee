@@ -145,6 +145,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','B','R','D'}, ".wbrd",  "pvp",       "--info-wbrd",      "Battleground reward stages catalog"},
     {{'W','S','W','P'}, ".wswp",  "audio",     "--info-wswp",      "Sound swap rules catalog"},
     {{'W','T','U','R'}, ".wtur",  "ui",        "--info-wtur",      "Tutorial steps catalog"},
+    {{'W','C','M','D'}, ".wcmd",  "chat",      "--info-wcmd",      "Chat slash command catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

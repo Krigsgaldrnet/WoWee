@@ -187,6 +187,7 @@
 #include "cli_battleground_rewards_catalog.hpp"
 #include "cli_sound_swap_catalog.hpp"
 #include "cli_tutorial_steps_catalog.hpp"
+#include "cli_chat_commands_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -419,6 +420,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleBattlegroundRewardsCatalog,
     handleSoundSwapCatalog,
     handleTutorialStepsCatalog,
+    handleChatCommandsCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

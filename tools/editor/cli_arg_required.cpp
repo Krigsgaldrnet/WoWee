@@ -437,6 +437,8 @@ const char* const kArgRequired[] = {
     "--gen-tut-newbie", "--gen-tut-levelup", "--gen-tut-bg",
     "--info-wtur", "--validate-wtur",
     "--export-wtur-json", "--import-wtur-json",
+    "--gen-cmd-basic", "--gen-cmd-movement", "--gen-cmd-admin",
+    "--info-wcmd", "--validate-wcmd",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

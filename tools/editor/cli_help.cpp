@@ -2755,6 +2755,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtur to a human-editable JSON sidecar (defaults to <base>.wtur.json; emits triggerEvent as int + name string; multibyte strings preserved)\n");
     std::printf("  --import-wtur-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtur.json sidecar back into binary .wtur (triggerEvent int OR \"login\"/\"zoneenter\"/\"levelup\"/\"itempickup\"/\"skilltrain\" — round-trips title/body/target text byte-identical)\n");
+    std::printf("  --gen-cmd-basic <wcmd-base> [name]\n");
+    std::printf("                         Emit .wcmd 4 standard player Info commands (/who /played /time /ginfo) all at Player security level, no throttle\n");
+    std::printf("  --gen-cmd-movement <wcmd-base> [name]\n");
+    std::printf("                         Emit .wcmd 3 emote-style Movement commands (/sit /stand /sleep) with short aliases\n");
+    std::printf("  --gen-cmd-admin <wcmd-base> [name]\n");
+    std::printf("                         Emit .wcmd 3 GameMaster-only Admin commands (/announce 5s throttle / /kick 2s throttle / /ban 10s throttle) demonstrating per-command rate-limiting\n");
+    std::printf("  --info-wcmd <wcmd-base> [--json]\n");
+    std::printf("                         Print WCMD entries (id / /command / minSecurityLevel / category / hidden / throttleMs / aliases count / argSchema)\n");
+    std::printf("  --validate-wcmd <wcmd-base> [--json]\n");
+    std::printf("                         Static checks: id+command required, minSecurityLevel 0..4, category 0..4, no duplicate cmdIds; CRITICAL: command names + aliases share one flat namespace (chat parser dispatches uniformly) — duplicate name across canonical+aliases errors. Warns on uppercase chars (parser is case-insensitive but convention is canonical lowercase), Admin-category command at Player/Helper security (likely security misconfiguration), throttleMs > 60000 (likely ms-vs-s units typo), self-alias (canonical already matches), and empty helpText (/help would show no description)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

@@ -167,6 +167,7 @@ constexpr FormatRow kFormats[] = {
     {"WBRD", ".wbrd",  "pvp",       "BattlemasterList.dbc + BattlegroundMgr","Battleground reward stages catalog (per-bracket honor + marks)"},
     {"WSWP", ".wswp",  "audio",     "(absent in vanilla — patch-level edits)","Sound swap rules catalog (priority + condition-gated substitution)"},
     {"WTUR", ".wtur",  "ui",        "TutorialFrame.xml + Tutorial.lua",    "Tutorial steps catalog (event-triggered first-time-player popup sequences)"},
+    {"WCMD", ".wcmd",  "chat",      "ChatFrame.lua + per-command CommandHandler","Chat slash command catalog (security-gated registry + aliases + throttle)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
