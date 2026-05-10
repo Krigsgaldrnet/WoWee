@@ -2191,6 +2191,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WBAB entries (id / spellId / classMask / target mask / stat kind / rank / amount / duration / prev+next rank ids / name)\n");
     std::printf("  --validate-wbab <wbab-base> [--json]\n");
     std::printf("                         Static checks: id+name+spellId+castClassMask+targetTypeMask required, statBonusKind 0..9 OR 255, no duplicate ids, no self-referencing rank edges, all next/prev IDs resolve to existing entries, AND back-edges symmetric (A.next=B implies B.prev=A); warns on rank=0, maxStackCount=0\n");
+    std::printf("  --export-wbab-json <wbab-base> [out.json]\n");
+    std::printf("                         Export binary .wbab to a human-editable JSON sidecar (defaults to <base>.wbab.json; emits statBonusKind as int+name and targetTypeMask as both int AND \"self+party+raid\" join string)\n");
+    std::printf("  --import-wbab-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wbab.json sidecar back into binary .wbab (statBonusKind int OR \"stamina\"/\"intellect\"/\"spirit\"/\"allstats\"/\"armor\"/\"spellpower\"/\"attackpower\"/\"critrating\"/\"hasterating\"/\"manaregen\"/\"other\"; targetTypeMask int OR \"+\"-joined tokens \"self\"/\"party\"/\"raid\"/\"friendly\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
