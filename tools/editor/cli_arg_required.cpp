@@ -147,6 +147,8 @@ const char* const kArgRequired[] = {
     "--gen-pcn", "--gen-pcn-quest-gates", "--gen-pcn-composite",
     "--info-wpcn", "--validate-wpcn",
     "--export-wpcn-json", "--import-wpcn-json",
+    "--gen-tsk", "--gen-tsk-blacksmithing", "--gen-tsk-alchemy",
+    "--info-wtsk", "--validate-wtsk",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

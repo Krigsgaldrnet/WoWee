@@ -1411,6 +1411,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wpcn to a human-editable JSON sidecar (defaults to <base>.wpcn.json)\n");
     std::printf("  --import-wpcn-json <json-path> [out-base]\n");
     std::printf("                         Import a .wpcn.json sidecar back into binary .wpcn (accepts conditionKind/comparisonOp/chainOp int OR name string)\n");
+    std::printf("  --gen-tsk <wtsk-base> [name]\n");
+    std::printf("                         Emit .wtsk starter: 3 entry-tier recipes (Coarse Sharpening Stone / Linen Bandage / Minor Healing Potion)\n");
+    std::printf("  --gen-tsk-blacksmithing <wtsk-base> [name]\n");
+    std::printf("                         Emit .wtsk 5-recipe Blacksmithing progression (rough sharpening → truesilver champion plate)\n");
+    std::printf("  --gen-tsk-alchemy <wtsk-base> [name]\n");
+    std::printf("                         Emit .wtsk 5-recipe Alchemy progression (minor healing → flask of titans) with reagent slots\n");
+    std::printf("  --info-wtsk <wtsk-base> [--json]\n");
+    std::printf("                         Print WTSK entries (id / profession / 4 skill brackets / craft spell / produced item / qty / tool / reagent count / name)\n");
+    std::printf("  --validate-wtsk <wtsk-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name not empty, profession 0..13, craft spell + produced item required, monotonic skill brackets\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
