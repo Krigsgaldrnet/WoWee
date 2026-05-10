@@ -2471,6 +2471,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPRG entries (id / faction / tier / weekly RP / lifetime RP / gear / title / name)\n");
     std::printf("  --validate-wprg <wprg-base> [--json]\n");
     std::printf("                         Static checks: id+name required, factionFilter 1=Alliance OR 2=Horde, tier 1..14 (vanilla ladder), no duplicate rankIds, no two ranks at same (faction, tier) tuple (runtime lookup tie); warns on empty titlePrefix, per-faction honor threshold non-monotonic (higher tier should require more honor)\n");
+    std::printf("  --export-wprg-json <wprg-base> [out.json]\n");
+    std::printf("                         Export binary .wprg to a human-editable JSON sidecar (defaults to <base>.wprg.json; emits factionFilter as both int AND name string)\n");
+    std::printf("  --import-wprg-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wprg.json sidecar back into binary .wprg (factionFilter int OR \"alliance\"/\"horde\"; titlePrefix as plain string)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
