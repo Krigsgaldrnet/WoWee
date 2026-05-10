@@ -2097,6 +2097,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wact to a human-editable JSON sidecar (defaults to <base>.wact.json)\n");
     std::printf("  --import-wact-json <json-path> [out-base]\n");
     std::printf("                         Import a .wact.json sidecar back into binary .wact (accepts barMode int OR barModeName string)\n");
+    std::printf("  --gen-grp <wgrp-base> [name]\n");
+    std::printf("                         Emit .wgrp 3 5-man comps (Classic 1T/1H/3D, Heavy-Heal 1T/2H/2D, Roleless 5D speed run)\n");
+    std::printf("  --gen-grp-raid10 <wgrp-base> [name]\n");
+    std::printf("                         Emit .wgrp 3 10-man raid comps (Standard 2T/3H/5D, HealingHeavy 2T/4H/4D, MeleeStack 1T/2H/7D for melee-cleave fights)\n");
+    std::printf("  --gen-grp-raid25 <wgrp-base> [name]\n");
+    std::printf("                         Emit .wgrp 3 25-man raid comps (Standard 2T/6H/17D, HealingHeavy 1T/8H/16D, ZergDPS 0T/4H/21D)\n");
+    std::printf("  --info-wgrp <wgrp-base>\n");
+    std::printf("                         Print WGRP entries (id / map / diff / required tanks/heals/dps / min/max party / spec gate / name)\n");
+    std::printf("  --validate-wgrp <wgrp-base>\n");
+    std::printf("                         Static checks: id+name+mapId required, min<=max, role sum<=maxParty (else unfulfillable), no duplicate ids; warns on non-standard size, role sum<minParty, requiredTanks=0 (tank-immune fights)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

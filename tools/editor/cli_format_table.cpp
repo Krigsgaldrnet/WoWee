@@ -98,6 +98,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','S','T','C'}, ".wstc",  "pets",      "--info-wstc",      "Hunter stable slot catalog"},
     {{'W','S','T','M'}, ".wstm",  "stats",     "--info-wstm",      "Stat modifier curve catalog"},
     {{'W','A','C','T'}, ".wact",  "ui",        "--info-wact",      "Action bar layout catalog"},
+    {{'W','G','R','P'}, ".wgrp",  "social",    "--info-wgrp",      "Group composition catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

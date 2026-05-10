@@ -140,6 +140,7 @@
 #include "cli_stable_slots_catalog.hpp"
 #include "cli_stat_curves_catalog.hpp"
 #include "cli_action_bars_catalog.hpp"
+#include "cli_group_compositions_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -321,6 +322,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleStableSlotsCatalog,
     handleStatCurvesCatalog,
     handleActionBarsCatalog,
+    handleGroupCompositionsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
