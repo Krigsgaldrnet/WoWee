@@ -156,6 +156,7 @@ const char* const kArgRequired[] = {
     "--export-wceq-json", "--import-wceq-json",
     "--gen-itset", "--gen-itset-tier", "--gen-itset-pvp",
     "--info-wset", "--validate-wset",
+    "--export-wset-json", "--import-wset-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

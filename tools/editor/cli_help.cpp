@@ -1451,6 +1451,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSET entries (id / pieces / bonuses / classMask / skill+rank gates / first item ID / name)\n");
     std::printf("  --validate-wset <wset-base> [--json]\n");
     std::printf("                         Static checks: id+name+pieceCount required, piece/bonus arrays match counts, monotonic bonus thresholds within pieceCount\n");
+    std::printf("  --export-wset-json <wset-base> [out.json]\n");
+    std::printf("                         Export binary .wset to a human-editable JSON sidecar with nested itemIds[] + bonuses[] arrays\n");
+    std::printf("  --import-wset-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wset.json sidecar back into binary .wset (pieceCount/bonusCount derived from array sizes; missing slots cleared)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
