@@ -1555,6 +1555,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMAC entries (id / kind / classMask / bindKey / maxLen / body length / name)\n");
     std::printf("  --validate-wmac <wmac-base> [--json]\n");
     std::printf("                         Static checks: id+name+body required, kind 0..4, body within maxLength, body starts with '/' or '#', SystemSlash + classMask warning\n");
+    std::printf("  --export-wmac-json <wmac-base> [out.json]\n");
+    std::printf("                         Export binary .wmac to a human-editable JSON sidecar (defaults to <base>.wmac.json; multi-line bodies escape \\n)\n");
+    std::printf("  --import-wmac-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wmac.json sidecar back into binary .wmac (accepts macroKind int OR name string; maxLength defaults to 255)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

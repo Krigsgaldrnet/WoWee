@@ -123,6 +123,133 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each macro emits all 8 scalar fields
+    // plus a dual int + name form for macroKind. The
+    // macroBody string is dumped verbatim — multi-line
+    // bodies preserve '\n' as JSON-escape sequences which
+    // most editors render readably.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWmacExt(base);
+    if (outPath.empty()) outPath = base + ".wmac.json";
+    if (!wowee::pipeline::WoweeMacroLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wmac-json: WMAC not found: %s.wmac\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeMacroLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"macroId", e.macroId},
+            {"name", e.name},
+            {"description", e.description},
+            {"iconPath", e.iconPath},
+            {"macroBody", e.macroBody},
+            {"bindKey", e.bindKey},
+            {"macroKind", e.macroKind},
+            {"macroKindName", wowee::pipeline::WoweeMacro::macroKindName(e.macroKind)},
+            {"requiredClassMask", e.requiredClassMask},
+            {"maxLength", e.maxLength},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wmac-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wmac\n", base.c_str());
+    std::printf("  macros : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wmac.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWmacExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wmac-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wmac-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "system-slash")    return wowee::pipeline::WoweeMacro::SystemSlash;
+        if (s == "default-macro")   return wowee::pipeline::WoweeMacro::DefaultMacro;
+        if (s == "player-template") return wowee::pipeline::WoweeMacro::PlayerTemplate;
+        if (s == "guild-macro")     return wowee::pipeline::WoweeMacro::GuildMacro;
+        if (s == "shared-macro")    return wowee::pipeline::WoweeMacro::SharedMacro;
+        return wowee::pipeline::WoweeMacro::SystemSlash;
+    };
+    wowee::pipeline::WoweeMacro c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeMacro::Entry e;
+            e.macroId = je.value("macroId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            e.macroBody = je.value("macroBody", std::string{});
+            e.bindKey = je.value("bindKey", std::string{});
+            if (je.contains("macroKind") &&
+                je["macroKind"].is_number_integer()) {
+                e.macroKind = static_cast<uint8_t>(
+                    je["macroKind"].get<int>());
+            } else if (je.contains("macroKindName") &&
+                       je["macroKindName"].is_string()) {
+                e.macroKind = kindFromName(
+                    je["macroKindName"].get<std::string>());
+            }
+            e.requiredClassMask = je.value("requiredClassMask", 0u);
+            // maxLength defaults to 255 (the WoW canonical UI
+            // cap) when omitted.
+            e.maxLength = static_cast<uint16_t>(
+                je.value("maxLength", 255));
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeMacroLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wmac-json: failed to save %s.wmac\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wmac\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  macros : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -234,6 +361,12 @@ bool handleMacrosCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wmac") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wmac-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wmac-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
