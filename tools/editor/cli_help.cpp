@@ -1217,6 +1217,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGLD entries (id / faction / level / leader + motd / rank+member+tab+perk counts)\n");
     std::printf("  --validate-wgld <wgld-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name+leader not empty, faction 0..1, members reference valid ranks, unique tab indices\n");
+    std::printf("  --gen-conditions <wpcd-base> [name]\n");
+    std::printf("                         Emit .wpcd starter: 4 conditions covering quest-done / has-item / min-level / class kinds\n");
+    std::printf("  --gen-conditions-gated <wpcd-base> [name]\n");
+    std::printf("                         Emit .wpcd 5 conditions in 2 groups (group 100 AND alliance+mage+lvl60; group 200 OR did-quest-1/100)\n");
+    std::printf("  --gen-conditions-event <wpcd-base> [name]\n");
+    std::printf("                         Emit .wpcd 3 event-gated conditions referencing WSEA event IDs (Hallow's End / Brewfest / Winter's Veil)\n");
+    std::printf("  --info-wpcd <wpcd-base> [--json]\n");
+    std::printf("                         Print WPCD entries (id / group / kind / aggregator / negated / target / min..max value / name)\n");
+    std::printf("  --validate-wpcd <wpcd-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, kind in 0..16, aggregator 0..1, kinds that need targetId have non-zero target\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

@@ -106,6 +106,8 @@ const char* const kArgRequired[] = {
     "--export-wgem-json", "--import-wgem-json",
     "--gen-guilds", "--gen-guilds-full", "--gen-guilds-pair",
     "--info-wgld", "--validate-wgld",
+    "--gen-conditions", "--gen-conditions-gated", "--gen-conditions-event",
+    "--info-wpcd", "--validate-wpcd",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
