@@ -2139,6 +2139,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wscb to a human-editable JSON sidecar (defaults to <base>.wscb.json; emits both channelKind/factionFilter ints AND name strings)\n");
     std::printf("  --import-wscb-json <json-path> [out-base]\n");
     std::printf("                         Import a .wscb.json sidecar back into binary .wscb (channelKind int OR \"login\"/\"system\"/\"raidwarning\"/\"motd\"/\"helptip\"; factionFilter int OR \"alliance\"/\"horde\"/\"both\")\n");
+    std::printf("  --gen-cmg <wcmg-base> [name]\n");
+    std::printf("                         Emit .wcmg 1 Warrior 3-stance mutex group (Battle / Defensive / Berserker)\n");
+    std::printf("  --gen-cmg-druid <wcmg-base> [name]\n");
+    std::printf("                         Emit .wcmg 2 Druid mutex groups (5 ground shapeshift forms + 2 flight forms — separate buckets so flight isn't broken by Cat Form)\n");
+    std::printf("  --gen-cmg-all <wcmg-base> [name]\n");
+    std::printf("                         Emit .wcmg 4 cross-class mutex groups (Warrior stances + Hunter aspects + DK presences + Druid forms — one representative group per mutex-having class)\n");
+    std::printf("  --info-wcmg <wcmg-base> [--json]\n");
+    std::printf("                         Print WCMG entries (id / classMask / category / exclusive / member count / name) plus per-group spell ID list\n");
+    std::printf("  --validate-wcmg <wcmg-base> [--json]\n");
+    std::printf("                         Static checks: id+name+classMask required, categoryKind 0..5, members[] non-empty, no duplicate spellIds within a group, no duplicate groupIds, no spellId in two exclusive groups (undecidable mutex); warns on single-member groups\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
