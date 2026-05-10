@@ -330,6 +330,8 @@ const char* const kArgRequired[] = {
     "--export-wcre-json", "--import-wcre-json",
     "--gen-ptt", "--gen-ptt-cunning", "--gen-ptt-tenacity",
     "--info-wptt", "--validate-wptt",
+    "--gen-hrd", "--gen-hrd-raid25", "--gen-hrd-cm",
+    "--info-whrd", "--validate-whrd",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

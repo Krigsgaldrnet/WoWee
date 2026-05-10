@@ -152,6 +152,7 @@
 #include "cli_learning_notifications_catalog.hpp"
 #include "cli_creature_resists_catalog.hpp"
 #include "cli_pet_talents_catalog.hpp"
+#include "cli_heroic_scaling_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -348,6 +349,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleLearningNotificationsCatalog,
     handleCreatureResistsCatalog,
     handlePetTalentsCatalog,
+    handleHeroicScalingCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

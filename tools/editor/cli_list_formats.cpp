@@ -132,6 +132,7 @@ constexpr FormatRow kFormats[] = {
     {"WLDN", ".wldn",  "server",    "TutorialPopup + LevelMilestone msgs","Learning notification catalog (level-up milestones)"},
     {"WCRE", ".wcre",  "creatures", "creature_template resist + immunity","Creature resist + CC-immunity profile catalog"},
     {"WPTT", ".wptt",  "pets",      "PetTalent.dbc + PetTalentTab.dbc",   "Hunter pet talent tree catalog (3 trees, grid+graph)"},
+    {"WHRD", ".whrd",  "raid",      "implicit Heroic-mode loot scaling",  "Heroic loot scaling catalog (per instance+difficulty)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

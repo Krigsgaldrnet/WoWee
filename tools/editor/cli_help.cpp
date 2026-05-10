@@ -2261,6 +2261,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPTT entries (id / tree / tier / column / max ranks / prereq talentId / loyalty req / name) plus per-talent rank-spell IDs\n");
     std::printf("  --validate-wptt <wptt-base> [--json]\n");
     std::printf("                         Static checks: id+name required, treeKind 0..2, tier 0..6, column 0..2, maxRank 1..5, no duplicate talentIds, no two talents in same (tree,tier,col) cell, no self-referencing prereqs, prereqs resolve to existing entries IN SAME TREE at EARLIER TIER, spellIdsByRank.size() == maxRank, no zero-spell-id within array\n");
+    std::printf("  --gen-hrd <whrd-base> [name]\n");
+    std::printf("                         Emit .whrd 5 WotLK 5-man Heroic scalings (Utgarde Keep / Nexus / Azjol-Nerub / Ahn'kahet / Drak'Tharon — +13 ilvl, 2x Emblem of Heroism)\n");
+    std::printf("  --gen-hrd-raid25 <whrd-base> [name]\n");
+    std::printf("                         Emit .whrd 4 WotLK 25H raid scalings (Naxx +13 / EoE +13 / Ulduar +26 / ICC +26 ilvl, 1.5x rare drop chance, +1 Emblem of Conquest/Triumph/Frost)\n");
+    std::printf("  --gen-hrd-cm <whrd-base> [name]\n");
+    std::printf("                         Emit .whrd 3 challenge-mode tier scalings (Bronze +13/Silver +20/Gold +26 ilvl) — anachronistic for WotLK but useful template for custom-server backports\n");
+    std::printf("  --info-whrd <whrd-base> [--json]\n");
+    std::printf("                         Print WHRD entries (id / map / difficulty / +ilvl / bonus quality %% / drop multiplier / token id / extra emblems / name)\n");
+    std::printf("  --validate-whrd <whrd-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, difficultyId>0 (Normal=0 by convention), bonusQualityChance<=10000 basis points, dropChanceMultiplier>0, no duplicate scalingIds, no two scalings binding the same (mapId,difficultyId) tuple unless mapId=0 wildcard; warns on negative ilvlDelta (Heroic worse than Normal?), ilvl>50 (beyond canonical range), drop multiplier>10x\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
