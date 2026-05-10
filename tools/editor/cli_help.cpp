@@ -1895,6 +1895,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wacr to a human-editable JSON sidecar (defaults to <base>.wacr.json)\n");
     std::printf("  --import-wacr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wacr.json sidecar back into binary .wacr (accepts criteriaType int 0..12 OR criteriaTypeName string)\n");
+    std::printf("  --gen-sef <wsef-base> [name]\n");
+    std::printf("                         Emit .wsef 5 damage effect entries (SchoolDamage / EnvironmentalDamage / WeaponDamageNoSchool / NormalizedWeaponDmg / PowerBurn)\n");
+    std::printf("  --gen-sef-healing <wsef-base> [name]\n");
+    std::printf("                         Emit .wsef 4 healing effects (Heal / HealMaxHealth / HealPct / ScriptedHeal) all flagged IsBeneficialEffect\n");
+    std::printf("  --gen-sef-aura <wsef-base> [name]\n");
+    std::printf("                         Emit .wsef 5 aura-application effects (ApplyAura / ApplyAuraOnPet / AreaAuraParty / AreaAuraOwner / PersistentAreaAura)\n");
+    std::printf("  --info-wsef <wsef-base> [--json]\n");
+    std::printf("                         Print WSEF entries (id / kind / baseAmount / behavior flags / name) — flags decoded as label list\n");
+    std::printf("  --validate-wsef <wsef-base> [--json]\n");
+    std::printf("                         Static checks: name required, effectKind 0..9, no duplicate ids; warns on Hostile+Beneficial conflict, Damage without TriggersGCD, Heal without IsBeneficialEffect\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
