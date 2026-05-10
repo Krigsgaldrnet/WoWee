@@ -2363,6 +2363,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wvox to a human-editable JSON sidecar (defaults to <base>.wvox.json; emits eventKind and genderHint as both int AND name string; transcript as plain string for accessibility editing)\n");
     std::printf("  --import-wvox-json <json-path> [out-base]\n");
     std::printf("                         Import a .wvox.json sidecar back into binary .wvox (eventKind int OR \"greeting\"/\"aggro\"/\"death\"/\"queststart\"/\"questprogress\"/\"questcomplete\"/\"goodbye\"/\"special\"/\"phase\"; genderHint int OR \"male\"/\"female\"/\"both\"; volumeDb is signed int8)\n");
+    std::printf("  --gen-trd <wtrd-base> [name]\n");
+    std::printf("                         Emit .wtrd 4 standard trade rules (Soulbound Forbidden / Quest items Forbidden / 2hr SoulboundException for raid drops / SameFactionOnly default)\n");
+    std::printf("  --gen-trd-admin <wtrd-base> [name]\n");
+    std::printf("                         Emit .wtrd 3 server-admin trade rules (GM-only escrow / AccountBound own-character transfer / CrossFactionAllowed at level 80 for custom servers)\n");
+    std::printf("  --gen-trd-rmt <wtrd-base> [name]\n");
+    std::printf("                         Emit .wtrd 4 anti-RMT trade rules (LowLevelGoldCap 10g / NewAccountValueCap 500g for accounts <30 days / HighValueAuditLog for trades >1000g / FirstTradeMandatoryDelay 24hr)\n");
+    std::printf("  --info-wtrd <wtrd-base> [--json]\n");
+    std::printf("                         Print WTRD entries (id / ruleKind / targetingFilter / level requirement / priority / category bitmask / gold cap / name)\n");
+    std::printf("  --validate-wtrd <wtrd-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, ruleKind 0..6, targetingFilter 0..4, no duplicate ruleIds, GoldEscrowMax kind requires goldEscrowMaxCopper > 0 (else self-contradicting); warns on levelRequirement > 80 (exceeds cap), GMOnly targeting with priority < 50 (would be overridden by player rules)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

@@ -703,6 +703,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_movie_credits.cpp
     src/pipeline/wowee_spell_variants.cpp
     src/pipeline/wowee_voiceovers.cpp
+    src/pipeline/wowee_trade_rules.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1569,6 +1570,7 @@ add_executable(wowee_editor
     tools/editor/cli_movie_credits_catalog.cpp
     tools/editor/cli_spell_variants_catalog.cpp
     tools/editor/cli_voiceovers_catalog.cpp
+    tools/editor/cli_trade_rules_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
     tools/editor/cli_catalog_by_name.cpp
@@ -1754,6 +1756,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_movie_credits.cpp
     src/pipeline/wowee_spell_variants.cpp
     src/pipeline/wowee_voiceovers.cpp
+    src/pipeline/wowee_trade_rules.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

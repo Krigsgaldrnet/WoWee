@@ -159,6 +159,7 @@
 #include "cli_movie_credits_catalog.hpp"
 #include "cli_spell_variants_catalog.hpp"
 #include "cli_voiceovers_catalog.hpp"
+#include "cli_trade_rules_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -363,6 +364,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleMovieCreditsCatalog,
     handleSpellVariantsCatalog,
     handleVoiceoversCatalog,
+    handleTradeRulesCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,
