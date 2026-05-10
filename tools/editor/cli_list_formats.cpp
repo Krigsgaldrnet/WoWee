@@ -161,6 +161,7 @@ constexpr FormatRow kFormats[] = {
     {"WLOC", ".wloc",  "world",     "AreaPOI + GO spawns + AreaTrigger.dbc","World locations catalog (POI/RareSpawn/HerbNode/MineralVein/FishingSpot/Trigger/PortalLand)"},
     {"WBND", ".wbnd",  "loot",      "ItemTemplate.bondingType + LootMgr",  "Soulbind rules catalog (BoP/BoE/BoU/BoA + raid-trade window)"},
     {"WBHV", ".wbhv",  "ai",        "creature_template.AIName + ScriptMgr","Creature behavior catalog (combat AI archetypes + special abilities)"},
+    {"WIRC", ".wirc",  "loot",      "ItemRandomProperties.dbc + LootMgr",  "Item random-property pool catalog (weighted suffix enchants)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

@@ -2671,6 +2671,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wbhv to a human-editable JSON sidecar (defaults to <base>.wbhv.json; emits both creatureKind and evadeBehavior as int + name string; specialAbilities as JSON object array of {spellId, cooldownMs, useChancePct})\n");
     std::printf("  --import-wbhv-json <json-path> [out-base]\n");
     std::printf("                         Import a .wbhv.json sidecar back into binary .wbhv (creatureKind int OR \"melee\"/\"caster\"/\"tank\"/\"healer\"/\"pet\"/\"beast\"; evadeBehavior int OR \"resettospawn\"/\"healatpath\"/\"fleetospawn\"/\"noevade\"; specialAbilities accept JSON object array — round-trips per-behavior variable-length ability lists byte-identical)\n");
+    std::printf("  --gen-irc-bear <wirc-base> [name]\n");
+    std::printf("                         Emit .wirc 'of the Bear' STA-suffix pool for plate slots (Helm/Chest/Leg/Boot) with 4 weighted +Sta enchants (3/5/7/10), Warrior+Paladin+DK class mask\n");
+    std::printf("  --gen-irc-eagle <wirc-base> [name]\n");
+    std::printf("                         Emit .wirc 'of the Eagle' INT+STA caster pool for cloth slots with 5 weighted +Int+Sta enchants (3/5/7/10/12), Mage+Priest+Warlock class mask\n");
+    std::printf("  --gen-irc-tiger <wirc-base> [name]\n");
+    std::printf("                         Emit .wirc 'of the Tiger' STR+AGI hybrid pool for leather slots with 5 weighted enchants (3/5/7/10/12), Rogue+Hunter+Druid class mask\n");
+    std::printf("  --info-wirc <wirc-base> [--json]\n");
+    std::printf("                         Print WIRC entries (poolId / scaleLevel / allowedSlots-mask-as-string / classes-bitmask / totalWeight / enchant count / name)\n");
+    std::printf("  --validate-wirc <wirc-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, allowedSlotsMask != 0 (else pool is unreachable — no slot would ever roll it), non-empty enchant array (loot generator needs something to pick), no zero-id enchants, no duplicate enchantIds within same pool (should be merged with summed weight), no duplicate poolIds; CRITICAL: totalWeight MUST equal sum of enchant weights (else loot generator's denormalized roll mis-picks the distribution). Warns on enchant weight=0 (never picked, dead entry)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
