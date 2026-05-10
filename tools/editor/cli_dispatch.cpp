@@ -98,6 +98,7 @@
 #include "cli_pvp_catalog.hpp"
 #include "cli_bags_catalog.hpp"
 #include "cli_runes_catalog.hpp"
+#include "cli_loading_screens_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -237,6 +238,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handlePVPCatalog,
     handleBagsCatalog,
     handleRunesCatalog,
+    handleLoadingScreensCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

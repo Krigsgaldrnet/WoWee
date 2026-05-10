@@ -65,6 +65,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','P','V','P'}, ".wpvp",  "pvp",       "--info-wpvp",      "PvP honor rank + arena tier catalog"},
     {{'W','B','N','K'}, ".wbnk",  "items",     "--info-wbnk",      "Bag / bank slot catalog"},
     {{'W','R','U','N'}, ".wrun",  "spells",    "--info-wrun",      "Death Knight rune cost catalog"},
+    {{'W','L','D','S'}, ".wlds",  "ui",        "--info-wlds",      "Loading screen catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

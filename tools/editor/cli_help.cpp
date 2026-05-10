@@ -1615,6 +1615,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wrun to a human-editable JSON sidecar (defaults to <base>.wrun.json)\n");
     std::printf("  --import-wrun-json <json-path> [out-base]\n");
     std::printf("                         Import a .wrun.json sidecar back into binary .wrun (accepts spellTreeBranch int OR name string)\n");
+    std::printf("  --gen-lds <wlds-base> [name]\n");
+    std::printf("                         Emit .wlds starter: 3 base loading screens (Elwynn / Orgrimmar / GenericFallback catch-all)\n");
+    std::printf("  --gen-lds-instances <wlds-base> [name]\n");
+    std::printf("                         Emit .wlds 5 WotLK dungeon loading screens (Halls of Lightning / Stone / UP / Violet Hold / Old Kingdom)\n");
+    std::printf("  --gen-lds-raid <wlds-base> [name]\n");
+    std::printf("                         Emit .wlds 3 raid intro screens (Naxxramas / Ulduar / Trial of the Crusader) with isWideAspect=1\n");
+    std::printf("  --info-wlds <wlds-base> [--json]\n");
+    std::printf("                         Print WLDS entries (id / mapId / level range / display weight / expansion / animated+wide flags / name)\n");
+    std::printf("  --validate-wlds <wlds-base> [--json]\n");
+    std::printf("                         Static checks: id+name+texture required, expansion 0..3, level range valid, weight=0 warning, catch-all overlap\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
