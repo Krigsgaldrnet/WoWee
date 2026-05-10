@@ -2083,6 +2083,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wstm to a human-editable JSON sidecar (defaults to <base>.wstm.json)\n");
     std::printf("  --import-wstm-json <json-path> [out-base]\n");
     std::printf("                         Import a .wstm.json sidecar back into binary .wstm (accepts curveKind int OR curveKindName string)\n");
+    std::printf("  --gen-act <wact-base> [name]\n");
+    std::printf("                         Emit .wact 10 Warrior starter bindings on Main bar (Heroic Strike / Charge / Rend / Thunder Clap / Battle Shout / Sunder Armor / Mocking Blow / Hamstring / Overpower / Victory Rush)\n");
+    std::printf("  --gen-act-mage <wact-base> [name]\n");
+    std::printf("                         Emit .wact 10 Mage starter bindings on Main bar (Fireball / Frostbolt / Frost Nova / Polymorph / Mage Armor / Arcane Intellect / Counterspell / Blink / Fire Blast / Conjure Water)\n");
+    std::printf("  --gen-act-pet <wact-base> [name]\n");
+    std::printf("                         Emit .wact 10 Hunter pet-bar bindings on Pet bar mode (Attack / Follow / Stay / Aggressive / Defensive / Passive / Bite / Claw / Growl / Dismiss)\n");
+    std::printf("  --info-wact <wact-base> [--json]\n");
+    std::printf("                         Print WACT entries (id / classMask / barMode / buttonSlot / spellId / itemId / name)\n");
+    std::printf("  --validate-wact <wact-base> [--json]\n");
+    std::printf("                         Static checks: id+name+classMask required, barMode 0..6, no duplicate ids; warns on slot>143, both spellId+itemId set, both 0 (empty button), and (classMask+barMode+slot) collisions for overlapping classes\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

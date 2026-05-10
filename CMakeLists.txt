@@ -683,6 +683,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_instance_lockouts.cpp
     src/pipeline/wowee_stable_slots.cpp
     src/pipeline/wowee_stat_curves.cpp
+    src/pipeline/wowee_action_bars.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1529,6 +1530,7 @@ add_executable(wowee_editor
     tools/editor/cli_instance_lockouts_catalog.cpp
     tools/editor/cli_stable_slots_catalog.cpp
     tools/editor/cli_stat_curves_catalog.cpp
+    tools/editor/cli_action_bars_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1690,6 +1692,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_instance_lockouts.cpp
     src/pipeline/wowee_stable_slots.cpp
     src/pipeline/wowee_stat_curves.cpp
+    src/pipeline/wowee_action_bars.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

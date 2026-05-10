@@ -119,6 +119,7 @@ constexpr FormatRow kFormats[] = {
     {"WHLD", ".whld",  "raid",      "InstanceTemplate.dbc reset fields","Instance lockout schedule catalog"},
     {"WSTC", ".wstc",  "pets",      "stable_slot SQL + hunter UI",      "Hunter stable slot catalog"},
     {"WSTM", ".wstm",  "stats",     "gtChanceTo*.dbc + gtRegen*.dbc",   "Stat modifier curve catalog"},
+    {"WACT", ".wact",  "ui",        "Hardcoded class default action bar","Action bar layout catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
