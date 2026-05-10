@@ -1369,6 +1369,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Walk directory recursively and flag corrupted/misnamed Wowee files: too-small, unknown-magic, ext/magic mismatch, magic-without-ext, truncated headers. Exit 1 on any issue\n");
     std::printf("  --magic-fix <dir> [--apply] [--json]\n");
     std::printf("                         Auto-rename files whose extension doesn't match their magic to the canonical extension. Default is dry-run; pass --apply to commit. Skips collisions where the target already exists. Natural follow-up to --audit-tree\n");
+    std::printf("  --bulk-validate <dir> [--json]\n");
+    std::printf("                         Recursively run each format's --validate-X validator across every recognized .w* file. Reports per-file pass/fail counts; lists failure paths. Asset formats with no validator are skipped. Exit 1 if any failure\n");
     std::printf("  --gen-animations <wani-base> [name]\n");
     std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
     std::printf("  --gen-animations-combat <wani-base> [name]\n");
