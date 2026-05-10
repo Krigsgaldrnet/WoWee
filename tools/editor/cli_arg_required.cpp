@@ -205,6 +205,7 @@ const char* const kArgRequired[] = {
     "--export-wumv-json", "--import-wumv-json",
     "--gen-qso", "--gen-qso-class", "--gen-qso-profession",
     "--info-wqso", "--validate-wqso",
+    "--export-wqso-json", "--import-wqso-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
