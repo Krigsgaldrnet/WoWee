@@ -1431,6 +1431,7 @@ add_executable(wowee_editor
     tools/editor/cli_trade_skills_catalog.cpp
     tools/editor/cli_creature_equipment_catalog.cpp
     tools/editor/cli_item_sets_catalog.cpp
+    tools/editor/cli_touch_tree.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
