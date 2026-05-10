@@ -2219,6 +2219,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSPM entries (id / spell / radius / duration / tick interval / fade mode / stack-flag / destroy-on-cancel / name)\n");
     std::printf("  --validate-wspm <wspm-base> [--json]\n");
     std::printf("                         Static checks: id+name+spellId+texturePath required, radius>0, edgeFadeMode 0..2, no duplicate markerIds, no duplicate spellIds (spell-cast lookup ambiguity); warns on radius>100yd, tickIntervalMs<100ms (perf risk for stackable), decalColor alpha=0 (invisible)\n");
+    std::printf("  --export-wspm-json <wspm-base> [out.json]\n");
+    std::printf("                         Export binary .wspm to a human-editable JSON sidecar (defaults to <base>.wspm.json; emits edgeFadeMode as both int AND name string; radius+duration as floats; decalColor as 0xAARRGGBB uint32)\n");
+    std::printf("  --import-wspm-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wspm.json sidecar back into binary .wspm (edgeFadeMode int OR \"hard\"/\"softedge\"/\"pulse\"; stackable/destroyOnCancel bool OR int)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
