@@ -1349,6 +1349,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Import a .wliq.json sidecar back into binary .wliq (accepts liquidKind int OR name string)\n");
     std::printf("  --list-formats [--json]\n");
     std::printf("                         Print the catalog of all novel open formats (magic / extension / category / replaces / description)\n");
+    std::printf("  --info-magic <path> [--json]\n");
+    std::printf("                         Auto-detect any .w* file by 4-byte magic; report format / version / catalog name / entry count + suggest --info-* flag\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

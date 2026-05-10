@@ -134,6 +134,7 @@ const char* const kArgRequired[] = {
     "--gen-liquids", "--gen-liquids-magical", "--gen-liquids-hazardous",
     "--info-wliq", "--validate-wliq",
     "--export-wliq-json", "--import-wliq-json",
+    "--info-magic",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

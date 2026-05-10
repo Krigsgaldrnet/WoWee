@@ -74,6 +74,7 @@
 #include "cli_holidays_catalog.hpp"
 #include "cli_liquids_catalog.hpp"
 #include "cli_list_formats.hpp"
+#include "cli_info_magic.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -189,6 +190,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleHolidaysCatalog,
     handleLiquidsCatalog,
     handleListFormats,
+    handleInfoMagic,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

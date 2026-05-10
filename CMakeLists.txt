@@ -1413,6 +1413,7 @@ add_executable(wowee_editor
     tools/editor/cli_holidays_catalog.cpp
     tools/editor/cli_liquids_catalog.cpp
     tools/editor/cli_list_formats.cpp
+    tools/editor/cli_info_magic.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
