@@ -1457,6 +1457,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wset to a human-editable JSON sidecar with nested itemIds[] + bonuses[] arrays\n");
     std::printf("  --import-wset-json <json-path> [out-base]\n");
     std::printf("                         Import a .wset.json sidecar back into binary .wset (pieceCount/bonusCount derived from array sizes; missing slots cleared)\n");
+    std::printf("  --gen-tips <wgtp-base> [name]\n");
+    std::printf("                         Emit .wgtp starter: 3 generic loading-screen tips (combat / movement / quest hints) for kAudienceAll\n");
+    std::printf("  --gen-tips-new-player <wgtp-base> [name]\n");
+    std::printf("                         Emit .wgtp 5 onboarding tutorial tips (hearthstone / talents / mount / quest log / professions) for level 1-15\n");
+    std::printf("  --gen-tips-advanced <wgtp-base> [name]\n");
+    std::printf("                         Emit .wgtp 4 endgame tips (raid mechanics / arena / daily professions / dungeon finder) for level 70+\n");
+    std::printf("  --info-wgtp <wgtp-base> [--json]\n");
+    std::printf("                         Print WGTP entries (id / kind / audience mask / level range / weight / condition / classMask / name)\n");
+    std::printf("  --validate-wgtp <wgtp-base> [--json]\n");
+    std::printf("                         Static checks: id+name+text required, kind 0..3, audienceFilter>0, valid level range, brevity check on tutorial/hint kinds\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

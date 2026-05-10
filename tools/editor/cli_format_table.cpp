@@ -54,6 +54,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','T','S','K'}, ".wtsk",  "crafting",  "--info-wtsk",      "Trade skill recipe catalog"},
     {{'W','C','E','Q'}, ".wceq",  "creatures", "--info-wceq",      "Creature equipment loadout catalog"},
     {{'W','S','E','T'}, ".wset",  "items",     "--info-wset",      "Item set / tier-bonus catalog"},
+    {{'W','G','T','P'}, ".wgtp",  "ui",        "--info-wgtp",      "Game tips / tutorial catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

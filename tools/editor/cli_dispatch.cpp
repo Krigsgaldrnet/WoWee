@@ -85,6 +85,7 @@
 #include "cli_creature_equipment_catalog.hpp"
 #include "cli_item_sets_catalog.hpp"
 #include "cli_touch_tree.hpp"
+#include "cli_game_tips_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -211,6 +212,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleCreatureEquipmentCatalog,
     handleItemSetsCatalog,
     handleTouchTree,
+    handleGameTipsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

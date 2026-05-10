@@ -640,6 +640,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_trade_skills.cpp
     src/pipeline/wowee_creature_equipment.cpp
     src/pipeline/wowee_item_sets.cpp
+    src/pipeline/wowee_game_tips.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1432,6 +1433,7 @@ add_executable(wowee_editor
     tools/editor/cli_creature_equipment_catalog.cpp
     tools/editor/cli_item_sets_catalog.cpp
     tools/editor/cli_touch_tree.cpp
+    tools/editor/cli_game_tips_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1550,6 +1552,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_trade_skills.cpp
     src/pipeline/wowee_creature_equipment.cpp
     src/pipeline/wowee_item_sets.cpp
+    src/pipeline/wowee_game_tips.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
