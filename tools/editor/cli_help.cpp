@@ -1569,6 +1569,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCHF entries (id / race / sex / kind / variation / geoset bits / expansion / name)\n");
     std::printf("  --validate-wchf <wchf-base> [--json]\n");
     std::printf("                         Static checks: id+name+raceId+texturePath required, kind 0..8 / sex 0..1 / expansion 0..3, unique (race,sex,kind,variation) tuples\n");
+    std::printf("  --export-wchf-json <wchf-base> [out.json]\n");
+    std::printf("                         Export binary .wchf to a human-editable JSON sidecar (defaults to <base>.wchf.json)\n");
+    std::printf("  --import-wchf-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wchf.json sidecar back into binary .wchf (accepts featureKind/sexId/requiresExpansion int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

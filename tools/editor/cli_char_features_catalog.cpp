@@ -128,6 +128,166 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each feature emits all 9 scalar fields
+    // plus dual int + name forms for featureKind / sexId /
+    // requiresExpansion so hand-edits can use either.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWchfExt(base);
+    if (outPath.empty()) outPath = base + ".wchf.json";
+    if (!wowee::pipeline::WoweeCharFeatureLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wchf-json: WCHF not found: %s.wchf\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCharFeatureLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"featureId", e.featureId},
+            {"raceId", e.raceId},
+            {"name", e.name},
+            {"description", e.description},
+            {"texturePath", e.texturePath},
+            {"featureKind", e.featureKind},
+            {"featureKindName", wowee::pipeline::WoweeCharFeature::featureKindName(e.featureKind)},
+            {"sexId", e.sexId},
+            {"sexIdName", wowee::pipeline::WoweeCharFeature::sexIdName(e.sexId)},
+            {"variationIndex", e.variationIndex},
+            {"requiresExpansion", e.requiresExpansion},
+            {"requiresExpansionName", wowee::pipeline::WoweeCharFeature::expansionGateName(e.requiresExpansion)},
+            {"geosetGroupBits", e.geosetGroupBits},
+            {"hairColorOverlayId", e.hairColorOverlayId},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wchf-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source   : %s.wchf\n", base.c_str());
+    std::printf("  features : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wchf.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWchfExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wchf-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wchf-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "skin-color")   return wowee::pipeline::WoweeCharFeature::SkinColor;
+        if (s == "face")         return wowee::pipeline::WoweeCharFeature::FaceVariation;
+        if (s == "hair-style")   return wowee::pipeline::WoweeCharFeature::HairStyle;
+        if (s == "hair-color")   return wowee::pipeline::WoweeCharFeature::HairColor;
+        if (s == "facial-hair")  return wowee::pipeline::WoweeCharFeature::FacialHair;
+        if (s == "facial-color") return wowee::pipeline::WoweeCharFeature::FacialColor;
+        if (s == "ear-style")    return wowee::pipeline::WoweeCharFeature::EarStyle;
+        if (s == "horns")        return wowee::pipeline::WoweeCharFeature::Horns;
+        if (s == "markings")     return wowee::pipeline::WoweeCharFeature::Markings;
+        return wowee::pipeline::WoweeCharFeature::SkinColor;
+    };
+    auto sexFromName = [](const std::string& s) -> uint8_t {
+        if (s == "male")   return wowee::pipeline::WoweeCharFeature::Male;
+        if (s == "female") return wowee::pipeline::WoweeCharFeature::Female;
+        return wowee::pipeline::WoweeCharFeature::Male;
+    };
+    auto expansionFromName = [](const std::string& s) -> uint8_t {
+        if (s == "classic") return wowee::pipeline::WoweeCharFeature::Classic;
+        if (s == "tbc")     return wowee::pipeline::WoweeCharFeature::TBC;
+        if (s == "wotlk")   return wowee::pipeline::WoweeCharFeature::WotLK;
+        if (s == "turtle")  return wowee::pipeline::WoweeCharFeature::TurtleWoW;
+        return wowee::pipeline::WoweeCharFeature::Classic;
+    };
+    wowee::pipeline::WoweeCharFeature c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeCharFeature::Entry e;
+            e.featureId = je.value("featureId", 0u);
+            e.raceId = je.value("raceId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.texturePath = je.value("texturePath", std::string{});
+            if (je.contains("featureKind") &&
+                je["featureKind"].is_number_integer()) {
+                e.featureKind = static_cast<uint8_t>(
+                    je["featureKind"].get<int>());
+            } else if (je.contains("featureKindName") &&
+                       je["featureKindName"].is_string()) {
+                e.featureKind = kindFromName(
+                    je["featureKindName"].get<std::string>());
+            }
+            if (je.contains("sexId") &&
+                je["sexId"].is_number_integer()) {
+                e.sexId = static_cast<uint8_t>(je["sexId"].get<int>());
+            } else if (je.contains("sexIdName") &&
+                       je["sexIdName"].is_string()) {
+                e.sexId = sexFromName(
+                    je["sexIdName"].get<std::string>());
+            }
+            e.variationIndex = static_cast<uint8_t>(
+                je.value("variationIndex", 0));
+            if (je.contains("requiresExpansion") &&
+                je["requiresExpansion"].is_number_integer()) {
+                e.requiresExpansion = static_cast<uint8_t>(
+                    je["requiresExpansion"].get<int>());
+            } else if (je.contains("requiresExpansionName") &&
+                       je["requiresExpansionName"].is_string()) {
+                e.requiresExpansion = expansionFromName(
+                    je["requiresExpansionName"].get<std::string>());
+            }
+            e.geosetGroupBits = je.value("geosetGroupBits", 0u);
+            e.hairColorOverlayId = je.value("hairColorOverlayId", 0u);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeCharFeatureLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wchf-json: failed to save %s.wchf\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wchf\n", outBase.c_str());
+    std::printf("  source   : %s\n", jsonPath.c_str());
+    std::printf("  features : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -247,6 +407,12 @@ bool handleCharFeaturesCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wchf") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wchf-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wchf-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
