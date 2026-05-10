@@ -127,6 +127,148 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each cinematic emits all 9 scalar fields
+    // plus dual int + name forms for kind and triggerKind so
+    // hand-edits can use either representation.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWcmsExt(base);
+    if (outPath.empty()) outPath = base + ".wcms.json";
+    if (!wowee::pipeline::WoweeCinematicLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcms-json: WCMS not found: %s.wcms\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCinematicLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"cinematicId", e.cinematicId},
+            {"name", e.name},
+            {"description", e.description},
+            {"mediaPath", e.mediaPath},
+            {"kind", e.kind},
+            {"kindName", wowee::pipeline::WoweeCinematic::kindName(e.kind)},
+            {"triggerKind", e.triggerKind},
+            {"triggerKindName", wowee::pipeline::WoweeCinematic::triggerKindName(e.triggerKind)},
+            {"triggerTargetId", e.triggerTargetId},
+            {"durationSeconds", e.durationSeconds},
+            {"skippable", e.skippable},
+            {"soundtrackId", e.soundtrackId},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wcms-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source     : %s.wcms\n", base.c_str());
+    std::printf("  cinematics : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wcms.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWcmsExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wcms-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wcms-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "video")      return wowee::pipeline::WoweeCinematic::PreRenderedVideo;
+        if (s == "camera")     return wowee::pipeline::WoweeCinematic::CameraFlythrough;
+        if (s == "text-crawl") return wowee::pipeline::WoweeCinematic::TextCrawl;
+        if (s == "image")      return wowee::pipeline::WoweeCinematic::StillImage;
+        if (s == "slideshow")  return wowee::pipeline::WoweeCinematic::Slideshow;
+        return wowee::pipeline::WoweeCinematic::PreRenderedVideo;
+    };
+    auto triggerFromName = [](const std::string& s) -> uint8_t {
+        if (s == "manual")        return wowee::pipeline::WoweeCinematic::Manual;
+        if (s == "quest-start")   return wowee::pipeline::WoweeCinematic::QuestStart;
+        if (s == "quest-end")     return wowee::pipeline::WoweeCinematic::QuestEnd;
+        if (s == "class-start")   return wowee::pipeline::WoweeCinematic::ClassStart;
+        if (s == "zone-entry")    return wowee::pipeline::WoweeCinematic::ZoneEntry;
+        if (s == "dungeon-clear") return wowee::pipeline::WoweeCinematic::DungeonClear;
+        if (s == "login")         return wowee::pipeline::WoweeCinematic::Login;
+        if (s == "achievement")   return wowee::pipeline::WoweeCinematic::AchievementGained;
+        if (s == "level-up")      return wowee::pipeline::WoweeCinematic::LevelUp;
+        return wowee::pipeline::WoweeCinematic::Manual;
+    };
+    wowee::pipeline::WoweeCinematic c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeCinematic::Entry e;
+            e.cinematicId = je.value("cinematicId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.mediaPath = je.value("mediaPath", std::string{});
+            if (je.contains("kind") && je["kind"].is_number_integer()) {
+                e.kind = static_cast<uint8_t>(je["kind"].get<int>());
+            } else if (je.contains("kindName") &&
+                       je["kindName"].is_string()) {
+                e.kind = kindFromName(je["kindName"].get<std::string>());
+            }
+            if (je.contains("triggerKind") &&
+                je["triggerKind"].is_number_integer()) {
+                e.triggerKind = static_cast<uint8_t>(
+                    je["triggerKind"].get<int>());
+            } else if (je.contains("triggerKindName") &&
+                       je["triggerKindName"].is_string()) {
+                e.triggerKind = triggerFromName(
+                    je["triggerKindName"].get<std::string>());
+            }
+            e.triggerTargetId = je.value("triggerTargetId", 0u);
+            e.durationSeconds = je.value("durationSeconds", 0u);
+            e.skippable = static_cast<uint8_t>(je.value("skippable", 1));
+            e.soundtrackId = je.value("soundtrackId", 0u);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeCinematicLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcms-json: failed to save %s.wcms\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wcms\n", outBase.c_str());
+    std::printf("  source     : %s\n", jsonPath.c_str());
+    std::printf("  cinematics : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -237,6 +379,12 @@ bool handleCinematicsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wcms") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcms-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcms-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

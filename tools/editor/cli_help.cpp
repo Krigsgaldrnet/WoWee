@@ -1287,6 +1287,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCMS entries (id / kind / trigger / target / duration / skippable / soundtrackId / name)\n");
     std::printf("  --validate-wcms <wcms-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name+mediaPath not empty, kind 0..4, trigger 0..8, target required for non-Manual triggers\n");
+    std::printf("  --export-wcms-json <wcms-base> [out.json]\n");
+    std::printf("                         Export binary .wcms to a human-editable JSON sidecar (defaults to <base>.wcms.json)\n");
+    std::printf("  --import-wcms-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcms.json sidecar back into binary .wcms (accepts kind/triggerKind int OR name string)\n");
     std::printf("  --gen-glyphs <wgly-base> [name]\n");
     std::printf("                         Emit .wgly starter: 3 glyphs (1 warrior + 1 mage + 1 rogue) showing per-class Major slot picks\n");
     std::printf("  --gen-glyphs-warrior <wgly-base> [name]\n");
