@@ -141,6 +141,151 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseCategoryToken(const std::string& s) {
+    using M = wowee::pipeline::WoweeMovieCredits;
+    if (s == "production")  return M::Production;
+    if (s == "music")       return M::Music;
+    if (s == "audio")       return M::Audio;
+    if (s == "engineering") return M::Engineering;
+    if (s == "art")         return M::Art;
+    if (s == "voice")       return M::Voice;
+    if (s == "special")     return M::Special;
+    return -1;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWmvcExt(base);
+    if (out.empty()) out = base + ".wmvc.json";
+    if (!wowee::pipeline::WoweeMovieCreditsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wmvc-json: WMVC not found: %s.wmvc\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeMovieCreditsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WMVC";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"rollId", e.rollId},
+            {"name", e.name},
+            {"description", e.description},
+            {"cinematicId", e.cinematicId},
+            {"category", e.category},
+            {"categoryName", categoryName(e.category)},
+            {"orderHint", e.orderHint},
+            {"iconColorRGBA", e.iconColorRGBA},
+            {"lines", e.lines},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wmvc-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu blocks)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wmvc.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wmvc");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wmvc-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wmvc-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeMovieCredits c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wmvc-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeMovieCredits::Entry e;
+        e.rollId = je.value("rollId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.cinematicId = je.value("cinematicId", 0u);
+        if (je.contains("category")) {
+            const auto& v = je["category"];
+            if (v.is_string()) {
+                int parsed = parseCategoryToken(
+                    v.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-wmvc-json: unknown "
+                        "category token '%s' on entry "
+                        "id=%u\n",
+                        v.get<std::string>().c_str(),
+                        e.rollId);
+                    return 1;
+                }
+                e.category = static_cast<uint8_t>(parsed);
+            } else if (v.is_number_integer()) {
+                e.category = static_cast<uint8_t>(v.get<int>());
+            }
+        } else if (je.contains("categoryName") &&
+                   je["categoryName"].is_string()) {
+            int parsed = parseCategoryToken(
+                je["categoryName"].get<std::string>());
+            if (parsed >= 0)
+                e.category = static_cast<uint8_t>(parsed);
+        }
+        e.orderHint = static_cast<uint16_t>(
+            je.value("orderHint", 0u));
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        if (je.contains("lines") && je["lines"].is_array()) {
+            for (const auto& L : je["lines"]) {
+                if (L.is_string())
+                    e.lines.push_back(L.get<std::string>());
+            }
+        }
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeMovieCreditsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wmvc-json: failed to save %s.wmvc\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wmvc (%zu blocks)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -278,6 +423,12 @@ bool handleMovieCreditsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wmvc") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wmvc-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wmvc-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

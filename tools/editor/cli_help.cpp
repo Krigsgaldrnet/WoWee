@@ -2331,6 +2331,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMVC entries (id / cinematicId / category / orderHint / line count / name) plus per-block credit lines\n");
     std::printf("  --validate-wmvc <wmvc-base> [--json]\n");
     std::printf("                         Static checks: id+name+cinematicId required, category 0..6, lines[] non-empty, no duplicate rollIds, no two blocks at same (cinematicId, orderHint) slot (would render in non-deterministic order); warns on empty lines (blank renders) or lines > 80 chars (text-buffer wrap)\n");
+    std::printf("  --export-wmvc-json <wmvc-base> [out.json]\n");
+    std::printf("                         Export binary .wmvc to a human-editable JSON sidecar (defaults to <base>.wmvc.json; emits category as both int AND name string; lines[] as JSON string array)\n");
+    std::printf("  --import-wmvc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wmvc.json sidecar back into binary .wmvc (category int OR \"production\"/\"music\"/\"audio\"/\"engineering\"/\"art\"/\"voice\"/\"special\"; lines[] is a JSON array of strings — directly editable to add/remove credit lines without binary tooling)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
