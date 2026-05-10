@@ -1731,6 +1731,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsdr to a human-editable JSON sidecar (defaults to <base>.wsdr.json)\n");
     std::printf("  --import-wsdr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsdr.json sidecar back into binary .wsdr (accepts durationKind int OR durationKindName string)\n");
+    std::printf("  --gen-cdb <wscd-base> [name]\n");
+    std::printf("                         Emit .wscd starter: 4 baseline cooldown buckets (GlobalCooldown 1.5s / ShortItem 5s / MediumItem 30s / LongItem 60s shared)\n");
+    std::printf("  --gen-cdb-class <wscd-base> [name]\n");
+    std::printf("                         Emit .wscd 5 mage class buckets (Polymorph family / AlterTime 90s / Counterspell 24s / Blink 15s / IceBlock 5min)\n");
+    std::printf("  --gen-cdb-items <wscd-base> [name]\n");
+    std::printf("                         Emit .wscd 5 item buckets (HealingPot+ManaPot 60s shared / ManaJade GCD-only / EngineerTrinket 60s / Hearthstone 60min)\n");
+    std::printf("  --info-wscd <wscd-base> [--json]\n");
+    std::printf("                         Print WSCD entries (id / kind / cooldownMs / category flags / name) — flags decoded as label list\n");
+    std::printf("  --validate-wscd <wscd-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, bucketKind 0..4, no duplicate ids; warns on Global without OnGCDStart and Spell with SharedWithItems\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
