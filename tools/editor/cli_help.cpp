@@ -1963,6 +1963,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WIFS entries (id / bitMask hex / kind / +/- positivity / name) — handy for decoding raw item.flags integers\n");
     std::printf("  --validate-wifs <wifs-base> [--json]\n");
     std::printf("                         Static checks: id+name+bitMask required, flagKind 0..6, no duplicate ids, no duplicate bitMasks (collision); warns on multi-bit masks (unusual, usually want a single bit)\n");
+    std::printf("  --export-wifs-json <wifs-base> [out.json]\n");
+    std::printf("                         Export binary .wifs to a human-editable JSON sidecar (defaults to <base>.wifs.json)\n");
+    std::printf("  --import-wifs-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wifs.json sidecar back into binary .wifs (accepts flagKind int OR name; isPositive bool OR int)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
