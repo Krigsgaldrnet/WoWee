@@ -1847,6 +1847,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wtle to a human-editable JSON sidecar (defaults to <base>.wtle.json)\n");
     std::printf("  --import-wtle-json <json-path> [out-base]\n");
     std::printf("                         Import a .wtle.json sidecar back into binary .wtle (accepts roleHint int OR roleHintName string)\n");
+    std::printf("  --gen-ctr <wctr-base> [name]\n");
+    std::printf("                         Emit .wctr 4 PvP currencies (Honor 75k cap / Arena 5k weekly / Conquest 1650 weekly / Champion's Seal no cap)\n");
+    std::printf("  --gen-ctr-pve <wctr-base> [name]\n");
+    std::printf("                         Emit .wctr 4 PvE raid currencies (Justice 4k cap / Valor 1k weekly / Emblem of Frost no cap / Trophy of Crusade no cap)\n");
+    std::printf("  --gen-ctr-faction <wctr-base> [name]\n");
+    std::printf("                         Emit .wctr 4 faction reputation tokens (Hodir / Cenarion / Argent Dawn / Wintergrasp) — categoryId references WFAC factionId\n");
+    std::printf("  --info-wctr <wctr-base> [--json]\n");
+    std::printf("                         Print WCTR entries (id / kind / itemId / max+weekly caps / categoryId / accountWide / name)\n");
+    std::printf("  --validate-wctr <wctr-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, currencyKind 0..5, no duplicate ids; warns on weekly>absolute, FactionToken+cat=0, no caps+no item+no icon\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

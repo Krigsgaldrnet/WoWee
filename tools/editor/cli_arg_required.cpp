@@ -240,6 +240,8 @@ const char* const kArgRequired[] = {
     "--gen-tle", "--gen-tle-mage", "--gen-tle-paladin",
     "--info-wtle", "--validate-wtle",
     "--export-wtle-json", "--import-wtle-json",
+    "--gen-ctr", "--gen-ctr-pve", "--gen-ctr-faction",
+    "--info-wctr", "--validate-wctr",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

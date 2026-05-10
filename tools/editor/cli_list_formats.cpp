@@ -103,6 +103,7 @@ constexpr FormatRow kFormats[] = {
     {"WMAT", ".wmat",  "items",     "Material.dbc + ItemDisplayInfo",   "Item material catalog"},
     {"WPSP", ".wpsp",  "chars",     "playercreateinfo SQL + StartOutfit","Player spawn profile catalog"},
     {"WTLE", ".wtle",  "talents",   "TalentTab.dbc",                    "Talent tab / tree catalog"},
+    {"WCTR", ".wctr",  "currency",  "CurrencyTypes.dbc + caps",         "Currency type catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
