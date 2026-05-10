@@ -379,6 +379,7 @@ const char* const kArgRequired[] = {
     "--export-wprg-json", "--import-wprg-json",
     "--gen-lan", "--gen-lan-quest", "--gen-lan-tooltip",
     "--info-wlan", "--validate-wlan",
+    "--export-wlan-json", "--import-wlan-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
