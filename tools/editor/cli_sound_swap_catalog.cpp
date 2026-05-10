@@ -142,6 +142,54 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseConditionKindToken(const std::string& s) {
+    using S = wowee::pipeline::WoweeSoundSwap;
+    if (s == "always")     return S::Always;
+    if (s == "zoneonly")   return S::ZoneOnly;
+    if (s == "classonly")  return S::ClassOnly;
+    if (s == "raceonly")   return S::RaceOnly;
+    if (s == "genderonly") return S::GenderOnly;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wswp-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -316,6 +364,117 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWswpExt(base);
+    if (out.empty()) out = base + ".wswp.json";
+    if (!wowee::pipeline::WoweeSoundSwapLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wswp-json: WSWP not found: %s.wswp\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSoundSwapLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WSWP";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"ruleId", e.ruleId},
+            {"name", e.name},
+            {"originalSoundId", e.originalSoundId},
+            {"replacementSoundId", e.replacementSoundId},
+            {"conditionKind", e.conditionKind},
+            {"conditionKindName",
+                conditionKindName(e.conditionKind)},
+            {"priorityIndex", e.priorityIndex},
+            {"gainAdjustDb_x10", e.gainAdjustDb_x10},
+            {"conditionValue", e.conditionValue},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wswp-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu rules)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wswp.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wswp");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wswp-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wswp-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSoundSwap c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wswp-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeSoundSwap::Entry e;
+        e.ruleId = je.value("ruleId", 0u);
+        e.name = je.value("name", std::string{});
+        e.originalSoundId = je.value("originalSoundId", 0u);
+        e.replacementSoundId =
+            je.value("replacementSoundId", 0u);
+        if (!readEnumField(je, "conditionKind",
+                            "conditionKindName",
+                            parseConditionKindToken,
+                            "conditionKind", e.ruleId,
+                            e.conditionKind)) return 1;
+        e.priorityIndex = static_cast<uint8_t>(
+            je.value("priorityIndex", 0));
+        e.gainAdjustDb_x10 = static_cast<int16_t>(
+            je.value("gainAdjustDb_x10", 0));
+        e.conditionValue = je.value("conditionValue", 0u);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeSoundSwapLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wswp-json: failed to save %s.wswp\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wswp (%zu rules)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleSoundSwapCatalog(int& i, int argc, char** argv,
@@ -338,6 +497,14 @@ bool handleSoundSwapCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wswp") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wswp-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wswp-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

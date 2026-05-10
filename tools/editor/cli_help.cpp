@@ -2737,6 +2737,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSWP entries (id / origSound / replSound / conditionKind+value / priority / gain dB / name)\n");
     std::printf("  --validate-wswp <wswp-base> [--json]\n");
     std::printf("                         Static checks: id+name+originalSoundId+replacementSoundId required, conditionKind 0..4, no duplicate ruleIds, no self-replacement (orig==repl is no-op); CRITICAL: no duplicate (originalSoundId, conditionKind, conditionValue) trigger triple (runtime would have two rules for the same trigger), non-Always conditionKind requires non-zero conditionValue. Warns on priorityIndex=0 (effectively disabled), |gainAdjustDb_x10| > 300 (±30dB clip risk), Always condition with non-zero conditionValue (dead data), and same-priority within same originalSoundId (tie-break undefined when both conditions match)\n");
+    std::printf("  --export-wswp-json <wswp-base> [out.json]\n");
+    std::printf("                         Export binary .wswp to a human-editable JSON sidecar (defaults to <base>.wswp.json; emits conditionKind as int + name string)\n");
+    std::printf("  --import-wswp-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wswp.json sidecar back into binary .wswp (conditionKind int OR \"always\"/\"zoneonly\"/\"classonly\"/\"raceonly\"/\"genderonly\" — round-trips priority + gain + condition tables byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
