@@ -85,6 +85,7 @@ const char* const kArgRequired[] = {
     "--export-wtkn-json", "--import-wtkn-json",
     "--gen-triggers", "--gen-triggers-dungeon", "--gen-triggers-flightpath",
     "--info-wtrg", "--validate-wtrg",
+    "--export-wtrg-json", "--import-wtrg-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

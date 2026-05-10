@@ -1117,6 +1117,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTRG triggers (id / map / area / kind / shape + dims / dest + facing / quest+key gates)\n");
     std::printf("  --validate-wtrg <wtrg-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, finite center, sphere needs radius>0, box needs >=1 nonzero half-extent, quest-explore needs target\n");
+    std::printf("  --export-wtrg-json <wtrg-base> [out.json]\n");
+    std::printf("                         Export binary .wtrg to a human-editable JSON sidecar (defaults to <base>.wtrg.json)\n");
+    std::printf("  --import-wtrg-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtrg.json sidecar back into binary .wtrg (accepts shape/kind int OR name forms)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

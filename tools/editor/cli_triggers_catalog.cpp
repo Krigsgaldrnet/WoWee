@@ -151,6 +151,155 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Vec3 fields (center / boxDims / dest)
+    // become 3-element JSON arrays. Shape and kind emit dual
+    // int + name forms.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWtrgExt(base);
+    if (outPath.empty()) outPath = base + ".wtrg.json";
+    if (!wowee::pipeline::WoweeTriggerLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtrg-json: WTRG not found: %s.wtrg\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTriggerLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"triggerId", e.triggerId},
+            {"mapId", e.mapId},
+            {"areaId", e.areaId},
+            {"name", e.name},
+            {"center", {e.center.x, e.center.y, e.center.z}},
+            {"shape", e.shape},
+            {"shapeName", wowee::pipeline::WoweeTrigger::shapeName(e.shape)},
+            {"kind", e.kind},
+            {"kindName", wowee::pipeline::WoweeTrigger::kindName(e.kind)},
+            {"boxDims", {e.boxDims.x, e.boxDims.y, e.boxDims.z}},
+            {"radius", e.radius},
+            {"actionTarget", e.actionTarget},
+            {"dest", {e.dest.x, e.dest.y, e.dest.z}},
+            {"destOrientation", e.destOrientation},
+            {"requiredQuestId", e.requiredQuestId},
+            {"requiredItemId", e.requiredItemId},
+            {"minLevel", e.minLevel},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wtrg-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source   : %s.wtrg\n", base.c_str());
+    std::printf("  triggers : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wtrg.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWtrgExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wtrg-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wtrg-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto shapeFromName = [](const std::string& s) -> uint8_t {
+        if (s == "box")    return wowee::pipeline::WoweeTrigger::ShapeBox;
+        if (s == "sphere") return wowee::pipeline::WoweeTrigger::ShapeSphere;
+        return wowee::pipeline::WoweeTrigger::ShapeBox;
+    };
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "teleport")      return wowee::pipeline::WoweeTrigger::KindTeleport;
+        if (s == "quest-explore") return wowee::pipeline::WoweeTrigger::KindQuestExploration;
+        if (s == "script")        return wowee::pipeline::WoweeTrigger::KindScript;
+        if (s == "instance")      return wowee::pipeline::WoweeTrigger::KindInstanceEntrance;
+        if (s == "area-name")     return wowee::pipeline::WoweeTrigger::KindAreaName;
+        if (s == "pvp-zone")      return wowee::pipeline::WoweeTrigger::KindCombatStartZone;
+        if (s == "waypoint")      return wowee::pipeline::WoweeTrigger::KindWaypoint;
+        return wowee::pipeline::WoweeTrigger::KindAreaName;
+    };
+    auto readVec3 = [](const nlohmann::json& jv, glm::vec3& v) {
+        if (jv.is_array() && jv.size() >= 3) {
+            v.x = jv[0].get<float>();
+            v.y = jv[1].get<float>();
+            v.z = jv[2].get<float>();
+        }
+    };
+    wowee::pipeline::WoweeTrigger c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeTrigger::Entry e;
+            e.triggerId = je.value("triggerId", 0u);
+            e.mapId = je.value("mapId", 0u);
+            e.areaId = je.value("areaId", 0u);
+            e.name = je.value("name", std::string{});
+            if (je.contains("center")) readVec3(je["center"], e.center);
+            if (je.contains("shape") && je["shape"].is_number_integer()) {
+                e.shape = static_cast<uint8_t>(je["shape"].get<int>());
+            } else if (je.contains("shapeName") && je["shapeName"].is_string()) {
+                e.shape = shapeFromName(je["shapeName"].get<std::string>());
+            }
+            if (je.contains("kind") && je["kind"].is_number_integer()) {
+                e.kind = static_cast<uint8_t>(je["kind"].get<int>());
+            } else if (je.contains("kindName") && je["kindName"].is_string()) {
+                e.kind = kindFromName(je["kindName"].get<std::string>());
+            }
+            if (je.contains("boxDims")) readVec3(je["boxDims"], e.boxDims);
+            e.radius = je.value("radius", 0.0f);
+            e.actionTarget = je.value("actionTarget", 0u);
+            if (je.contains("dest")) readVec3(je["dest"], e.dest);
+            e.destOrientation = je.value("destOrientation", 0.0f);
+            e.requiredQuestId = je.value("requiredQuestId", 0u);
+            e.requiredItemId = je.value("requiredItemId", 0u);
+            e.minLevel = static_cast<uint16_t>(je.value("minLevel", 0));
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeTriggerLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtrg-json: failed to save %s.wtrg\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtrg\n", outBase.c_str());
+    std::printf("  source   : %s\n", jsonPath.c_str());
+    std::printf("  triggers : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -268,6 +417,12 @@ bool handleTriggersCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wtrg") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtrg-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtrg-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
