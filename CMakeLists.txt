@@ -664,6 +664,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_spell_power_costs.cpp
     src/pipeline/wowee_glyph_slots.cpp
     src/pipeline/wowee_creature_difficulties.cpp
+    src/pipeline/wowee_item_materials.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1485,6 +1486,7 @@ add_executable(wowee_editor
     tools/editor/cli_spell_power_costs_catalog.cpp
     tools/editor/cli_glyph_slots_catalog.cpp
     tools/editor/cli_creature_difficulties_catalog.cpp
+    tools/editor/cli_item_materials_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1627,6 +1629,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_spell_power_costs.cpp
     src/pipeline/wowee_glyph_slots.cpp
     src/pipeline/wowee_creature_difficulties.cpp
+    src/pipeline/wowee_item_materials.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

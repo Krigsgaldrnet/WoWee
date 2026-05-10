@@ -1803,6 +1803,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcdf to a human-editable JSON sidecar (defaults to <base>.wcdf.json)\n");
     std::printf("  --import-wcdf-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcdf.json sidecar back into binary .wcdf (accepts spawnGroupKind int OR spawnGroupKindName string)\n");
+    std::printf("  --gen-mat <wmat-base> [name]\n");
+    std::printf("                         Emit .wmat 5 armor materials (Cloth/Leather/Mail/Plate/Hide) with weight categories matching WoW's armor classes\n");
+    std::printf("  --gen-mat-weapon <wmat-base> [name]\n");
+    std::printf("                         Emit .wmat 5 weapon materials (Wood breakable+flammable / Steel / Mithril / Adamantite / EnchantedSteel magical)\n");
+    std::printf("  --gen-mat-magical <wmat-base> [name]\n");
+    std::printf("                         Emit .wmat 4 magical materials (Crystal magical+breakable / Ethereal / CursedBone / HolyForged charged)\n");
+    std::printf("  --info-wmat <wmat-base> [--json]\n");
+    std::printf("                         Print WMAT entries (id / kind / weight / foley/impact sound ids / material flags / name) — flags decoded as label list\n");
+    std::printf("  --validate-wmat <wmat-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, materialKind 0..11, weightCategory 0..2, no duplicate ids; warns on Holy+Cursed combo, Plate non-heavy, Cloth non-light\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

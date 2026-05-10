@@ -114,6 +114,7 @@
 #include "cli_spell_power_costs_catalog.hpp"
 #include "cli_glyph_slots_catalog.hpp"
 #include "cli_creature_difficulties_catalog.hpp"
+#include "cli_item_materials_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -269,6 +270,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSpellPowerCostsCatalog,
     handleGlyphSlotsCatalog,
     handleCreatureDifficultiesCatalog,
+    handleItemMaterialsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
