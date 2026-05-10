@@ -1133,6 +1133,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTIT entries (id / sort / prefix vs suffix / category / canonical name)\n");
     std::printf("  --validate-wtit <wtit-base> [--json]\n");
     std::printf("                         Static checks: titleId>0+unique, name not empty, category in 0..7, gender variants paired\n");
+    std::printf("  --gen-events <wsea-base> [name]\n");
+    std::printf("                         Emit .wsea starter: 3 events (Brawl Week / Fishing Extravaganza / Anniversary) covering kind categories\n");
+    std::printf("  --gen-events-yearly <wsea-base> [name]\n");
+    std::printf("                         Emit .wsea 4 yearly holidays (Hallow's End / Brewfest / Lunar Festival / Winter's Veil) with WTKN reward refs\n");
+    std::printf("  --gen-events-weekends <wsea-base> [name]\n");
+    std::printf("                         Emit .wsea 3 monthly XP-bonus weekends (50%% / 100%% / 200%% RAF tiers)\n");
+    std::printf("  --info-wsea <wsea-base> [--json]\n");
+    std::printf("                         Print WSEA entries (id / kind / duration / recurrence / xp bonus / token reward / name)\n");
+    std::printf("  --validate-wsea <wsea-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name not empty, kind in 0..6, duration>0, no overlapping recurrence\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

@@ -618,6 +618,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_tokens.cpp
     src/pipeline/wowee_triggers.cpp
     src/pipeline/wowee_titles.cpp
+    src/pipeline/wowee_events.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1382,6 +1383,7 @@ add_executable(wowee_editor
     tools/editor/cli_tokens_catalog.cpp
     tools/editor/cli_triggers_catalog.cpp
     tools/editor/cli_titles_catalog.cpp
+    tools/editor/cli_events_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1478,6 +1480,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_tokens.cpp
     src/pipeline/wowee_triggers.cpp
     src/pipeline/wowee_titles.cpp
+    src/pipeline/wowee_events.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

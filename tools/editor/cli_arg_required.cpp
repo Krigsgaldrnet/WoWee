@@ -88,6 +88,8 @@ const char* const kArgRequired[] = {
     "--export-wtrg-json", "--import-wtrg-json",
     "--gen-titles", "--gen-titles-pvp", "--gen-titles-achievement",
     "--info-wtit", "--validate-wtit",
+    "--gen-events", "--gen-events-yearly", "--gen-events-weekends",
+    "--info-wsea", "--validate-wsea",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
