@@ -129,6 +129,181 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each condition emits all 11 scalar fields
+    // plus dual int + name forms for conditionKind /
+    // comparisonOp / chainOp so hand-edits can use either.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWpcnExt(base);
+    if (outPath.empty()) outPath = base + ".wpcn.json";
+    if (!wowee::pipeline::WoweePlayerConditionLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wpcn-json: WPCN not found: %s.wpcn\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweePlayerConditionLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"conditionId", e.conditionId},
+            {"name", e.name},
+            {"description", e.description},
+            {"conditionKind", e.conditionKind},
+            {"conditionKindName", wowee::pipeline::WoweePlayerCondition::conditionKindName(e.conditionKind)},
+            {"comparisonOp", e.comparisonOp},
+            {"comparisonOpName", wowee::pipeline::WoweePlayerCondition::comparisonOpName(e.comparisonOp)},
+            {"chainOp", e.chainOp},
+            {"chainOpName", wowee::pipeline::WoweePlayerCondition::chainOpName(e.chainOp)},
+            {"targetIdA", e.targetIdA},
+            {"targetIdB", e.targetIdB},
+            {"intValueA", e.intValueA},
+            {"intValueB", e.intValueB},
+            {"chainNextId", e.chainNextId},
+            {"failMessage", e.failMessage},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wpcn-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source     : %s.wpcn\n", base.c_str());
+    std::printf("  conditions : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wpcn.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWpcnExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wpcn-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wpcn-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "always")          return wowee::pipeline::WoweePlayerCondition::Always;
+        if (s == "race")            return wowee::pipeline::WoweePlayerCondition::Race;
+        if (s == "class")           return wowee::pipeline::WoweePlayerCondition::Class;
+        if (s == "level")           return wowee::pipeline::WoweePlayerCondition::Level;
+        if (s == "zone")            return wowee::pipeline::WoweePlayerCondition::Zone;
+        if (s == "map")             return wowee::pipeline::WoweePlayerCondition::Map;
+        if (s == "reputation")      return wowee::pipeline::WoweePlayerCondition::Reputation;
+        if (s == "achievement")     return wowee::pipeline::WoweePlayerCondition::AchievementWon;
+        if (s == "quest-complete")  return wowee::pipeline::WoweePlayerCondition::QuestComplete;
+        if (s == "quest-active")    return wowee::pipeline::WoweePlayerCondition::QuestActive;
+        if (s == "spell-known")     return wowee::pipeline::WoweePlayerCondition::SpellKnown;
+        if (s == "item-equipped")   return wowee::pipeline::WoweePlayerCondition::ItemEquipped;
+        if (s == "faction")         return wowee::pipeline::WoweePlayerCondition::Faction;
+        if (s == "in-combat")       return wowee::pipeline::WoweePlayerCondition::InCombat;
+        if (s == "mounted")         return wowee::pipeline::WoweePlayerCondition::Mounted;
+        if (s == "resting")         return wowee::pipeline::WoweePlayerCondition::Resting;
+        return wowee::pipeline::WoweePlayerCondition::Always;
+    };
+    auto opFromName = [](const std::string& s) -> uint8_t {
+        if (s == "==")         return wowee::pipeline::WoweePlayerCondition::Equal;
+        if (s == "!=")         return wowee::pipeline::WoweePlayerCondition::NotEqual;
+        if (s == ">")          return wowee::pipeline::WoweePlayerCondition::GreaterThan;
+        if (s == ">=")         return wowee::pipeline::WoweePlayerCondition::GreaterOrEqual;
+        if (s == "<")          return wowee::pipeline::WoweePlayerCondition::LessThan;
+        if (s == "<=")         return wowee::pipeline::WoweePlayerCondition::LessOrEqual;
+        if (s == "in-set")     return wowee::pipeline::WoweePlayerCondition::InSet;
+        if (s == "not-in-set") return wowee::pipeline::WoweePlayerCondition::NotInSet;
+        return wowee::pipeline::WoweePlayerCondition::Equal;
+    };
+    auto chainFromName = [](const std::string& s) -> uint8_t {
+        if (s == "none") return wowee::pipeline::WoweePlayerCondition::ChainNone;
+        if (s == "and")  return wowee::pipeline::WoweePlayerCondition::ChainAnd;
+        if (s == "or")   return wowee::pipeline::WoweePlayerCondition::ChainOr;
+        if (s == "not")  return wowee::pipeline::WoweePlayerCondition::ChainNot;
+        return wowee::pipeline::WoweePlayerCondition::ChainNone;
+    };
+    wowee::pipeline::WoweePlayerCondition c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweePlayerCondition::Entry e;
+            e.conditionId = je.value("conditionId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            if (je.contains("conditionKind") &&
+                je["conditionKind"].is_number_integer()) {
+                e.conditionKind = static_cast<uint8_t>(
+                    je["conditionKind"].get<int>());
+            } else if (je.contains("conditionKindName") &&
+                       je["conditionKindName"].is_string()) {
+                e.conditionKind = kindFromName(
+                    je["conditionKindName"].get<std::string>());
+            }
+            if (je.contains("comparisonOp") &&
+                je["comparisonOp"].is_number_integer()) {
+                e.comparisonOp = static_cast<uint8_t>(
+                    je["comparisonOp"].get<int>());
+            } else if (je.contains("comparisonOpName") &&
+                       je["comparisonOpName"].is_string()) {
+                e.comparisonOp = opFromName(
+                    je["comparisonOpName"].get<std::string>());
+            }
+            if (je.contains("chainOp") &&
+                je["chainOp"].is_number_integer()) {
+                e.chainOp = static_cast<uint8_t>(
+                    je["chainOp"].get<int>());
+            } else if (je.contains("chainOpName") &&
+                       je["chainOpName"].is_string()) {
+                e.chainOp = chainFromName(
+                    je["chainOpName"].get<std::string>());
+            }
+            e.targetIdA = je.value("targetIdA", 0u);
+            e.targetIdB = je.value("targetIdB", 0u);
+            e.intValueA = je.value("intValueA", 0);
+            e.intValueB = je.value("intValueB", 0);
+            e.chainNextId = je.value("chainNextId", 0u);
+            e.failMessage = je.value("failMessage", std::string{});
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweePlayerConditionLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wpcn-json: failed to save %s.wpcn\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wpcn\n", outBase.c_str());
+    std::printf("  source     : %s\n", jsonPath.c_str());
+    std::printf("  conditions : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -256,6 +431,12 @@ bool handlePlayerConditionsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wpcn") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wpcn-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wpcn-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
