@@ -1315,6 +1315,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WVHC entries with seat layout (id / creature / kind / movement / power / seat count / name)\n");
     std::printf("  --validate-wvhc <wvhc-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, creatureId>0, kind/movement/power in range, exactly 1 driver seat, no duplicate seatIndex\n");
+    std::printf("  --export-wvhc-json <wvhc-base> [out.json]\n");
+    std::printf("                         Export binary .wvhc to a human-editable JSON sidecar with nested seat arrays (defaults to <base>.wvhc.json)\n");
+    std::printf("  --import-wvhc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wvhc.json sidecar back into binary .wvhc (accepts vehicleKind/movementKind/powerType int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

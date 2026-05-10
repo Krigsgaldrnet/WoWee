@@ -145,6 +145,201 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each vehicle emits all 10 scalar fields
+    // plus dual int + name forms for vehicleKind /
+    // movementKind / powerType, and a nested array of seats
+    // (each with their own scalar fields). Hand-edits can use
+    // either int or name form for the enums.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWvhcExt(base);
+    if (outPath.empty()) outPath = base + ".wvhc.json";
+    if (!wowee::pipeline::WoweeVehicleLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wvhc-json: WVHC not found: %s.wvhc\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeVehicleLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json seats = nlohmann::json::array();
+        for (const auto& s : e.seats) {
+            seats.push_back({
+                {"seatIndex", s.seatIndex},
+                {"seatFlags", s.seatFlags},
+                {"attachmentId", s.attachmentId},
+                {"controlSpellId", s.controlSpellId},
+                {"exitSpellId", s.exitSpellId},
+                {"passengerYaw", s.passengerYaw},
+            });
+        }
+        arr.push_back({
+            {"vehicleId", e.vehicleId},
+            {"creatureId", e.creatureId},
+            {"name", e.name},
+            {"description", e.description},
+            {"vehicleKind", e.vehicleKind},
+            {"vehicleKindName", wowee::pipeline::WoweeVehicle::vehicleKindName(e.vehicleKind)},
+            {"movementKind", e.movementKind},
+            {"movementKindName", wowee::pipeline::WoweeVehicle::movementKindName(e.movementKind)},
+            {"turnSpeed", e.turnSpeed},
+            {"pitchSpeed", e.pitchSpeed},
+            {"flightCapabilityId", e.flightCapabilityId},
+            {"powerType", e.powerType},
+            {"powerTypeName", wowee::pipeline::WoweeVehicle::powerTypeName(e.powerType)},
+            {"maxPower", e.maxPower},
+            {"seats", seats},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wvhc-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source   : %s.wvhc\n", base.c_str());
+    std::printf("  vehicles : %zu (%zu seats total)\n",
+                c.entries.size(), totalSeats(c));
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wvhc.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWvhcExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wvhc-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wvhc-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto vehicleKindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "mount")          return wowee::pipeline::WoweeVehicle::Mount;
+        if (s == "chopper")        return wowee::pipeline::WoweeVehicle::Chopper;
+        if (s == "tank")           return wowee::pipeline::WoweeVehicle::Tank;
+        if (s == "demolisher")     return wowee::pipeline::WoweeVehicle::Demolisher;
+        if (s == "gunship")        return wowee::pipeline::WoweeVehicle::Gunship;
+        if (s == "flying-mount")   return wowee::pipeline::WoweeVehicle::FlyingMount;
+        if (s == "transport-rail") return wowee::pipeline::WoweeVehicle::TransportRail;
+        if (s == "siege-weapon")   return wowee::pipeline::WoweeVehicle::SiegeWeapon;
+        return wowee::pipeline::WoweeVehicle::Mount;
+    };
+    auto movementKindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "ground")        return wowee::pipeline::WoweeVehicle::Ground;
+        if (s == "air")           return wowee::pipeline::WoweeVehicle::Air;
+        if (s == "water")         return wowee::pipeline::WoweeVehicle::Water;
+        if (s == "submerged")     return wowee::pipeline::WoweeVehicle::Submerged;
+        if (s == "air+water")     return wowee::pipeline::WoweeVehicle::AmphibiousAW;
+        if (s == "ground+water")  return wowee::pipeline::WoweeVehicle::AmphibiousGW;
+        return wowee::pipeline::WoweeVehicle::Ground;
+    };
+    auto powerTypeFromName = [](const std::string& s) -> uint8_t {
+        if (s == "mana")   return wowee::pipeline::WoweeVehicle::Mana;
+        if (s == "energy") return wowee::pipeline::WoweeVehicle::Energy;
+        if (s == "pyrite") return wowee::pipeline::WoweeVehicle::Pyrite;
+        if (s == "heat")   return wowee::pipeline::WoweeVehicle::Heat;
+        if (s == "none")   return wowee::pipeline::WoweeVehicle::None;
+        return wowee::pipeline::WoweeVehicle::None;
+    };
+    wowee::pipeline::WoweeVehicle c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeVehicle::Entry e;
+            e.vehicleId = je.value("vehicleId", 0u);
+            e.creatureId = je.value("creatureId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            if (je.contains("vehicleKind") &&
+                je["vehicleKind"].is_number_integer()) {
+                e.vehicleKind = static_cast<uint8_t>(
+                    je["vehicleKind"].get<int>());
+            } else if (je.contains("vehicleKindName") &&
+                       je["vehicleKindName"].is_string()) {
+                e.vehicleKind = vehicleKindFromName(
+                    je["vehicleKindName"].get<std::string>());
+            }
+            if (je.contains("movementKind") &&
+                je["movementKind"].is_number_integer()) {
+                e.movementKind = static_cast<uint8_t>(
+                    je["movementKind"].get<int>());
+            } else if (je.contains("movementKindName") &&
+                       je["movementKindName"].is_string()) {
+                e.movementKind = movementKindFromName(
+                    je["movementKindName"].get<std::string>());
+            }
+            e.turnSpeed = je.value("turnSpeed", 3.14f);
+            e.pitchSpeed = je.value("pitchSpeed", 1.0f);
+            e.flightCapabilityId = je.value("flightCapabilityId", 0u);
+            if (je.contains("powerType") &&
+                je["powerType"].is_number_integer()) {
+                e.powerType = static_cast<uint8_t>(
+                    je["powerType"].get<int>());
+            } else if (je.contains("powerTypeName") &&
+                       je["powerTypeName"].is_string()) {
+                e.powerType = powerTypeFromName(
+                    je["powerTypeName"].get<std::string>());
+            }
+            e.maxPower = je.value("maxPower", 100u);
+            if (je.contains("seats") && je["seats"].is_array()) {
+                for (const auto& js : je["seats"]) {
+                    wowee::pipeline::WoweeVehicle::Seat s;
+                    s.seatIndex = static_cast<uint8_t>(
+                        js.value("seatIndex", 0));
+                    s.seatFlags = static_cast<uint8_t>(
+                        js.value("seatFlags", 0));
+                    s.attachmentId = static_cast<uint8_t>(
+                        js.value("attachmentId", 0));
+                    s.controlSpellId = js.value("controlSpellId", 0u);
+                    s.exitSpellId = js.value("exitSpellId", 0u);
+                    s.passengerYaw = js.value("passengerYaw", 0.0f);
+                    e.seats.push_back(s);
+                }
+            }
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeVehicleLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wvhc-json: failed to save %s.wvhc\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wvhc\n", outBase.c_str());
+    std::printf("  source   : %s\n", jsonPath.c_str());
+    std::printf("  vehicles : %zu (%zu seats total)\n",
+                c.entries.size(), totalSeats(c));
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -280,6 +475,12 @@ bool handleVehiclesCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wvhc") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wvhc-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wvhc-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

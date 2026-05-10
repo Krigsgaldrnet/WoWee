@@ -127,6 +127,7 @@ const char* const kArgRequired[] = {
     "--export-wgly-json", "--import-wgly-json",
     "--gen-vehicles", "--gen-vehicles-siege", "--gen-vehicles-flying",
     "--info-wvhc", "--validate-wvhc",
+    "--export-wvhc-json", "--import-wvhc-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
