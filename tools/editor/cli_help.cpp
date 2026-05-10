@@ -1995,6 +1995,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTBR entries (id / spent token x count / reward kind / rewardId / faction@standing gate / name)\n");
     std::printf("  --validate-wtbr <wtbr-base> [--json]\n");
     std::printf("                         Static checks: id+name+spentTokenItemId+count required, rewardKind 0..7, requiredFactionStanding 0..7, no duplicate ids; warns on rewardId=0 (no actual reward), standing>Neutral with factionId=0, Currency conversion item->itself\n");
+    std::printf("  --export-wtbr-json <wtbr-base> [out.json]\n");
+    std::printf("                         Export binary .wtbr to a human-editable JSON sidecar (defaults to <base>.wtbr.json)\n");
+    std::printf("  --import-wtbr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtbr.json sidecar back into binary .wtbr (accepts rewardKind/requiredFactionStanding int OR name)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
