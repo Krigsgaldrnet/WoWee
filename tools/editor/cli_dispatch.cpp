@@ -59,6 +59,7 @@
 #include "cli_triggers_catalog.hpp"
 #include "cli_titles_catalog.hpp"
 #include "cli_events_catalog.hpp"
+#include "cli_mounts_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -159,6 +160,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleTriggersCatalog,
     handleTitlesCatalog,
     handleEventsCatalog,
+    handleMountsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

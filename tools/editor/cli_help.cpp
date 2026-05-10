@@ -1147,6 +1147,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSEA entries (id / kind / duration / recurrence / xp bonus / token reward / name)\n");
     std::printf("  --validate-wsea <wsea-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, kind in 0..6, duration>0, no overlapping recurrence\n");
+    std::printf("  --gen-mounts <wmou-base> [name]\n");
+    std::printf("                         Emit .wmou starter: 3 mounts (Brown Horse / Swift Gryphon / Riding Turtle) covering ground/flying/aquatic\n");
+    std::printf("  --gen-mounts-racial <wmou-base> [name]\n");
+    std::printf("                         Emit .wmou 6 racial mounts (4 Alliance + 2 Horde) with raceMask gating\n");
+    std::printf("  --gen-mounts-flying <wmou-base> [name]\n");
+    std::printf("                         Emit .wmou 4 flying mounts spanning common/epic/achievement/pvp tiers (60%%/100%%/280%%/310%% speed)\n");
+    std::printf("  --info-wmou <wmou-base> [--json]\n");
+    std::printf("                         Print WMOU entries (id / kind / speed / required riding rank / faction / category / name)\n");
+    std::printf("  --validate-wmou <wmou-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name not empty, summonSpellId>0, flying needs rank>=150, racial needs raceMask\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

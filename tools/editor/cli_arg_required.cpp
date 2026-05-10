@@ -91,6 +91,8 @@ const char* const kArgRequired[] = {
     "--export-wtit-json", "--import-wtit-json",
     "--gen-events", "--gen-events-yearly", "--gen-events-weekends",
     "--info-wsea", "--validate-wsea",
+    "--gen-mounts", "--gen-mounts-racial", "--gen-mounts-flying",
+    "--info-wmou", "--validate-wmou",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
