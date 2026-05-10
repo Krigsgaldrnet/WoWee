@@ -1407,6 +1407,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPCN entries (id / kind / op / target IDs / int values / chainOp / chainNextId / name)\n");
     std::printf("  --validate-wpcn <wpcn-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, kind 0..15, op 0..7, chainOp 0..3, chain self-loop, dangling chainNextId warning\n");
+    std::printf("  --export-wpcn-json <wpcn-base> [out.json]\n");
+    std::printf("                         Export binary .wpcn to a human-editable JSON sidecar (defaults to <base>.wpcn.json)\n");
+    std::printf("  --import-wpcn-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wpcn.json sidecar back into binary .wpcn (accepts conditionKind/comparisonOp/chainOp int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
