@@ -163,6 +163,7 @@
 #include "cli_word_filters_catalog.hpp"
 #include "cli_raid_markers_catalog.hpp"
 #include "cli_loot_modes_catalog.hpp"
+#include "cli_sky_params_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -371,6 +372,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleWordFiltersCatalog,
     handleRaidMarkersCatalog,
     handleLootModesCatalog,
+    handleSkyParamsCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

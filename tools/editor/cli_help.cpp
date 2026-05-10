@@ -2419,6 +2419,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wlma to a human-editable JSON sidecar (defaults to <base>.wlma.json; emits both modeKind and timeoutFallbackKind as int + name string; thresholdQuality also gets a derived qualityName string)\n");
     std::printf("  --import-wlma-json <json-path> [out-base]\n");
     std::printf("                         Import a .wlma.json sidecar back into binary .wlma (modeKind / timeoutFallbackKind int OR \"freeforall\"/\"roundrobin\"/\"masterloot\"/\"needbeforegreed\"/\"personal\"/\"disenchant\"; masterLooterRequired accepts bool OR int)\n");
+    std::printf("  --gen-skp <wskp-base> [name]\n");
+    std::printf("                         Emit .wskp 4 Stormwind diurnal sky keyframes (Dawn 6AM lavender / Noon 12PM bright blue / Dusk 6PM purple-orange / Midnight 12AM deep blue-black)\n");
+    std::printf("  --gen-skp-arctic <wskp-base> [name]\n");
+    std::printf("                         Emit .wskp 4 Northrend arctic sky keyframes (cold steel-blue palette across the diurnal cycle with high-density ice fog)\n");
+    std::printf("  --gen-skp-hellfire <wskp-base> [name]\n");
+    std::printf("                         Emit .wskp 3 Outland Hellfire sky keyframes (permanent crimson/orange palette — Outland's iconic skies; no midnight keyframe since the Twisting Nether keeps the sky permanently lit)\n");
+    std::printf("  --info-wskp <wskp-base> [--json]\n");
+    std::printf("                         Print WSKP entries (id / map / area / hour / sun angle / fog start..end yards / cloud opacity %% / wind mph / name)\n");
+    std::printf("  --validate-wskp <wskp-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, timeOfDayHour 0..23, fogStartYards < fogEndYards (else inverted/zero falloff), no negative fog distances, no duplicate skyIds, no two keyframes at same (mapId, areaId, timeOfDayHour) triple (diurnal interpolation tie); warns on sunAngleDeg outside [0,360]\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
