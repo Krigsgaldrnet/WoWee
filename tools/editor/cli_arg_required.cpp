@@ -163,6 +163,8 @@ const char* const kArgRequired[] = {
     "--gen-cmp", "--gen-cmp-rare", "--gen-cmp-faction",
     "--info-wcmp", "--validate-wcmp",
     "--export-wcmp-json", "--import-wcmp-json",
+    "--gen-smc", "--gen-smc-hard", "--gen-smc-roots",
+    "--info-wsmc", "--validate-wsmc",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

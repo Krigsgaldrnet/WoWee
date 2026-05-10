@@ -1485,6 +1485,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcmp to a human-editable JSON sidecar (defaults to <base>.wcmp.json)\n");
     std::printf("  --import-wcmp-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcmp.json sidecar back into binary .wcmp (accepts companionKind/rarity/factionRestriction int OR name string)\n");
+    std::printf("  --gen-smc <wsmc-base> [name]\n");
+    std::printf("                         Emit .wsmc starter: 3 baseline mechanics (Stun / Silence / Snare) covering the most common DR categories\n");
+    std::printf("  --gen-smc-hard <wsmc-base> [name]\n");
+    std::printf("                         Emit .wsmc 5 hard-CC mechanics (Stun / Polymorph / Sleep / Fear / Knockback) with conflictsMask DR wiring\n");
+    std::printf("  --gen-smc-roots <wsmc-base> [name]\n");
+    std::printf("                         Emit .wsmc 4 movement-impair mechanics (Root / Snare / Slow stacking / GroundPin breaks-on-damage)\n");
+    std::printf("  --info-wsmc <wsmc-base> [--json]\n");
+    std::printf("                         Print WSMC entries (id / DR category / dispel type / breaks / dispellable / duration / max stacks / conflicts mask / name)\n");
+    std::printf("  --validate-wsmc <wsmc-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, DR 0..7 / dispel 0..6, maxStacks>0, dispellable+none-dispel inconsistency, self-conflict bit\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
