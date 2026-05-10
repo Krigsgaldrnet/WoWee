@@ -1755,6 +1755,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCEF entries (id / kind / talent tree / tame level / skill line / food types / name)\n");
     std::printf("  --validate-wcef <wcef-base> [--json]\n");
     std::printf("                         Static checks: id+name required, familyKind 0..5, talent tree 0..3, no duplicate ids; warns on NotPet+talent, Exotic+lvl>80, Beast/Exotic with no foods (would starve)\n");
+    std::printf("  --export-wcef-json <wcef-base> [out.json]\n");
+    std::printf("                         Export binary .wcef to a human-editable JSON sidecar (defaults to <base>.wcef.json)\n");
+    std::printf("  --import-wcef-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcef.json sidecar back into binary .wcef (accepts familyKind/petTalentTree int OR name; petFoodTypes int OR pipe-separated label string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
