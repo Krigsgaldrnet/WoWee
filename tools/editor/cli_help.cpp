@@ -1977,6 +1977,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WBKD entries (id / kind / gold cost / faction gate / gossip text id / name)\n");
     std::printf("  --validate-wbkd <wbkd-base> [--json]\n");
     std::printf("                         Static checks: id+name required, serviceKind 0..11, no duplicate ids; warns on Mailbox+gossip (no NPC dialog), Innkeeper+no-gossip (silent bind), Battlemaster+gold (queues are free)\n");
+    std::printf("  --export-wbkd-json <wbkd-base> [out.json]\n");
+    std::printf("                         Export binary .wbkd to a human-editable JSON sidecar (defaults to <base>.wbkd.json)\n");
+    std::printf("  --import-wbkd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wbkd.json sidecar back into binary .wbkd (accepts serviceKind int OR serviceKindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
