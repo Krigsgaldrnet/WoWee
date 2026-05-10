@@ -1819,6 +1819,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wmat to a human-editable JSON sidecar (defaults to <base>.wmat.json)\n");
     std::printf("  --import-wmat-json <json-path> [out-base]\n");
     std::printf("                         Import a .wmat.json sidecar back into binary .wmat (accepts materialKind/weightCategory int OR name; materialFlags int OR pipe-separated label string)\n");
+    std::printf("  --gen-psp <wpsp-base> [name]\n");
+    std::printf("                         Emit .wpsp 5 Alliance starting profiles (Human Warrior / Dwarf Hunter / NightElf Druid / Gnome Mage / Draenei Shaman) with race+class spawn coords\n");
+    std::printf("  --gen-psp-horde <wpsp-base> [name]\n");
+    std::printf("                         Emit .wpsp 5 Horde starting profiles (Orc Warrior / Tauren Druid / Undead Mage / Troll Hunter / BloodElf Priest)\n");
+    std::printf("  --gen-psp-dk <wpsp-base> [name]\n");
+    std::printf("                         Emit .wpsp 2 Death Knight profiles (Alliance Human / Horde Orc) starting at lvl 55 in Acherus with DK starter spell loadout\n");
+    std::printf("  --info-wpsp <wpsp-base> [--json]\n");
+    std::printf("                         Print WPSP entries (id / raceMask / classMask / map / zone / startingLevel / spawn coords / name)\n");
+    std::printf("  --validate-wpsp <wpsp-base> [--json]\n");
+    std::printf("                         Static checks: id+name+race+class+startingLevel required, no duplicate ids; warns on (0,0,0) spawn, item id/count mismatch, lvl>80, DK not at 55\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

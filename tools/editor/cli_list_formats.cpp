@@ -101,6 +101,7 @@ constexpr FormatRow kFormats[] = {
     {"WGFS", ".wgfs",  "glyphs",    "GlyphSlot.dbc",                    "Glyph slot layout catalog"},
     {"WCDF", ".wcdf",  "creatures", "CreatureDifficulty.dbc",           "Creature difficulty variant catalog"},
     {"WMAT", ".wmat",  "items",     "Material.dbc + ItemDisplayInfo",   "Item material catalog"},
+    {"WPSP", ".wpsp",  "chars",     "playercreateinfo SQL + StartOutfit","Player spawn profile catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
