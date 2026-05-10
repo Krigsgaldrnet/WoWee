@@ -1687,6 +1687,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wqso to a human-editable JSON sidecar (defaults to <base>.wqso.json)\n");
     std::printf("  --import-wqso-json <json-path> [out-base]\n");
     std::printf("                         Import a .wqso.json sidecar back into binary .wqso (accepts sortKind int OR name string)\n");
+    std::printf("  --gen-srg <wsrg-base> [name]\n");
+    std::printf("                         Emit .wsrg starter: 3 baseline range buckets (Self 0-0 / Melee 0-5 / Spell 0-30)\n");
+    std::printf("  --gen-srg-ranged <wsrg-base> [name]\n");
+    std::printf("                         Emit .wsrg 5 ranged spell buckets (Short 20y / Medium 30y / Long 40y / VeryLong 100y / Unlimited)\n");
+    std::printf("  --gen-srg-friendly <wsrg-base> [name]\n");
+    std::printf("                         Emit .wsrg 3 friendly-only buckets (Heal 40y / Cleanse 30y / Buff 30y) where hostile range = 0\n");
+    std::printf("  --info-wsrg <wsrg-base> [--json]\n");
+    std::printf("                         Print WSRG entries (id / kind / hostile + friendly min-max yards / icon color / name)\n");
+    std::printf("  --validate-wsrg <wsrg-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, rangeKind 0..6, min<=max, no negatives, no duplicate ids; warns on Self+nonzero range and Melee>8y\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
