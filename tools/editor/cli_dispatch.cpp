@@ -101,6 +101,7 @@
 #include "cli_diff_tree.hpp"
 #include "cli_orphan_jsons.hpp"
 #include "cli_list_by_magic.hpp"
+#include "cli_catalog_stats.hpp"
 #include "cli_macros_catalog.hpp"
 #include "cli_char_features_catalog.hpp"
 #include "cli_pvp_catalog.hpp"
@@ -273,6 +274,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleDiffTree,
     handleOrphanJsons,
     handleListByMagic,
+    handleCatalogStats,
     handleMacrosCatalog,
     handleCharFeaturesCatalog,
     handlePVPCatalog,

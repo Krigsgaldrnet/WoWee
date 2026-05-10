@@ -1484,6 +1484,7 @@ add_executable(wowee_editor
     tools/editor/cli_diff_tree.cpp
     tools/editor/cli_orphan_jsons.cpp
     tools/editor/cli_list_by_magic.cpp
+    tools/editor/cli_catalog_stats.cpp
     tools/editor/cli_macros_catalog.cpp
     tools/editor/cli_char_features_catalog.cpp
     tools/editor/cli_pvp_catalog.cpp
