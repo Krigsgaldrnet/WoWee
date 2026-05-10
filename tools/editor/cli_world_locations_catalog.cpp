@@ -173,6 +173,65 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseLocKindToken(const std::string& s) {
+    using L = wowee::pipeline::WoweeWorldLocations;
+    if (s == "poi")           return L::POI;
+    if (s == "rarespawn")     return L::RareSpawn;
+    if (s == "herbnode")      return L::HerbNode;
+    if (s == "mineralvein")   return L::MineralVein;
+    if (s == "fishingspot")   return L::FishingSpot;
+    if (s == "areatrigger")   return L::AreaTrigger;
+    if (s == "portallanding") return L::PortalLanding;
+    return -1;
+}
+
+int parseFactionAccessToken(const std::string& s) {
+    using L = wowee::pipeline::WoweeWorldLocations;
+    if (s == "both")     return L::Both;
+    if (s == "alliance") return L::Alliance;
+    if (s == "horde")    return L::Horde;
+    if (s == "neutral")  return L::Neutral;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wloc-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -295,6 +354,134 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWlocExt(base);
+    if (out.empty()) out = base + ".wloc.json";
+    if (!wowee::pipeline::WoweeWorldLocationsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wloc-json: WLOC not found: %s.wloc\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeWorldLocationsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WLOC";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"locationId", e.locationId},
+            {"name", e.name},
+            {"mapId", e.mapId},
+            {"areaId", e.areaId},
+            {"x", e.x},
+            {"y", e.y},
+            {"z", e.z},
+            {"locKind", e.locKind},
+            {"locKindName", locKindName(e.locKind)},
+            {"iconIndex", e.iconIndex},
+            {"factionAccess", e.factionAccess},
+            {"factionAccessName",
+                factionAccessName(e.factionAccess)},
+            {"respawnSec", e.respawnSec},
+            {"discoverableXp", e.discoverableXp},
+            {"requiredSkillId", e.requiredSkillId},
+            {"requiredSkillName",
+                skillIdName(e.requiredSkillId)},
+            {"requiredSkillLevel", e.requiredSkillLevel},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wloc-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu locations)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wloc.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wloc");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wloc-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wloc-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeWorldLocations c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wloc-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeWorldLocations::Entry e;
+        e.locationId = je.value("locationId", 0u);
+        e.name = je.value("name", std::string{});
+        e.mapId = je.value("mapId", 0u);
+        e.areaId = je.value("areaId", 0u);
+        e.x = je.value("x", 0.f);
+        e.y = je.value("y", 0.f);
+        e.z = je.value("z", 0.f);
+        if (!readEnumField(je, "locKind", "locKindName",
+                            parseLocKindToken, "locKind",
+                            e.locationId, e.locKind)) return 1;
+        e.iconIndex = static_cast<uint8_t>(
+            je.value("iconIndex", 0));
+        if (!readEnumField(je, "factionAccess",
+                            "factionAccessName",
+                            parseFactionAccessToken,
+                            "factionAccess", e.locationId,
+                            e.factionAccess)) return 1;
+        e.respawnSec = je.value("respawnSec", 0u);
+        e.discoverableXp = je.value("discoverableXp", 0u);
+        e.requiredSkillId = static_cast<uint16_t>(
+            je.value("requiredSkillId", 0));
+        e.requiredSkillLevel = static_cast<uint16_t>(
+            je.value("requiredSkillLevel", 0));
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeWorldLocationsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wloc-json: failed to save %s.wloc\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wloc (%zu locations)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handleWorldLocationsCatalog(int& i, int argc, char** argv,
@@ -317,6 +504,14 @@ bool handleWorldLocationsCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wloc") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wloc-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wloc-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
