@@ -157,6 +157,146 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWrprExt(base);
+    if (out.empty()) out = base + ".wrpr.json";
+    if (!wowee::pipeline::WoweeReputationRewardsLoader::exists(
+            base)) {
+        std::fprintf(stderr,
+            "export-wrpr-json: WRPR not found: %s.wrpr\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeReputationRewardsLoader::load(
+        base);
+    nlohmann::json j;
+    j["magic"] = "WRPR";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"tierId", e.tierId},
+            {"name", e.name},
+            {"description", e.description},
+            {"factionId", e.factionId},
+            {"minStanding", e.minStanding},
+            {"standingTier", standingTierName(e.minStanding)},
+            {"discountPct", e.discountPct},
+            {"grantsTabard", e.grantsTabard != 0},
+            {"grantsMount", e.grantsMount != 0},
+            {"iconColorRGBA", e.iconColorRGBA},
+            {"unlockedItemIds", e.unlockedItemIds},
+            {"unlockedRecipeIds", e.unlockedRecipeIds},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wrpr-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu tiers)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wrpr.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wrpr");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wrpr-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wrpr-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeReputationRewards c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wrpr-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeReputationRewards::Entry e;
+        e.tierId = je.value("tierId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.factionId = je.value("factionId", 0u);
+        e.minStanding = je.value("minStanding", 0);
+        e.discountPct = static_cast<uint8_t>(
+            je.value("discountPct", 0u));
+        if (je.contains("grantsTabard")) {
+            const auto& v = je["grantsTabard"];
+            if (v.is_boolean())
+                e.grantsTabard = v.get<bool>() ? 1 : 0;
+            else if (v.is_number_integer())
+                e.grantsTabard = static_cast<uint8_t>(
+                    v.get<int>() != 0 ? 1 : 0);
+        }
+        if (je.contains("grantsMount")) {
+            const auto& v = je["grantsMount"];
+            if (v.is_boolean())
+                e.grantsMount = v.get<bool>() ? 1 : 0;
+            else if (v.is_number_integer())
+                e.grantsMount = static_cast<uint8_t>(
+                    v.get<int>() != 0 ? 1 : 0);
+        }
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        if (je.contains("unlockedItemIds") &&
+            je["unlockedItemIds"].is_array()) {
+            for (const auto& s : je["unlockedItemIds"]) {
+                if (s.is_number_integer())
+                    e.unlockedItemIds.push_back(s.get<uint32_t>());
+            }
+        }
+        if (je.contains("unlockedRecipeIds") &&
+            je["unlockedRecipeIds"].is_array()) {
+            for (const auto& s : je["unlockedRecipeIds"]) {
+                if (s.is_number_integer())
+                    e.unlockedRecipeIds.push_back(
+                        s.get<uint32_t>());
+            }
+        }
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeReputationRewardsLoader::save(
+            c, outBase)) {
+        std::fprintf(stderr,
+            "import-wrpr-json: failed to save %s.wrpr\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wrpr (%zu tiers)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -326,6 +466,12 @@ bool handleReputationRewardsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wrpr") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wrpr-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wrpr-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

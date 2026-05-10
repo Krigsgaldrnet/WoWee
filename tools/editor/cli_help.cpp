@@ -2289,6 +2289,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WRPR entries (id / faction / standing / standing tier / discount %% / tabard flag / mount flag / item count / recipe count / name)\n");
     std::printf("  --validate-wrpr <wrpr-base> [--json]\n");
     std::printf("                         Static checks: id+name+factionId required, minStanding [-42000, 42000], no zero item/recipe IDs, no duplicate tierIds, no two tiers binding same (factionId,minStanding) tuple; warns on discountPct>20%% (exceeds Exalted cap), and PER-FACTION non-monotonic discount progression (higher standing should never give worse discount)\n");
+    std::printf("  --export-wrpr-json <wrpr-base> [out.json]\n");
+    std::printf("                         Export binary .wrpr to a human-editable JSON sidecar (defaults to <base>.wrpr.json; emits both unlockedItemIds and unlockedRecipeIds as JSON arrays of IDs; standingTier derived label \"Friendly/Honored/Revered/Exalted\" added for readability)\n");
+    std::printf("  --import-wrpr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wrpr.json sidecar back into binary .wrpr (grantsTabard/grantsMount accept bool OR int; both unlock arrays serialize as plain JSON int arrays; standingTier label is informational only — minStanding int is authoritative)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
