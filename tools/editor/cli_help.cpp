@@ -2176,7 +2176,11 @@ void printUsage(const char* argv0) {
     std::printf("  --info-wemo <wemo-base> [--json]\n");
     std::printf("                         Print WEMO entries (id / slash command / kind / animation / sound / sex filter / TTS hint)\n");
     std::printf("  --validate-wemo <wemo-base> [--json]\n");
-    std::printf("                         Static checks: id+name+slashCommand required, slash must be lowercase + no leading '/' (chat parser case-folds before lookup), emoteKind 0..3, sex 0..2, ttsHint 0..3, no duplicate ids OR commands; warns on targetMessage with !=2 %s tokens, noTargetMessage with !=1\n");
+    std::printf("                         Static checks: id+name+slashCommand required, slash must be lowercase + no leading '/' (chat parser case-folds before lookup), emoteKind 0..3, sex 0..2, ttsHint 0..3, no duplicate ids OR commands; warns on targetMessage with !=2 %%s tokens, noTargetMessage with !=1\n");
+    std::printf("  --export-wemo-json <wemo-base> [out.json]\n");
+    std::printf("                         Export binary .wemo to a human-editable JSON sidecar (defaults to <base>.wemo.json; emits all 3 enums as both int AND name string)\n");
+    std::printf("  --import-wemo-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wemo.json sidecar back into binary .wemo (emoteKind int OR \"social\"/\"combat\"/\"roleplay\"/\"system\"; sex int OR \"both\"/\"male\"/\"female\"; ttsHint int OR \"talk\"/\"whisper\"/\"yell\"/\"silent\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");

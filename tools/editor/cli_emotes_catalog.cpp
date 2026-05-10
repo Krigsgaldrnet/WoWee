@@ -161,6 +161,198 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+// Token parsers for the three WEMO enums.
+int parseEmoteKindToken(const std::string& s) {
+    using E = wowee::pipeline::WoweeEmotes;
+    if (s == "social")   return E::Social;
+    if (s == "combat")   return E::Combat;
+    if (s == "roleplay") return E::RolePlay;
+    if (s == "system")   return E::System;
+    return -1;
+}
+
+int parseSexFilterToken(const std::string& s) {
+    using E = wowee::pipeline::WoweeEmotes;
+    if (s == "both")   return E::SexBoth;
+    if (s == "male")   return E::MaleOnly;
+    if (s == "female") return E::FemaleOnly;
+    return -1;
+}
+
+int parseTtsHintToken(const std::string& s) {
+    using E = wowee::pipeline::WoweeEmotes;
+    if (s == "talk")    return E::TtsTalk;
+    if (s == "whisper") return E::TtsWhisper;
+    if (s == "yell")    return E::TtsYell;
+    if (s == "silent")  return E::TtsSilent;
+    return -1;
+}
+
+// Generic int-or-token coercion — same shape as the
+// WMSP helper. Returns false on parse error (hard error)
+// and reports via stderr; returns true on success OR
+// when the field is absent (leave outValue at default).
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wemo-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWemoExt(base);
+    if (out.empty()) out = base + ".wemo.json";
+    if (!wowee::pipeline::WoweeEmotesLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wemo-json: WEMO not found: %s.wemo\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeEmotesLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WEMO";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"emoteId", e.emoteId},
+            {"name", e.name},
+            {"description", e.description},
+            {"slashCommand", e.slashCommand},
+            {"animationId", e.animationId},
+            {"soundId", e.soundId},
+            {"targetMessage", e.targetMessage},
+            {"noTargetMessage", e.noTargetMessage},
+            {"emoteKind", e.emoteKind},
+            {"emoteKindName", emoteKindName(e.emoteKind)},
+            {"sex", e.sex},
+            {"sexName", sexFilterName(e.sex)},
+            {"requiredRace", e.requiredRace},
+            {"ttsHint", e.ttsHint},
+            {"ttsHintName", ttsHintName(e.ttsHint)},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wemo-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu emotes)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wemo.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wemo");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wemo-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wemo-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeEmotes c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wemo-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeEmotes::Entry e;
+        e.emoteId = je.value("emoteId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.slashCommand = je.value("slashCommand", std::string{});
+        e.animationId = je.value("animationId", 0u);
+        e.soundId = je.value("soundId", 0u);
+        e.targetMessage = je.value("targetMessage", std::string{});
+        e.noTargetMessage = je.value("noTargetMessage",
+                                       std::string{});
+        if (!readEnumField(je, "emoteKind", "emoteKindName",
+                            parseEmoteKindToken, "emoteKind",
+                            e.emoteId, e.emoteKind)) return 1;
+        if (!readEnumField(je, "sex", "sexName",
+                            parseSexFilterToken, "sex",
+                            e.emoteId, e.sex)) return 1;
+        if (!readEnumField(je, "ttsHint", "ttsHintName",
+                            parseTtsHintToken, "ttsHint",
+                            e.emoteId, e.ttsHint)) return 1;
+        e.requiredRace = static_cast<uint8_t>(
+            je.value("requiredRace", 0u));
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeEmotesLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wemo-json: failed to save %s.wemo\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wemo (%zu emotes)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -318,6 +510,12 @@ bool handleEmotesCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wemo") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wemo-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wemo-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
