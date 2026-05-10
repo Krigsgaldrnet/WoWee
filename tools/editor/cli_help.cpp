@@ -1361,6 +1361,8 @@ void printUsage(const char* argv0) {
     std::printf("                         CI integrity check: open every recognized .w* file in <dir>, parse standard header, report PASS/FAIL + extension mismatches. Exit 1 on any failure\n");
     std::printf("  --tree-summary-md <dir> [out.md]\n");
     std::printf("                         Emit a Markdown report of a content tree (per-format counts + per-file detail with catalog name + entry count). Stdout if no out path\n");
+    std::printf("  --catalog-grep <pattern> <dir> [--case-sensitive] [--json]\n");
+    std::printf("                         Recursively search catalog NAMES (the internal name field) across .w* files in <dir>. Case-insensitive by default. Exit 1 if no match\n");
     std::printf("  --gen-animations <wani-base> [name]\n");
     std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
     std::printf("  --gen-animations-combat <wani-base> [name]\n");

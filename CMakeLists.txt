@@ -1445,6 +1445,7 @@ add_executable(wowee_editor
     tools/editor/cli_tree_summary_md.cpp
     tools/editor/cli_spell_schools_catalog.cpp
     tools/editor/cli_lfg_catalog.cpp
+    tools/editor/cli_catalog_grep.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
