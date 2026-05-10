@@ -2709,6 +2709,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WAUH entries (id / faction / depositPct / cutPct / hour range / fee / npcAuctioneerId / name)\n");
     std::printf("  --validate-wauh <wauh-base> [--json]\n");
     std::printf("                         Static checks: id+name required, factionAccess 0..3, depositRatePct + cutPct each in 0..10000 (basis points), no duplicate ahIds, no duplicate (faction,name) pairs, no duplicate npcAuctioneerId (gossip dispatch tie), maxListingDuration > 0 and minListing <= maxListing; CRITICAL: combined depositRatePct + cutPct < 10000 (else seller loses money on every sale). Warns on combined > 50%% (sellers may abandon AH; verify intentional like neutral AH penalty)\n");
+    std::printf("  --export-wauh-json <wauh-base> [out.json]\n");
+    std::printf("                         Export binary .wauh to a human-editable JSON sidecar (defaults to <base>.wauh.json; emits factionAccess as int + name string)\n");
+    std::printf("  --import-wauh-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wauh.json sidecar back into binary .wauh (factionAccess int OR \"both\"/\"alliance\"/\"horde\"/\"neutral\" — round-trips per-AH config byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
