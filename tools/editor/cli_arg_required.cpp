@@ -239,6 +239,7 @@ const char* const kArgRequired[] = {
     "--export-wpsp-json", "--import-wpsp-json",
     "--gen-tle", "--gen-tle-mage", "--gen-tle-paladin",
     "--info-wtle", "--validate-wtle",
+    "--export-wtle-json", "--import-wtle-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

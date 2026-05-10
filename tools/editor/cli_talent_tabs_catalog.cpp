@@ -5,6 +5,7 @@
 #include "pipeline/wowee_talent_tabs.hpp"
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -119,6 +120,142 @@ int handleInfo(int& i, int argc, char** argv) {
                     e.name.c_str(),
                     e.backgroundFile.c_str());
     }
+    return 0;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWtleExt(base);
+    if (!wowee::pipeline::WoweeTalentTabLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtle-json: WTLE not found: %s.wtle\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTalentTabLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wtle.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["tabId"] = e.tabId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["classMask"] = e.classMask;
+        je["displayOrder"] = e.displayOrder;
+        je["roleHint"] = e.roleHint;
+        je["roleHintName"] =
+            wowee::pipeline::WoweeTalentTab::roleHintName(e.roleHint);
+        je["iconPath"] = e.iconPath;
+        je["backgroundFile"] = e.backgroundFile;
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wtle-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  tabs    : %zu\n", c.entries.size());
+    return 0;
+}
+
+uint8_t parseRoleHintToken(const nlohmann::json& jv,
+                           uint8_t fallback) {
+    if (jv.is_number_integer() || jv.is_number_unsigned()) {
+        int v = jv.get<int>();
+        if (v < 0 || v > wowee::pipeline::WoweeTalentTab::PetClass)
+            return fallback;
+        return static_cast<uint8_t>(v);
+    }
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        for (auto& ch : s) ch = static_cast<char>(std::tolower(ch));
+        if (s == "dps")    return wowee::pipeline::WoweeTalentTab::DPS;
+        if (s == "tank")   return wowee::pipeline::WoweeTalentTab::Tank;
+        if (s == "healer") return wowee::pipeline::WoweeTalentTab::Healer;
+        if (s == "hybrid") return wowee::pipeline::WoweeTalentTab::Hybrid;
+        if (s == "pet" ||
+            s == "petclass") return wowee::pipeline::WoweeTalentTab::PetClass;
+    }
+    return fallback;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wtle-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wtle-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeTalentTab c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeTalentTab::Entry e;
+            if (je.contains("tabId"))         e.tabId = je["tabId"].get<uint32_t>();
+            if (je.contains("name"))          e.name = je["name"].get<std::string>();
+            if (je.contains("description"))   e.description = je["description"].get<std::string>();
+            if (je.contains("classMask"))     e.classMask = je["classMask"].get<uint32_t>();
+            if (je.contains("displayOrder"))  e.displayOrder = je["displayOrder"].get<uint8_t>();
+            uint8_t role = wowee::pipeline::WoweeTalentTab::DPS;
+            if (je.contains("roleHint"))
+                role = parseRoleHintToken(je["roleHint"], role);
+            else if (je.contains("roleHintName"))
+                role = parseRoleHintToken(je["roleHintName"], role);
+            e.roleHint = role;
+            if (je.contains("iconPath"))       e.iconPath = je["iconPath"].get<std::string>();
+            if (je.contains("backgroundFile")) e.backgroundFile = je["backgroundFile"].get<std::string>();
+            if (je.contains("iconColorRGBA"))  e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wtle.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWtleExt(outBase);
+    if (!wowee::pipeline::WoweeTalentTabLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtle-json: failed to save %s.wtle\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtle\n", outBase.c_str());
+    std::printf("  catalog : %s\n", c.name.c_str());
+    std::printf("  tabs    : %zu\n", c.entries.size());
     return 0;
 }
 
@@ -241,6 +378,12 @@ bool handleTalentTabsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wtle") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtle-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtle-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
