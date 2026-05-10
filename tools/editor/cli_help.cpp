@@ -2797,6 +2797,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcfr to a human-editable JSON sidecar (defaults to <base>.wcfr.json; emits both outputStatKind and inputStatKind as int + name string)\n");
     std::printf("  --import-wcfr-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcfr.json sidecar back into binary .wcfr (outputStatKind int OR \"ap\"/\"sp\"/\"crit\"/\"dodge\"/\"parry\"/\"hit\"/\"spellcrit\"/\"haste\"; inputStatKind int OR \"str\"/\"agi\"/\"sta\"/\"int\"/\"spi\"; conversionRatio fp_x100 preserved)\n");
+    std::printf("  --gen-lnk-std <wlnk-base> [name]\n");
+    std::printf("                         Emit .wlnk 4 standard hyperlink kinds (Item with 4-rune-slot template / Quest yellow / Spell white / Achievement with 9 placeholders)\n");
+    std::printf("  --gen-lnk-talent <wlnk-base> [name]\n");
+    std::printf("                         Emit .wlnk 2 less-common link kinds (Talent green for passive enhancements / Trade-skill recipe orange with server lookup)\n");
+    std::printf("  --gen-lnk-quality <wlnk-base> [name]\n");
+    std::printf("                         Emit .wlnk 3 Item-kind variants distinguished by quality color (Common gray 0x9D9D9D / Epic purple 0xA335EE / Legendary orange 0xFF8000)\n");
+    std::printf("  --info-wlnk <wlnk-base> [--json]\n");
+    std::printf("                         Print WLNK entries (id / kind / requireServerLookup / colorRGBA hex / iconRule / name)\n");
+    std::printf("  --validate-wlnk <wlnk-base> [--json]\n");
+    std::printf("                         Static checks: id+name+linkTemplate required, linkKind 0..5, no duplicate linkIds; CRITICAL: linkTemplate MUST contain at least one %%d/%%s placeholder — composer would emit a static string regardless of input (every link would render identically). Warns on > 12 placeholders (unusual; verify intentional), colorRGBA=0 (fully transparent — link text invisible), and requireServerLookup=true with empty tooltipTemplate (server data would not be displayed anywhere)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

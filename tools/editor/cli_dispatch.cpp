@@ -190,6 +190,7 @@
 #include "cli_chat_commands_catalog.hpp"
 #include "cli_camera_presets_catalog.hpp"
 #include "cli_combat_formulas_catalog.hpp"
+#include "cli_chat_links_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -425,6 +426,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleChatCommandsCatalog,
     handleCameraPresetsCatalog,
     handleCombatFormulasCatalog,
+    handleChatLinksCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

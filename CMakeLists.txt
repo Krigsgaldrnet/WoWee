@@ -734,6 +734,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_chat_commands.cpp
     src/pipeline/wowee_camera_presets.cpp
     src/pipeline/wowee_combat_formulas.cpp
+    src/pipeline/wowee_chat_links.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1631,6 +1632,7 @@ add_executable(wowee_editor
     tools/editor/cli_chat_commands_catalog.cpp
     tools/editor/cli_camera_presets_catalog.cpp
     tools/editor/cli_combat_formulas_catalog.cpp
+    tools/editor/cli_chat_links_catalog.cpp
     tools/editor/cli_catalog_pluck.cpp
     tools/editor/cli_catalog_find.cpp
     tools/editor/cli_catalog_by_name.cpp
@@ -1847,6 +1849,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_chat_commands.cpp
     src/pipeline/wowee_camera_presets.cpp
     src/pipeline/wowee_combat_formulas.cpp
+    src/pipeline/wowee_chat_links.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
