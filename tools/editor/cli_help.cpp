@@ -2387,6 +2387,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WWFL entries (id / kind / severity / case-sensitive / pattern -> replacement / name)\n");
     std::printf("  --validate-wwfl <wwfl-base> [--json]\n");
     std::printf("                         Static checks: id+name+pattern required, filterKind 0..5 OR 255 Misc, severity 0..3, no duplicate filterIds, no two filters with same pattern (preprocessor dispatch ambiguity); warns on Replace severity with empty replacement (would silently lose match — use Drop explicitly if intended)\n");
+    std::printf("  --export-wwfl-json <wwfl-base> [out.json]\n");
+    std::printf("                         Export binary .wwfl to a human-editable JSON sidecar (defaults to <base>.wwfl.json; emits both filterKind and severity as int + name string; pattern and replacement as plain strings)\n");
+    std::printf("  --import-wwfl-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wwfl.json sidecar back into binary .wwfl (filterKind int OR \"spam\"/\"goldseller\"/\"allcaps\"/\"repeatchar\"/\"url\"/\"advertreward\"/\"misc\"; severity int OR \"warn\"/\"replace\"/\"drop\"/\"mute\"; caseSensitive accepts bool OR int)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
