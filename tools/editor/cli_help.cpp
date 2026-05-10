@@ -1467,6 +1467,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGTP entries (id / kind / audience mask / level range / weight / condition / classMask / name)\n");
     std::printf("  --validate-wgtp <wgtp-base> [--json]\n");
     std::printf("                         Static checks: id+name+text required, kind 0..3, audienceFilter>0, valid level range, brevity check on tutorial/hint kinds\n");
+    std::printf("  --export-wgtp-json <wgtp-base> [out.json]\n");
+    std::printf("                         Export binary .wgtp to a human-editable JSON sidecar (defaults to <base>.wgtp.json)\n");
+    std::printf("  --import-wgtp-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wgtp.json sidecar back into binary .wgtp (accepts displayKind int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

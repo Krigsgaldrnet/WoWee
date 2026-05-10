@@ -126,6 +126,136 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each tip emits all 11 scalar fields plus
+    // a dual int + name form for displayKind so hand-edits
+    // can use either representation.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWgtpExt(base);
+    if (outPath.empty()) outPath = base + ".wgtp.json";
+    if (!wowee::pipeline::WoweeGameTipLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wgtp-json: WGTP not found: %s.wgtp\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeGameTipLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"tipId", e.tipId},
+            {"name", e.name},
+            {"text", e.text},
+            {"iconPath", e.iconPath},
+            {"displayKind", e.displayKind},
+            {"displayKindName", wowee::pipeline::WoweeGameTip::displayKindName(e.displayKind)},
+            {"audienceFilter", e.audienceFilter},
+            {"minLevel", e.minLevel},
+            {"maxLevel", e.maxLevel},
+            {"displayWeight", e.displayWeight},
+            {"conditionId", e.conditionId},
+            {"requiredClassMask", e.requiredClassMask},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wgtp-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wgtp\n", base.c_str());
+    std::printf("  tips   : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wgtp.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWgtpExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wgtp-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wgtp-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "loading-screen") return wowee::pipeline::WoweeGameTip::LoadingScreen;
+        if (s == "tutorial")       return wowee::pipeline::WoweeGameTip::Tutorial;
+        if (s == "tooltip-help")   return wowee::pipeline::WoweeGameTip::TooltipHelp;
+        if (s == "hint")           return wowee::pipeline::WoweeGameTip::Hint;
+        return wowee::pipeline::WoweeGameTip::LoadingScreen;
+    };
+    wowee::pipeline::WoweeGameTip c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeGameTip::Entry e;
+            e.tipId = je.value("tipId", 0u);
+            e.name = je.value("name", std::string{});
+            e.text = je.value("text", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            if (je.contains("displayKind") &&
+                je["displayKind"].is_number_integer()) {
+                e.displayKind = static_cast<uint8_t>(
+                    je["displayKind"].get<int>());
+            } else if (je.contains("displayKindName") &&
+                       je["displayKindName"].is_string()) {
+                e.displayKind = kindFromName(
+                    je["displayKindName"].get<std::string>());
+            }
+            // audienceFilter defaults to kAudienceAll so an
+            // omitted field doesn't accidentally silence the
+            // tip — explicit 0 is still respected.
+            e.audienceFilter = je.value("audienceFilter",
+                wowee::pipeline::WoweeGameTip::kAudienceAll);
+            e.minLevel = static_cast<uint16_t>(je.value("minLevel", 1));
+            e.maxLevel = static_cast<uint16_t>(je.value("maxLevel", 80));
+            e.displayWeight = static_cast<uint16_t>(
+                je.value("displayWeight", 1));
+            e.conditionId = je.value("conditionId", 0u);
+            e.requiredClassMask = je.value("requiredClassMask", 0u);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeGameTipLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wgtp-json: failed to save %s.wgtp\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wgtp\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  tips   : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -236,6 +366,12 @@ bool handleGameTipsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wgtp") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wgtp-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wgtp-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
