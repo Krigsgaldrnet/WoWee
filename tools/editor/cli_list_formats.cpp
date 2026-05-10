@@ -111,6 +111,7 @@ constexpr FormatRow kFormats[] = {
     {"WIQR", ".wiqr",  "items",     "Item quality tier colors+rules",   "Item quality tier catalog"},
     {"WSCS", ".wscs",  "skills",    "SkillCostsData.dbc + train tiers", "Skill cost / training tier catalog"},
     {"WIFS", ".wifs",  "items",     "Item.dbc Flags bit meanings",      "Item flag bit catalog"},
+    {"WBKD", ".wbkd",  "npcs",      "npc_vendor + npc_trainer SQL",     "NPC service definition catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

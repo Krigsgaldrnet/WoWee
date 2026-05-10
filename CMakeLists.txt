@@ -675,6 +675,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_item_qualities.cpp
     src/pipeline/wowee_skill_costs.cpp
     src/pipeline/wowee_item_flags.cpp
+    src/pipeline/wowee_npc_services.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1511,6 +1512,7 @@ add_executable(wowee_editor
     tools/editor/cli_item_qualities_catalog.cpp
     tools/editor/cli_skill_costs_catalog.cpp
     tools/editor/cli_item_flags_catalog.cpp
+    tools/editor/cli_npc_services_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1664,6 +1666,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_item_qualities.cpp
     src/pipeline/wowee_skill_costs.cpp
     src/pipeline/wowee_item_flags.cpp
+    src/pipeline/wowee_npc_services.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

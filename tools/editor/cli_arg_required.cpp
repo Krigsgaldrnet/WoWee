@@ -266,6 +266,8 @@ const char* const kArgRequired[] = {
     "--gen-ifs", "--gen-ifs-binding", "--gen-ifs-server",
     "--info-wifs", "--validate-wifs",
     "--export-wifs-json", "--import-wifs-json",
+    "--gen-bkd", "--gen-bkd-battle", "--gen-bkd-profession",
+    "--info-wbkd", "--validate-wbkd",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

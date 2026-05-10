@@ -1967,6 +1967,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wifs to a human-editable JSON sidecar (defaults to <base>.wifs.json)\n");
     std::printf("  --import-wifs-json <json-path> [out-base]\n");
     std::printf("                         Import a .wifs.json sidecar back into binary .wifs (accepts flagKind int OR name; isPositive bool OR int)\n");
+    std::printf("  --gen-bkd <wbkd-base> [name]\n");
+    std::printf("                         Emit .wbkd 5 city services (Banker / Mailbox / Innkeeper / Auctioneer / FlightMaster) typical of capital city offerings\n");
+    std::printf("  --gen-bkd-battle <wbkd-base> [name]\n");
+    std::printf("                         Emit .wbkd 3 battlemaster services (Alterac Valley / Warsong Gulch / Arathi Basin) for queueing into Vanilla BGs\n");
+    std::printf("  --gen-bkd-profession <wbkd-base> [name]\n");
+    std::printf("                         Emit .wbkd 4 profession services (Blacksmith Trainer / Tailoring Trainer / Reagent Vendor / Stable Master)\n");
+    std::printf("  --info-wbkd <wbkd-base> [--json]\n");
+    std::printf("                         Print WBKD entries (id / kind / gold cost / faction gate / gossip text id / name)\n");
+    std::printf("  --validate-wbkd <wbkd-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, serviceKind 0..11, no duplicate ids; warns on Mailbox+gossip (no NPC dialog), Innkeeper+no-gossip (silent bind), Battlemaster+gold (queues are free)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
