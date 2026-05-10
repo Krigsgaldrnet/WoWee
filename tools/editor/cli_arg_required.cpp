@@ -94,6 +94,7 @@ const char* const kArgRequired[] = {
     "--export-wsea-json", "--import-wsea-json",
     "--gen-mounts", "--gen-mounts-racial", "--gen-mounts-flying",
     "--info-wmou", "--validate-wmou",
+    "--export-wmou-json", "--import-wmou-json",
     "--gen-bg", "--gen-bg-classic", "--gen-bg-arena",
     "--info-wbgd", "--validate-wbgd",
     "--gen-weather-temperate", "--gen-weather-arctic",

@@ -1161,6 +1161,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMOU entries (id / kind / speed / required riding rank / faction / category / name)\n");
     std::printf("  --validate-wmou <wmou-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, summonSpellId>0, flying needs rank>=150, racial needs raceMask\n");
+    std::printf("  --export-wmou-json <wmou-base> [out.json]\n");
+    std::printf("                         Export binary .wmou to a human-editable JSON sidecar (defaults to <base>.wmou.json)\n");
+    std::printf("  --import-wmou-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wmou.json sidecar back into binary .wmou (accepts kind/faction/category int OR name forms)\n");
     std::printf("  --gen-bg <wbgd-base> [name]\n");
     std::printf("                         Emit .wbgd starter: 1 king-of-hill BG (10v10, 3-cap to win, 30 min limit)\n");
     std::printf("  --gen-bg-classic <wbgd-base> [name]\n");
