@@ -1379,6 +1379,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Compare two directory trees of .w* catalogs at the magic+size level. Reports only-in-A / only-in-B / magic-changed / size-changed / identical counts and lists changed paths. Exit 1 if any difference\n");
     std::printf("  --orphan-jsons <dir> [--json]\n");
     std::printf("                         Find .wXXX.json sidecars whose binary .wXXX is missing. Useful after deleting/moving binaries — orphan JSONs accumulate noise and may shadow re-imports. Exit 1 if any orphans found\n");
+    std::printf("  --list-by-magic <dir> <magic> [--json]\n");
+    std::printf("                         List every file in a directory tree matching a 4-char magic (e.g. WSPL). Reports per-file size + entry count + catalog name + relative path. Exit 1 if no matches\n");
     std::printf("  --gen-animations <wani-base> [name]\n");
     std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
     std::printf("  --gen-animations-combat <wani-base> [name]\n");
