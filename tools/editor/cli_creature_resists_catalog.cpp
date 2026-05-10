@@ -158,6 +158,193 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+// Parse a "+"-joined token bitmask into the
+// ccImmunityMask bits. "all" → 0xFFFF, "none" or empty → 0.
+// Returns -1 on unknown token (no partial result).
+int parseCcImmunityString(const std::string& s) {
+    using R = wowee::pipeline::WoweeCreatureResists;
+    if (s.empty() || s == "none") return 0;
+    if (s == "all")               return 0xFFFF;
+    int mask = 0;
+    size_t pos = 0;
+    while (pos < s.size()) {
+        size_t plus = s.find('+', pos);
+        std::string tok = (plus == std::string::npos)
+            ? s.substr(pos) : s.substr(pos, plus - pos);
+        if      (tok == "root")      mask |= R::ImmuneRoot;
+        else if (tok == "snare")     mask |= R::ImmuneSnare;
+        else if (tok == "stun")      mask |= R::ImmuneStun;
+        else if (tok == "fear")      mask |= R::ImmuneFear;
+        else if (tok == "sleep")     mask |= R::ImmuneSleep;
+        else if (tok == "silence")   mask |= R::ImmuneSilence;
+        else if (tok == "charm")     mask |= R::ImmuneCharm;
+        else if (tok == "disarm")    mask |= R::ImmuneDisarm;
+        else if (tok == "polymorph") mask |= R::ImmunePolymorph;
+        else if (tok == "banish")    mask |= R::ImmuneBanish;
+        else if (tok == "knockback") mask |= R::ImmuneKnockback;
+        else if (tok == "interrupt") mask |= R::ImmuneInterrupt;
+        else if (tok == "taunt")     mask |= R::ImmuneTaunt;
+        else if (tok == "bleed")     mask |= R::ImmuneBleed;
+        else                          return -1;
+        if (plus == std::string::npos) break;
+        pos = plus + 1;
+    }
+    return mask;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWcreExt(base);
+    if (out.empty()) out = base + ".wcre.json";
+    if (!wowee::pipeline::WoweeCreatureResistsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcre-json: WCRE not found: %s.wcre\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCreatureResistsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WCRE";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"resistId", e.resistId},
+            {"name", e.name},
+            {"description", e.description},
+            {"creatureEntry", e.creatureEntry},
+            {"holyResist", e.holyResist},
+            {"fireResist", e.fireResist},
+            {"natureResist", e.natureResist},
+            {"frostResist", e.frostResist},
+            {"shadowResist", e.shadowResist},
+            {"arcaneResist", e.arcaneResist},
+            {"physicalResistPct", e.physicalResistPct},
+            {"ccImmunityMask", e.ccImmunityMask},
+            {"ccImmunityNames",
+                ccImmunityString(e.ccImmunityMask)},
+            {"mechanicImmunityMask", e.mechanicImmunityMask},
+            {"schoolImmunityMask", e.schoolImmunityMask},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wcre-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu resist profiles)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wcre.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wcre");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wcre-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wcre-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeCreatureResists c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wcre-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeCreatureResists::Entry e;
+        e.resistId = je.value("resistId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.creatureEntry = je.value("creatureEntry", 0u);
+        e.holyResist = static_cast<int16_t>(
+            je.value("holyResist", 0));
+        e.fireResist = static_cast<int16_t>(
+            je.value("fireResist", 0));
+        e.natureResist = static_cast<int16_t>(
+            je.value("natureResist", 0));
+        e.frostResist = static_cast<int16_t>(
+            je.value("frostResist", 0));
+        e.shadowResist = static_cast<int16_t>(
+            je.value("shadowResist", 0));
+        e.arcaneResist = static_cast<int16_t>(
+            je.value("arcaneResist", 0));
+        e.physicalResistPct = static_cast<uint8_t>(
+            je.value("physicalResistPct", 0u));
+        // ccImmunityMask: int OR "+"-joined token string.
+        if (je.contains("ccImmunityMask")) {
+            const auto& cm = je["ccImmunityMask"];
+            if (cm.is_string()) {
+                int parsed = parseCcImmunityString(
+                    cm.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-wcre-json: unknown "
+                        "ccImmunityMask token in '%s' on "
+                        "entry id=%u\n",
+                        cm.get<std::string>().c_str(),
+                        e.resistId);
+                    return 1;
+                }
+                e.ccImmunityMask = static_cast<uint16_t>(parsed);
+            } else if (cm.is_number_integer()) {
+                e.ccImmunityMask = static_cast<uint16_t>(
+                    cm.get<int>());
+            }
+        } else if (je.contains("ccImmunityNames") &&
+                   je["ccImmunityNames"].is_string()) {
+            int parsed = parseCcImmunityString(
+                je["ccImmunityNames"].get<std::string>());
+            if (parsed >= 0)
+                e.ccImmunityMask = static_cast<uint16_t>(parsed);
+        }
+        e.mechanicImmunityMask = je.value(
+            "mechanicImmunityMask", 0u);
+        e.schoolImmunityMask = static_cast<uint8_t>(
+            je.value("schoolImmunityMask", 0u));
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeCreatureResistsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcre-json: failed to save %s.wcre\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wcre (%zu resist profiles)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -290,6 +477,12 @@ bool handleCreatureResistsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wcre") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcre-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcre-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

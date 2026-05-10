@@ -2247,6 +2247,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCRE entries (id / creatureEntry / 6 school resists / phys%% / school-immune mask / CC-immune token list / name)\n");
     std::printf("  --validate-wcre <wcre-base> [--json]\n");
     std::printf("                         Static checks: id+name+creatureEntry required, no duplicate resistIds OR creatureEntries (damage-calc lookup ambiguity); warns on resist<-100 (extreme negative >2x dmg taken), physicalResistPct>75 (clamped at runtime), schoolImmunityMask reserved bits 0xC0 set\n");
+    std::printf("  --export-wcre-json <wcre-base> [out.json]\n");
+    std::printf("                         Export binary .wcre to a human-editable JSON sidecar (defaults to <base>.wcre.json; emits ccImmunityMask as both raw uint16 AND \"+\"-joined name string \"root+stun+fear\" / \"all\" / \"none\")\n");
+    std::printf("  --import-wcre-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcre.json sidecar back into binary .wcre (ccImmunityMask int OR token string \"all\"/\"none\"/\"+\"-joined from {root,snare,stun,fear,sleep,silence,charm,disarm,polymorph,banish,knockback,interrupt,taunt,bleed})\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
