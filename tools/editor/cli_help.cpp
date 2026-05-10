@@ -2429,6 +2429,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSKP entries (id / map / area / hour / sun angle / fog start..end yards / cloud opacity %% / wind mph / name)\n");
     std::printf("  --validate-wskp <wskp-base> [--json]\n");
     std::printf("                         Static checks: id+name required, timeOfDayHour 0..23, fogStartYards < fogEndYards (else inverted/zero falloff), no negative fog distances, no duplicate skyIds, no two keyframes at same (mapId, areaId, timeOfDayHour) triple (diurnal interpolation tie); warns on sunAngleDeg outside [0,360]\n");
+    std::printf("  --export-wskp-json <wskp-base> [out.json]\n");
+    std::printf("                         Export binary .wskp to a human-editable JSON sidecar (defaults to <base>.wskp.json; emits cloudSpeedX10 as both raw int AND derived cloudSpeedMph float convenience field)\n");
+    std::printf("  --import-wskp-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wskp.json sidecar back into binary .wskp (no enum coercion — all-numeric payload; cloudSpeedX10 raw int OR cloudSpeedMph float — converts mph * 10 -> raw with rounding and clamp to 0..255)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

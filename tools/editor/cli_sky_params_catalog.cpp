@@ -132,6 +132,139 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWskpExt(base);
+    if (out.empty()) out = base + ".wskp.json";
+    if (!wowee::pipeline::WoweeSkyParamsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wskp-json: WSKP not found: %s.wskp\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSkyParamsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WSKP";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"skyId", e.skyId},
+            {"name", e.name},
+            {"description", e.description},
+            {"mapId", e.mapId},
+            {"areaId", e.areaId},
+            {"timeOfDayHour", e.timeOfDayHour},
+            {"zenithColor", e.zenithColor},
+            {"horizonColor", e.horizonColor},
+            {"sunColor", e.sunColor},
+            {"sunAngleDeg", e.sunAngleDeg},
+            {"fogStartYards", e.fogStartYards},
+            {"fogEndYards", e.fogEndYards},
+            {"cloudOpacity", e.cloudOpacity},
+            {"cloudSpeedX10", e.cloudSpeedX10},
+            {"cloudSpeedMph", e.cloudSpeedX10 / 10.0},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wskp-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu keyframes)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wskp.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wskp");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wskp-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wskp-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSkyParams c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wskp-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeSkyParams::Entry e;
+        e.skyId = je.value("skyId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.mapId = je.value("mapId", 0u);
+        e.areaId = je.value("areaId", 0u);
+        e.timeOfDayHour = static_cast<uint8_t>(
+            je.value("timeOfDayHour", 12u));
+        e.zenithColor = je.value("zenithColor", 0xFF000000u);
+        e.horizonColor = je.value("horizonColor", 0xFF000000u);
+        e.sunColor = je.value("sunColor", 0xFFFFFFFFu);
+        e.sunAngleDeg = je.value("sunAngleDeg", 0.0f);
+        e.fogStartYards = je.value("fogStartYards", 100.0f);
+        e.fogEndYards = je.value("fogEndYards", 500.0f);
+        e.cloudOpacity = static_cast<uint8_t>(
+            je.value("cloudOpacity", 128u));
+        // cloudSpeedX10 accepts raw int form (preferred,
+        // 0..255 = 0..25.5 mph) OR cloudSpeedMph float
+        // form (convenience for hand-edited JSON).
+        if (je.contains("cloudSpeedX10") &&
+            je["cloudSpeedX10"].is_number_integer()) {
+            e.cloudSpeedX10 = static_cast<uint8_t>(
+                je["cloudSpeedX10"].get<int>());
+        } else if (je.contains("cloudSpeedMph") &&
+                   je["cloudSpeedMph"].is_number()) {
+            double mph = je["cloudSpeedMph"].get<double>();
+            int x10 = static_cast<int>(mph * 10.0 + 0.5);
+            if (x10 < 0) x10 = 0;
+            if (x10 > 255) x10 = 255;
+            e.cloudSpeedX10 = static_cast<uint8_t>(x10);
+        }
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeSkyParamsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wskp-json: failed to save %s.wskp\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wskp (%zu keyframes)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -263,6 +396,12 @@ bool handleSkyParamsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wskp") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wskp-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wskp-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
