@@ -138,6 +138,8 @@ const char* const kArgRequired[] = {
     "--gen-animations", "--gen-animations-combat", "--gen-animations-movement",
     "--info-wani", "--validate-wani",
     "--export-wani-json", "--import-wani-json",
+    "--gen-svk", "--gen-svk-combat", "--gen-svk-utility",
+    "--info-wsvk", "--validate-wsvk",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

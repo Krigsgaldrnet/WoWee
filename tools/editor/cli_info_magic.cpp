@@ -67,6 +67,7 @@ constexpr MagicEntry kMagicTable[] = {
     {{'W','H','O','L'}, ".whol",  "holiday",   "--info-whol",      "Holiday catalog"},
     {{'W','L','I','Q'}, ".wliq",  "liquids",   "--info-wliq",      "Liquid catalog"},
     {{'W','A','N','I'}, ".wani",  "anim",      "--info-wani",      "Animation catalog"},
+    {{'W','S','V','K'}, ".wsvk",  "spellfx",   "--info-wsvk",      "Spell visual kit catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

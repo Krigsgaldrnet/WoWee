@@ -1365,6 +1365,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wani to a human-editable JSON sidecar (defaults to <base>.wani.json)\n");
     std::printf("  --import-wani-json <json-path> [out-base]\n");
     std::printf("                         Import a .wani.json sidecar back into binary .wani (accepts behaviorTier int OR name string)\n");
+    std::printf("  --gen-svk <wsvk-base> [name]\n");
+    std::printf("                         Emit .wsvk starter: 3 visual kits (Frostbolt / Fireball / HealingTouch) with projectile + impact + hand effects\n");
+    std::printf("  --gen-svk-combat <wsvk-base> [name]\n");
+    std::printf("                         Emit .wsvk 5 combat visuals (sword/arrow/groundpound/parry/deflect) with WANI animation cross-refs\n");
+    std::printf("  --gen-svk-utility <wsvk-base> [name]\n");
+    std::printf("                         Emit .wsvk 4 utility visuals (portal/hearthstone/mount-summon/resurrect) with no projectile\n");
+    std::printf("  --info-wsvk <wsvk-base> [--json]\n");
+    std::printf("                         Print WSVK entries (id / cast+impact anim IDs / projectile speed+gravity / cast duration / AoE radius / sounds / name)\n");
+    std::printf("  --validate-wsvk <wsvk-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name not empty, no negative speeds/radii, projectile-model + speed coherence, no-effect warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
