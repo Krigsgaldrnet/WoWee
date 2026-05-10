@@ -2769,6 +2769,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcmd to a human-editable JSON sidecar (defaults to <base>.wcmd.json; emits both minSecurityLevel and category as int + name string; aliases as JSON string array)\n");
     std::printf("  --import-wcmd-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcmd.json sidecar back into binary .wcmd (minSecurityLevel int OR \"player\"/\"helper\"/\"moderator\"/\"gamemaster\"/\"admin\"; category int OR \"info\"/\"movement\"/\"communication\"/\"admincmd\"/\"debug\"; aliases array preserved)\n");
+    std::printf("  --gen-cam-combat <wcam-base> [name]\n");
+    std::printf("                         Emit .wcam 3 Combat camera presets (default 75deg / wide ranged 90deg / tight melee 60deg shoulder-cam tracking chest bone) with low motion damping\n");
+    std::printf("  --gen-cam-mounted <wcam-base> [name]\n");
+    std::printf("                         Emit .wcam 2 Mounted camera presets (ground 80deg pulled-back / flying 85deg high-pitch wing-frame) with medium-high damping for smooth turning\n");
+    std::printf("  --gen-cam-cinematic <wcam-base> [name]\n");
+    std::printf("                         Emit .wcam 3 Cinematic camera presets (over-shoulder dialogue 50deg / wide establishing 100deg / portrait 35deg telephoto) with high damping for film-quality motion\n");
+    std::printf("  --info-wcam <wcam-base> [--json]\n");
+    std::printf("                         Print WCAM entries (id / purpose / damping / FOV / distance / pitch / yaw / shoulder / focusBone / name)\n");
+    std::printf("  --validate-wcam <wcam-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, purposeKind 0..5, no duplicate presetIds, FOV in (0,180) (zero/negative makes no sense, >=180 inverts the view frustum), distanceFromTarget >= 0 (negative places camera in front of target); CRITICAL: pitch within (-89,+89) — beyond gimbal-locks the camera. Warns on FOV outside 30..120 player-comfort range (motion-sickness risk), distanceFromTarget < 0.5m (clips into model), and yawOffsetDegrees beyond ±180 (wraps to smaller equivalent — simplify)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
