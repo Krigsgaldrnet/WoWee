@@ -2741,6 +2741,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wswp to a human-editable JSON sidecar (defaults to <base>.wswp.json; emits conditionKind as int + name string)\n");
     std::printf("  --import-wswp-json <json-path> [out-base]\n");
     std::printf("                         Import a .wswp.json sidecar back into binary .wswp (conditionKind int OR \"always\"/\"zoneonly\"/\"classonly\"/\"raceonly\"/\"genderonly\" — round-trips priority + gain + condition tables byte-identical)\n");
+    std::printf("  --gen-tut-newbie <wtur-base> [name]\n");
+    std::printf("                         Emit .wtur 5 first-login tutorial steps (Welcome / Camera / Interact NPCs / OpenQuestLog / OpenInventory) with 30s auto-dismiss and UI-element highlight names\n");
+    std::printf("  --gen-tut-levelup <wtur-base> [name]\n");
+    std::printf("                         Emit .wtur 3 LevelUp-trigger tutorial steps (level 2 spellbook / level 5 trainer visit / level 10 talent unlock) — triggerValue is the level reached\n");
+    std::printf("  --gen-tut-bg <wtur-base> [name]\n");
+    std::printf("                         Emit .wtur 3 ZoneEnter-trigger tutorial steps gated to BG mapIds (AV=30 large-scale / WSG=489 capture-flag / AB=529 control-point) — explains each BG ruleset on first entry\n");
+    std::printf("  --info-wtur <wtur-base> [--json]\n");
+    std::printf("                         Print WTUR entries (id / step / triggerEvent+value / hide-after sec / body length / title)\n");
+    std::printf("  --validate-wtur <wtur-base> [--json]\n");
+    std::printf("                         Static checks: id+name+title+body required, triggerEvent 0..4, stepIndex > 0 (sequence starts at 1), no duplicate tutIds, no duplicate (event,value,step) triples (sequence ordering tie); hideAfterSec MUST be 0 (no auto-dismiss) OR >= 5s (else popup vanishes before player can read it). Warns on Login event with non-zero triggerValue (dead data, Login is unconditional), non-Login event with triggerValue=0 (would fire for ALL events of that kind), and body length < 10 chars (likely placeholder)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
