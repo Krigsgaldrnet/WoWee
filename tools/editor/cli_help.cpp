@@ -2541,6 +2541,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPHM bindings (id / race / gender / movementState / baseAnimId / variantAnimId / transitionMs)\n");
     std::printf("  --validate-wphm <wphm-base> [--json]\n");
     std::printf("                         Static checks: id required, raceId 1..10, genderId 0..1, movementState 0..7, no duplicate mapIds, no duplicate (race,gender,state) triples (renderer dispatch ambiguity), baseAnimId=0 forbidden on non-Idle states (would freeze model); warns on variantAnimId==baseAnimId no-op and transitionMs > 2000 animation hang\n");
+    std::printf("  --export-wphm-json <wphm-base> [out.json]\n");
+    std::printf("                         Export binary .wphm to a human-editable JSON sidecar (defaults to <base>.wphm.json; emits movementState as int + name string)\n");
+    std::printf("  --import-wphm-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wphm.json sidecar back into binary .wphm (movementState int OR \"idle\"/\"walk\"/\"run\"/\"swim\"/\"fly\"/\"sit\"/\"mount\"/\"death\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

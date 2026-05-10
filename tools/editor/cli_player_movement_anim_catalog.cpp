@@ -165,6 +165,57 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseMovementStateToken(const std::string& s) {
+    using P = wowee::pipeline::WoweePlayerMovementAnim;
+    if (s == "idle")  return P::StateIdle;
+    if (s == "walk")  return P::StateWalk;
+    if (s == "run")   return P::StateRun;
+    if (s == "swim")  return P::StateSwim;
+    if (s == "fly")   return P::StateFly;
+    if (s == "sit")   return P::StateSit;
+    if (s == "mount") return P::StateMount;
+    if (s == "death") return P::StateDeath;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wphm-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -288,6 +339,115 @@ int handleValidate(int& i, int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWphmExt(base);
+    if (out.empty()) out = base + ".wphm.json";
+    if (!wowee::pipeline::WoweePlayerMovementAnimLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wphm-json: WPHM not found: %s.wphm\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweePlayerMovementAnimLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WPHM";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"mapId", e.mapId},
+            {"raceId", e.raceId},
+            {"raceName", raceIdName(e.raceId)},
+            {"genderId", e.genderId},
+            {"genderName", genderName(e.genderId)},
+            {"movementState", e.movementState},
+            {"movementStateName",
+                movementStateName(e.movementState)},
+            {"baseAnimId", e.baseAnimId},
+            {"variantAnimId", e.variantAnimId},
+            {"transitionMs", e.transitionMs},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wphm-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu bindings)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wphm.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wphm");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wphm-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wphm-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweePlayerMovementAnim c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wphm-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweePlayerMovementAnim::Entry e;
+        e.mapId = je.value("mapId", 0u);
+        e.raceId = static_cast<uint8_t>(je.value("raceId", 0));
+        e.genderId = static_cast<uint8_t>(je.value("genderId", 0));
+        if (!readEnumField(je, "movementState",
+                            "movementStateName",
+                            parseMovementStateToken,
+                            "movementState",
+                            e.mapId, e.movementState)) return 1;
+        e.baseAnimId = je.value("baseAnimId", 0u);
+        e.variantAnimId = je.value("variantAnimId", 0u);
+        e.transitionMs = static_cast<uint16_t>(
+            je.value("transitionMs", 0));
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweePlayerMovementAnimLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wphm-json: failed to save %s.wphm\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wphm (%zu bindings)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 } // namespace
 
 bool handlePlayerMovementAnimCatalog(int& i, int argc, char** argv,
@@ -310,6 +470,14 @@ bool handlePlayerMovementAnimCatalog(int& i, int argc, char** argv,
     if (std::strcmp(argv[i], "--validate-wphm") == 0 &&
         i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wphm-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wphm-json") == 0 &&
+        i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

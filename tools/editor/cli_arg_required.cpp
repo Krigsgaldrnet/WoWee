@@ -391,6 +391,7 @@ const char* const kArgRequired[] = {
     "--export-wspk-json", "--import-wspk-json",
     "--gen-phm-human", "--gen-phm-orc", "--gen-phm-undead",
     "--info-wphm", "--validate-wphm",
+    "--export-wphm-json", "--import-wphm-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
