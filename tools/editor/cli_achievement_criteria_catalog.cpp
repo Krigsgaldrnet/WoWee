@@ -5,6 +5,7 @@
 #include "pipeline/wowee_achievement_criteria.hpp"
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -119,6 +120,163 @@ int handleInfo(int& i, int argc, char** argv) {
                     e.targetId, e.requiredCount, e.timeLimitMs,
                     e.progressOrder, e.name.c_str());
     }
+    return 0;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWacrExt(base);
+    if (!wowee::pipeline::WoweeAchievementCriteriaLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wacr-json: WACR not found: %s.wacr\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeAchievementCriteriaLoader::load(base);
+    if (outPath.empty()) outPath = base + ".wacr.json";
+    nlohmann::json j;
+    j["catalog"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["criteriaId"] = e.criteriaId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["achievementId"] = e.achievementId;
+        je["targetId"] = e.targetId;
+        je["requiredCount"] = e.requiredCount;
+        je["timeLimitMs"] = e.timeLimitMs;
+        je["criteriaType"] = e.criteriaType;
+        je["criteriaTypeName"] =
+            wowee::pipeline::WoweeAchievementCriteria::criteriaTypeName(e.criteriaType);
+        je["progressOrder"] = e.progressOrder;
+        je["iconColorRGBA"] = e.iconColorRGBA;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wacr-json: failed to open %s for write\n",
+            outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  catalog  : %s\n", c.name.c_str());
+    std::printf("  criteria : %zu\n", c.entries.size());
+    return 0;
+}
+
+uint8_t parseCriteriaTypeToken(const nlohmann::json& jv,
+                               uint8_t fallback) {
+    if (jv.is_number_integer() || jv.is_number_unsigned()) {
+        int v = jv.get<int>();
+        if (v < 0 || v > wowee::pipeline::WoweeAchievementCriteria::Misc)
+            return fallback;
+        return static_cast<uint8_t>(v);
+    }
+    if (jv.is_string()) {
+        std::string s = jv.get<std::string>();
+        for (auto& ch : s) ch = static_cast<char>(std::tolower(ch));
+        if (s == "kill-creature" ||
+            s == "killcreature")    return wowee::pipeline::WoweeAchievementCriteria::KillCreature;
+        if (s == "reach-level" ||
+            s == "reachlevel")      return wowee::pipeline::WoweeAchievementCriteria::ReachLevel;
+        if (s == "complete-quest" ||
+            s == "completequest")   return wowee::pipeline::WoweeAchievementCriteria::CompleteQuest;
+        if (s == "earn-gold" ||
+            s == "earngold")        return wowee::pipeline::WoweeAchievementCriteria::EarnGold;
+        if (s == "gain-honor" ||
+            s == "gainhonor")       return wowee::pipeline::WoweeAchievementCriteria::GainHonor;
+        if (s == "earn-reputation" ||
+            s == "earnreputation")  return wowee::pipeline::WoweeAchievementCriteria::EarnReputation;
+        if (s == "explore-zone" ||
+            s == "explorezone")     return wowee::pipeline::WoweeAchievementCriteria::ExploreZone;
+        if (s == "loot-item" ||
+            s == "lootitem")        return wowee::pipeline::WoweeAchievementCriteria::LootItem;
+        if (s == "use-item" ||
+            s == "useitem")         return wowee::pipeline::WoweeAchievementCriteria::UseItem;
+        if (s == "cast-spell" ||
+            s == "castspell")       return wowee::pipeline::WoweeAchievementCriteria::CastSpell;
+        if (s == "pvp-kill" ||
+            s == "pvpkill")         return wowee::pipeline::WoweeAchievementCriteria::PvPKill;
+        if (s == "dungeon-run" ||
+            s == "dungeonrun")      return wowee::pipeline::WoweeAchievementCriteria::DungeonRun;
+        if (s == "misc")            return wowee::pipeline::WoweeAchievementCriteria::Misc;
+    }
+    return fallback;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wacr-json: failed to open %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wacr-json: parse error in %s: %s\n",
+            jsonPath.c_str(), ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeAchievementCriteria c;
+    if (j.contains("catalog") && j["catalog"].is_string())
+        c.name = j["catalog"].get<std::string>();
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeAchievementCriteria::Entry e;
+            if (je.contains("criteriaId"))    e.criteriaId = je["criteriaId"].get<uint32_t>();
+            if (je.contains("name"))          e.name = je["name"].get<std::string>();
+            if (je.contains("description"))   e.description = je["description"].get<std::string>();
+            if (je.contains("achievementId")) e.achievementId = je["achievementId"].get<uint32_t>();
+            if (je.contains("targetId"))      e.targetId = je["targetId"].get<uint32_t>();
+            if (je.contains("requiredCount")) e.requiredCount = je["requiredCount"].get<uint32_t>();
+            if (je.contains("timeLimitMs"))   e.timeLimitMs = je["timeLimitMs"].get<uint32_t>();
+            uint8_t type = wowee::pipeline::WoweeAchievementCriteria::KillCreature;
+            if (je.contains("criteriaType"))
+                type = parseCriteriaTypeToken(je["criteriaType"], type);
+            else if (je.contains("criteriaTypeName"))
+                type = parseCriteriaTypeToken(je["criteriaTypeName"], type);
+            e.criteriaType = type;
+            if (je.contains("progressOrder")) e.progressOrder = je["progressOrder"].get<uint8_t>();
+            if (je.contains("iconColorRGBA")) e.iconColorRGBA = je["iconColorRGBA"].get<uint32_t>();
+            c.entries.push_back(e);
+        }
+    }
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        const std::string suffix1 = ".wacr.json";
+        const std::string suffix2 = ".json";
+        if (outBase.size() >= suffix1.size() &&
+            outBase.compare(outBase.size() - suffix1.size(),
+                            suffix1.size(), suffix1) == 0) {
+            outBase.resize(outBase.size() - suffix1.size());
+        } else if (outBase.size() >= suffix2.size() &&
+                   outBase.compare(outBase.size() - suffix2.size(),
+                                   suffix2.size(), suffix2) == 0) {
+            outBase.resize(outBase.size() - suffix2.size());
+        }
+    }
+    outBase = stripWacrExt(outBase);
+    if (!wowee::pipeline::WoweeAchievementCriteriaLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wacr-json: failed to save %s.wacr\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wacr\n", outBase.c_str());
+    std::printf("  catalog  : %s\n", c.name.c_str());
+    std::printf("  criteria : %zu\n", c.entries.size());
     return 0;
 }
 
@@ -257,6 +415,12 @@ bool handleAchievementCriteriaCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wacr") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wacr-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wacr-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

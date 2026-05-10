@@ -1889,6 +1889,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WACR entries (id / achievementId / type / targetId / requiredCount / timeLimitMs / progressOrder / name)\n");
     std::printf("  --validate-wacr <wacr-base> [--json]\n");
     std::printf("                         Static checks: id+name+achievementId required, criteriaType 0..12, no duplicate ids; warns on missing targetId for type-specific kinds, ReachLevel>80, timeLimit on non-timed types, requiredCount=0\n");
+    std::printf("  --export-wacr-json <wacr-base> [out.json]\n");
+    std::printf("                         Export binary .wacr to a human-editable JSON sidecar (defaults to <base>.wacr.json)\n");
+    std::printf("  --import-wacr-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wacr.json sidecar back into binary .wacr (accepts criteriaType int 0..12 OR criteriaTypeName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
