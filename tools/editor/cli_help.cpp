@@ -1495,6 +1495,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSMC entries (id / DR category / dispel type / breaks / dispellable / duration / max stacks / conflicts mask / name)\n");
     std::printf("  --validate-wsmc <wsmc-base> [--json]\n");
     std::printf("                         Static checks: id+name required, DR 0..7 / dispel 0..6, maxStacks>0, dispellable+none-dispel inconsistency, self-conflict bit\n");
+    std::printf("  --export-wsmc-json <wsmc-base> [out.json]\n");
+    std::printf("                         Export binary .wsmc to a human-editable JSON sidecar (defaults to <base>.wsmc.json)\n");
+    std::printf("  --import-wsmc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsmc.json sidecar back into binary .wsmc (accepts drCategory/dispelType int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

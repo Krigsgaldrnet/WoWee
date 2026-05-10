@@ -126,6 +126,156 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each mechanic emits all 9 scalar fields
+    // plus dual int + name forms for drCategory and dispelType.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWsmcExt(base);
+    if (outPath.empty()) outPath = base + ".wsmc.json";
+    if (!wowee::pipeline::WoweeSpellMechanicLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wsmc-json: WSMC not found: %s.wsmc\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellMechanicLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"mechanicId", e.mechanicId},
+            {"name", e.name},
+            {"description", e.description},
+            {"iconPath", e.iconPath},
+            {"breaksOnDamage", e.breaksOnDamage},
+            {"canBeDispelled", e.canBeDispelled},
+            {"drCategory", e.drCategory},
+            {"drCategoryName", wowee::pipeline::WoweeSpellMechanic::drCategoryName(e.drCategory)},
+            {"dispelType", e.dispelType},
+            {"dispelTypeName", wowee::pipeline::WoweeSpellMechanic::dispelTypeName(e.dispelType)},
+            {"defaultDurationMs", e.defaultDurationMs},
+            {"maxStacks", e.maxStacks},
+            {"conflictsMask", e.conflictsMask},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wsmc-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source    : %s.wsmc\n", base.c_str());
+    std::printf("  mechanics : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wsmc.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWsmcExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wsmc-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wsmc-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto drFromName = [](const std::string& s) -> uint8_t {
+        if (s == "none")       return wowee::pipeline::WoweeSpellMechanic::DRNone;
+        if (s == "stun")       return wowee::pipeline::WoweeSpellMechanic::DRStun;
+        if (s == "disorient")  return wowee::pipeline::WoweeSpellMechanic::DRDisorient;
+        if (s == "silence")    return wowee::pipeline::WoweeSpellMechanic::DRSilence;
+        if (s == "root")       return wowee::pipeline::WoweeSpellMechanic::DRRoot;
+        if (s == "polymorph")  return wowee::pipeline::WoweeSpellMechanic::DRPolymorph;
+        if (s == "controlled") return wowee::pipeline::WoweeSpellMechanic::DRControlled;
+        if (s == "misc")       return wowee::pipeline::WoweeSpellMechanic::DRMisc;
+        return wowee::pipeline::WoweeSpellMechanic::DRNone;
+    };
+    auto dispelFromName = [](const std::string& s) -> uint8_t {
+        if (s == "none")    return wowee::pipeline::WoweeSpellMechanic::DispelNone;
+        if (s == "magic")   return wowee::pipeline::WoweeSpellMechanic::DispelMagic;
+        if (s == "curse")   return wowee::pipeline::WoweeSpellMechanic::DispelCurse;
+        if (s == "disease") return wowee::pipeline::WoweeSpellMechanic::DispelDisease;
+        if (s == "poison")  return wowee::pipeline::WoweeSpellMechanic::DispelPoison;
+        if (s == "enrage")  return wowee::pipeline::WoweeSpellMechanic::DispelEnrage;
+        if (s == "stealth") return wowee::pipeline::WoweeSpellMechanic::DispelStealth;
+        return wowee::pipeline::WoweeSpellMechanic::DispelNone;
+    };
+    wowee::pipeline::WoweeSpellMechanic c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSpellMechanic::Entry e;
+            e.mechanicId = je.value("mechanicId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            e.breaksOnDamage = static_cast<uint8_t>(
+                je.value("breaksOnDamage", 0));
+            e.canBeDispelled = static_cast<uint8_t>(
+                je.value("canBeDispelled", 0));
+            if (je.contains("drCategory") &&
+                je["drCategory"].is_number_integer()) {
+                e.drCategory = static_cast<uint8_t>(
+                    je["drCategory"].get<int>());
+            } else if (je.contains("drCategoryName") &&
+                       je["drCategoryName"].is_string()) {
+                e.drCategory = drFromName(
+                    je["drCategoryName"].get<std::string>());
+            }
+            if (je.contains("dispelType") &&
+                je["dispelType"].is_number_integer()) {
+                e.dispelType = static_cast<uint8_t>(
+                    je["dispelType"].get<int>());
+            } else if (je.contains("dispelTypeName") &&
+                       je["dispelTypeName"].is_string()) {
+                e.dispelType = dispelFromName(
+                    je["dispelTypeName"].get<std::string>());
+            }
+            e.defaultDurationMs = je.value("defaultDurationMs", 0u);
+            e.maxStacks = static_cast<uint8_t>(
+                je.value("maxStacks", 1));
+            e.conflictsMask = je.value("conflictsMask", 0u);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeSpellMechanicLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wsmc-json: failed to save %s.wsmc\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wsmc\n", outBase.c_str());
+    std::printf("  source    : %s\n", jsonPath.c_str());
+    std::printf("  mechanics : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -237,6 +387,12 @@ bool handleSpellMechanicsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wsmc") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wsmc-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wsmc-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
