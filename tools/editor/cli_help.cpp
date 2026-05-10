@@ -2013,6 +2013,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsps to a human-editable JSON sidecar (defaults to <base>.wsps.json)\n");
     std::printf("  --import-wsps-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsps.json sidecar back into binary .wsps (procFlags accepts int OR pipe-separated label string)\n");
+    std::printf("  --gen-cmr <wcmr-base> [name]\n");
+    std::printf("                         Emit .wcmr 3 small patrols showing each pathKind (4-pt Loop guard / 6-pt OneShot run / 8-pt Random tiger)\n");
+    std::printf("  --gen-cmr-city <wcmr-base> [name]\n");
+    std::printf("                         Emit .wcmr 4 capital-city guard routes (Stormwind / Orgrimmar / Ironforge / Thunder Bluff) with 6-point loops\n");
+    std::printf("  --gen-cmr-boss <wcmr-base> [name]\n");
+    std::printf("                         Emit .wcmr 3 raid-zone patrols (AQ40 12-pt Loop / Naxx 8-pt OneShot / ICC 16-pt Random) demonstrating long-path support\n");
+    std::printf("  --info-wcmr <wcmr-base> [--json]\n");
+    std::printf("                         Print WCMR entries (id / creatureGuid / pathKind / moveType / waypoint count / total path length yards / name)\n");
+    std::printf("  --validate-wcmr <wcmr-base> [--json]\n");
+    std::printf("                         Static checks: id+name+creatureGuid+waypoints required, pathKind 0..3, moveType 0..3, no duplicate ids; warns on 1-waypoint paths (idle), Loop with <3 waypoints (degenerate)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

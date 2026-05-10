@@ -276,6 +276,8 @@ const char* const kArgRequired[] = {
     "--gen-sps", "--gen-sps-aura", "--gen-sps-talent",
     "--info-wsps", "--validate-wsps",
     "--export-wsps-json", "--import-wsps-json",
+    "--gen-cmr", "--gen-cmr-city", "--gen-cmr-boss",
+    "--info-wcmr", "--validate-wcmr",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

@@ -134,6 +134,7 @@
 #include "cli_npc_services_catalog.hpp"
 #include "cli_token_rewards_catalog.hpp"
 #include "cli_spell_procs_catalog.hpp"
+#include "cli_creature_patrols_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -309,6 +310,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleNPCServicesCatalog,
     handleTokenRewardsCatalog,
     handleSpellProcsCatalog,
+    handleCreaturePatrolsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
