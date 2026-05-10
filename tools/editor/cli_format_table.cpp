@@ -134,6 +134,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','P','R','T'}, ".wprt",  "portals",   "--info-wprt",      "Mage portal destinations catalog"},
     {{'W','C','S','T'}, ".wcst",  "stats",     "--info-wcst",      "Combat stats baseline catalog"},
     {{'W','G','B','K'}, ".wgbk",  "guild",     "--info-wgbk",      "Guild bank tabs catalog"},
+    {{'W','Q','G','R'}, ".wqgr",  "quests",    "--info-wqgr",      "Quest graph catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

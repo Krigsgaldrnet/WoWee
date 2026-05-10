@@ -2601,6 +2601,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wgbk to a human-editable JSON sidecar (defaults to <base>.wgbk.json; perRankWithdrawalLimit emitted as 8-element JSON int array, kUnlimited = 4294967295)\n");
     std::printf("  --import-wgbk-json <json-path> [out-base]\n");
     std::printf("                         Import a .wgbk.json sidecar back into binary .wgbk (perRankWithdrawalLimit JSON int array, missing entries default to 0; round-trips per-rank caps byte-identical)\n");
+    std::printf("  --gen-qgr-starter <wqgr-base> [name]\n");
+    std::printf("                         Emit .wqgr 5-quest linear chain (Northshire human-starter Q100..Q104, levels 1..8) with chainHeadHint=1 on Q100\n");
+    std::printf("  --gen-qgr-branched <wqgr-base> [name]\n");
+    std::printf("                         Emit .wqgr 4-quest converging chain (Q200 -> Q201/Q202 branches, both required for Q203) — demonstrates DAG semantics not just a linear list\n");
+    std::printf("  --gen-qgr-dailies <wqgr-base> [name]\n");
+    std::printf("                         Emit .wqgr 3 standalone daily quests (Daily type, no prereqs, no followups) — baseline empty-deps path\n");
+    std::printf("  --info-wqgr <wqgr-base> [--json]\n");
+    std::printf("                         Print WQGR entries (questId / minLevel / maxLevel / questType / factionAccess / zoneId / chainHead / prereq + followup counts / name)\n");
+    std::printf("  --validate-wqgr <wqgr-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, questType 0..4, factionAccess 0..3, maxLevel >= minLevel, no self-prereq (catch-22), no missing prereq questId, DFS cycle detection on prevQuestIds (progression deadlock — quests would be unreachable). Warns on followup hint to self/missing-id (advisory only) and on chainHeadHint=1 with non-empty prereqs (contradicts chain-head semantics)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
