@@ -102,6 +102,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','H','R','T'}, ".whrt",  "social",    "--info-whrt",      "Hearthstone bind point catalog"},
     {{'W','S','C','B'}, ".wscb",  "server",    "--info-wscb",      "Server channel broadcast catalog"},
     {{'W','C','M','G'}, ".wcmg",  "spells",    "--info-wcmg",      "Combat maneuver group catalog"},
+    {{'W','M','S','P'}, ".wmsp",  "server",    "--info-wmsp",      "Master server profile / realmlist catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

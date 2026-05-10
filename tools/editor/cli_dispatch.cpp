@@ -144,6 +144,7 @@
 #include "cli_hearth_binds_catalog.hpp"
 #include "cli_server_broadcasts_catalog.hpp"
 #include "cli_combat_maneuvers_catalog.hpp"
+#include "cli_realm_list_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
@@ -330,6 +331,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleHearthBindsCatalog,
     handleServerBroadcastsCatalog,
     handleCombatManeuversCatalog,
+    handleRealmListCatalog,
     handleCatalogPluck,
     handleQuestObjective,
     handleQuestReward,

@@ -124,6 +124,7 @@ constexpr FormatRow kFormats[] = {
     {"WHRT", ".whrt",  "social",    "SMSG_BINDPOINTUPDATE bind list",  "Hearthstone bind point catalog"},
     {"WSCB", ".wscb",  "server",    "MOTD + scheduled SMSG_NOTIFICATION","Server channel broadcast catalog"},
     {"WCMG", ".wcmg",  "spells",    "Stance/Form/Aspect mutex tables",  "Combat maneuver group catalog (mutex spells)"},
+    {"WMSP", ".wmsp",  "server",    "realmlist + SMSG_REALM_LIST data",  "Master server profile / realmlist catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

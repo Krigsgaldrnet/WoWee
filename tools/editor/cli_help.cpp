@@ -2153,6 +2153,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wcmg to a human-editable JSON sidecar (defaults to <base>.wcmg.json; emits both categoryKind int AND name string; members[] as JSON array of spell IDs)\n");
     std::printf("  --import-wcmg-json <json-path> [out-base]\n");
     std::printf("                         Import a .wcmg.json sidecar back into binary .wcmg (categoryKind int OR \"stance\"/\"form\"/\"aspect\"/\"presence\"/\"posture\"/\"sigil\"; exclusive bool OR int)\n");
+    std::printf("  --gen-msp <wmsp-base> [name]\n");
+    std::printf("                         Emit .wmsp 1 default realm entry (WoweeMain — WotLK 3.3.5a Normal PvE Public Medium)\n");
+    std::printf("  --gen-msp-cluster <wmsp-base> [name]\n");
+    std::printf("                         Emit .wmsp 3-realm cluster (WoweePvE/PvP/RP on same login address — players pick rule-set without changing login)\n");
+    std::printf("  --gen-msp-multi <wmsp-base> [name]\n");
+    std::printf("                         Emit .wmsp 4 progression realms across all expansion gates (Vanilla 1.12.1 build 5875 / TBC 2.4.3 build 8606 / WotLK 3.3.5a build 12340 / Cata 4.3.4 build 15595)\n");
+    std::printf("  --info-wmsp <wmsp-base> [--json]\n");
+    std::printf("                         Print WMSP entries (id / type / category / expansion / population / cap / GM-only / build / address / name)\n");
+    std::printf("  --validate-wmsp <wmsp-base> [--json]\n");
+    std::printf("                         Static checks: id+name+address required, realmType in {0,1,4,6,8}, realmCategory 0..3, expansion 0..3, population 0..4, characterCap>0, no duplicate ids OR names; warns on no-port address, build<5000\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
