@@ -140,6 +140,128 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWsufExt(base);
+    if (outPath.empty()) outPath = base + ".wsuf.json";
+    if (!wowee::pipeline::WoweeItemSuffixLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wsuf-json: WSUF not found: %s.wsuf\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeItemSuffixLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) appendEntryJson(arr, e);
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wsuf-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source   : %s.wsuf\n", base.c_str());
+    std::printf("  suffixes : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wsuf.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWsufExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wsuf-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wsuf-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto categoryFromName = [](const std::string& s) -> uint8_t {
+        if (s == "generic")   return wowee::pipeline::WoweeItemSuffix::Generic;
+        if (s == "elemental") return wowee::pipeline::WoweeItemSuffix::Elemental;
+        if (s == "defensive") return wowee::pipeline::WoweeItemSuffix::Defensive;
+        if (s == "pvp")       return wowee::pipeline::WoweeItemSuffix::PvPSuffix;
+        if (s == "crafted")   return wowee::pipeline::WoweeItemSuffix::Crafted;
+        return wowee::pipeline::WoweeItemSuffix::Generic;
+    };
+    wowee::pipeline::WoweeItemSuffix c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeItemSuffix::Entry e;
+            e.suffixId = je.value("suffixId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.itemQualityFloor = static_cast<uint8_t>(
+                je.value("itemQualityFloor", 0));
+            e.itemQualityCeiling = static_cast<uint8_t>(
+                je.value("itemQualityCeiling", 4));
+            if (je.contains("suffixCategory") &&
+                je["suffixCategory"].is_number_integer()) {
+                e.suffixCategory = static_cast<uint8_t>(
+                    je["suffixCategory"].get<int>());
+            } else if (je.contains("suffixCategoryName") &&
+                       je["suffixCategoryName"].is_string()) {
+                e.suffixCategory = categoryFromName(
+                    je["suffixCategoryName"].get<std::string>());
+            }
+            e.restrictedSlotMask = je.value("restrictedSlotMask", 0u);
+            for (size_t k = 0;
+                 k < wowee::pipeline::WoweeItemSuffix::kMaxStats; ++k) {
+                e.statKind[k] = 0;
+                e.statValuePoints[k] = 0;
+            }
+            if (je.contains("stats") && je["stats"].is_array()) {
+                size_t slot = 0;
+                for (const auto& js : je["stats"]) {
+                    if (slot >= wowee::pipeline::WoweeItemSuffix::kMaxStats)
+                        break;
+                    e.statKind[slot] = static_cast<uint8_t>(
+                        js.value("statKind", 0));
+                    e.statValuePoints[slot] = static_cast<uint16_t>(
+                        js.value("statValuePoints", 0));
+                    ++slot;
+                }
+            }
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeItemSuffixLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wsuf-json: failed to save %s.wsuf\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wsuf\n", outBase.c_str());
+    std::printf("  source   : %s\n", jsonPath.c_str());
+    std::printf("  suffixes : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -265,6 +387,12 @@ bool handleItemSuffixesCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wsuf") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wsuf-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wsuf-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

@@ -1639,6 +1639,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSUF entries (id / category / quality range / restricted slot mask / # populated stat slots / name)\n");
     std::printf("  --validate-wsuf <wsuf-base> [--json]\n");
     std::printf("                         Static checks: id+name required, category 0..4, quality range valid (0..7), stat-kind/value pairing, no-stats warning\n");
+    std::printf("  --export-wsuf-json <wsuf-base> [out.json]\n");
+    std::printf("                         Export binary .wsuf to a human-editable JSON sidecar with nested stats[] arrays (defaults to <base>.wsuf.json)\n");
+    std::printf("  --import-wsuf-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsuf.json sidecar back into binary .wsuf (accepts suffixCategory int OR name string; missing stat slots cleared)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
