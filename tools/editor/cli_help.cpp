@@ -1259,6 +1259,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WAUC houses (id / faction / deposit + cut percent / 3 duration tiers / disallow mask / npc)\n");
     std::printf("  --validate-wauc <wauc-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, faction 0..3, durations short<=medium<=long, cut < 100%%\n");
+    std::printf("  --export-wauc-json <wauc-base> [out.json]\n");
+    std::printf("                         Export binary .wauc to a human-editable JSON sidecar (defaults to <base>.wauc.json)\n");
+    std::printf("  --import-wauc-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wauc.json sidecar back into binary .wauc (accepts factionAccess int OR name string)\n");
     std::printf("  --gen-channels <wchn-base> [name]\n");
     std::printf("                         Emit .wchn starter: 4 stock channels (General / Trade / LFG / GuildRecruit) with autoJoin defaults\n");
     std::printf("  --gen-channels-city <wchn-base> [name]\n");

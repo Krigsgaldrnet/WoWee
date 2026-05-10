@@ -130,6 +130,136 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each house emits all 12 scalar fields
+    // plus dual int + name forms for factionAccess.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWaucExt(base);
+    if (outPath.empty()) outPath = base + ".wauc.json";
+    if (!wowee::pipeline::WoweeAuctionLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wauc-json: WAUC not found: %s.wauc\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeAuctionLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"houseId", e.houseId},
+            {"auctioneerNpcId", e.auctioneerNpcId},
+            {"name", e.name},
+            {"factionAccess", e.factionAccess},
+            {"factionAccessName", wowee::pipeline::WoweeAuction::factionAccessName(e.factionAccess)},
+            {"baseDepositRateBp", e.baseDepositRateBp},
+            {"houseCutRateBp", e.houseCutRateBp},
+            {"maxBidCopper", e.maxBidCopper},
+            {"shortHours", e.shortHours},
+            {"mediumHours", e.mediumHours},
+            {"longHours", e.longHours},
+            {"shortMultBp", e.shortMultBp},
+            {"mediumMultBp", e.mediumMultBp},
+            {"longMultBp", e.longMultBp},
+            {"disallowedClassMask", e.disallowedClassMask},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wauc-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wauc\n", base.c_str());
+    std::printf("  houses : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wauc.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWaucExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wauc-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wauc-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto factionFromName = [](const std::string& s) -> uint8_t {
+        if (s == "alliance") return wowee::pipeline::WoweeAuction::Alliance;
+        if (s == "horde")    return wowee::pipeline::WoweeAuction::Horde;
+        if (s == "neutral")  return wowee::pipeline::WoweeAuction::Neutral;
+        if (s == "both")     return wowee::pipeline::WoweeAuction::Both;
+        return wowee::pipeline::WoweeAuction::Alliance;
+    };
+    wowee::pipeline::WoweeAuction c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeAuction::Entry e;
+            e.houseId = je.value("houseId", 0u);
+            e.auctioneerNpcId = je.value("auctioneerNpcId", 0u);
+            e.name = je.value("name", std::string{});
+            if (je.contains("factionAccess") &&
+                je["factionAccess"].is_number_integer()) {
+                e.factionAccess = static_cast<uint8_t>(
+                    je["factionAccess"].get<int>());
+            } else if (je.contains("factionAccessName") &&
+                       je["factionAccessName"].is_string()) {
+                e.factionAccess = factionFromName(
+                    je["factionAccessName"].get<std::string>());
+            }
+            e.baseDepositRateBp = je.value("baseDepositRateBp", 1500u);
+            e.houseCutRateBp = je.value("houseCutRateBp", 500u);
+            e.maxBidCopper = je.value("maxBidCopper", 0u);
+            e.shortHours = static_cast<uint16_t>(je.value("shortHours", 12));
+            e.mediumHours = static_cast<uint16_t>(je.value("mediumHours", 24));
+            e.longHours = static_cast<uint16_t>(je.value("longHours", 48));
+            e.shortMultBp = je.value("shortMultBp", 10000u);
+            e.mediumMultBp = je.value("mediumMultBp", 20000u);
+            e.longMultBp = je.value("longMultBp", 40000u);
+            e.disallowedClassMask = je.value("disallowedClassMask", 0u);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeAuctionLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wauc-json: failed to save %s.wauc\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wauc\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  houses : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -230,6 +360,12 @@ bool handleAuctionCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wauc") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wauc-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wauc-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

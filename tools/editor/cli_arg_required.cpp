@@ -115,6 +115,7 @@ const char* const kArgRequired[] = {
     "--export-wpet-json", "--import-wpet-json",
     "--gen-auction", "--gen-auction-pair", "--gen-auction-restricted",
     "--info-wauc", "--validate-wauc",
+    "--export-wauc-json", "--import-wauc-json",
     "--gen-channels", "--gen-channels-city", "--gen-channels-moderated",
     "--info-wchn", "--validate-wchn",
     "--gen-weather-temperate", "--gen-weather-arctic",
