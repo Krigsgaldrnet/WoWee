@@ -1353,6 +1353,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Auto-detect any .w* file by 4-byte magic; report format / version / catalog name / entry count + suggest --info-* flag\n");
     std::printf("  --summary-dir <dir> [--json]\n");
     std::printf("                         Recursively walk a directory; report per-format file count, total entries, and bytes for every Wowee open format found\n");
+    std::printf("  --rename-by-magic <file> [--dry-run] [--force]\n");
+    std::printf("                         Recover the correct .w* extension on a file by reading its 4-byte magic. --dry-run prints the planned move; --force overwrites\n");
     std::printf("  --gen-animations <wani-base> [name]\n");
     std::printf("                         Emit .wani starter: 5 essential animations (Stand / Walk / Run / Death / AttackUnarmed) with fallback chains\n");
     std::printf("  --gen-animations-combat <wani-base> [name]\n");
