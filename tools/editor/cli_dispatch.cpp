@@ -69,6 +69,7 @@
 #include "cli_auction_catalog.hpp"
 #include "cli_channels_catalog.hpp"
 #include "cli_cinematics_catalog.hpp"
+#include "cli_glyphs_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -179,6 +180,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleAuctionCatalog,
     handleChannelsCatalog,
     handleCinematicsCatalog,
+    handleGlyphsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

@@ -121,6 +121,8 @@ const char* const kArgRequired[] = {
     "--export-wchn-json", "--import-wchn-json",
     "--gen-cinematics", "--gen-cinematics-intros", "--gen-cinematics-quests",
     "--info-wcms", "--validate-wcms",
+    "--gen-glyphs", "--gen-glyphs-warrior", "--gen-glyphs-universal",
+    "--info-wgly", "--validate-wgly",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

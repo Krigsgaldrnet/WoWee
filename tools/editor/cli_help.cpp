@@ -1287,6 +1287,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCMS entries (id / kind / trigger / target / duration / skippable / soundtrackId / name)\n");
     std::printf("  --validate-wcms <wcms-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name+mediaPath not empty, kind 0..4, trigger 0..8, target required for non-Manual triggers\n");
+    std::printf("  --gen-glyphs <wgly-base> [name]\n");
+    std::printf("                         Emit .wgly starter: 3 glyphs (1 warrior + 1 mage + 1 rogue) showing per-class Major slot picks\n");
+    std::printf("  --gen-glyphs-warrior <wgly-base> [name]\n");
+    std::printf("                         Emit .wgly 6 warrior glyphs (3 major + 3 minor) demonstrating per-class allotment\n");
+    std::printf("  --gen-glyphs-universal <wgly-base> [name]\n");
+    std::printf("                         Emit .wgly 4 universal glyphs (classMask=All) covering hearthstone/levitate/mounting/salvation\n");
+    std::printf("  --info-wgly <wgly-base> [--json]\n");
+    std::printf("                         Print WGLY entries (id / type / spellId / itemId / classMask / requiredLevel / name)\n");
+    std::printf("  --validate-wgly <wgly-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name+spellId not empty, type 0..2, classMask>0, level<25 warning, missing-itemId warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
