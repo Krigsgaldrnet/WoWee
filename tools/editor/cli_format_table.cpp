@@ -142,6 +142,7 @@ constexpr FormatMagicEntry kFormats[] = {
     {{'W','I','R','C'}, ".wirc",  "loot",      "--info-wirc",      "Item random-property pool catalog"},
     {{'W','P','R','C'}, ".wprc",  "spells",    "--info-wprc",      "Spell proc rules catalog"},
     {{'W','A','U','H'}, ".wauh",  "economy",   "--info-wauh",      "Auction house config catalog"},
+    {{'W','B','R','D'}, ".wbrd",  "pvp",       "--info-wbrd",      "Battleground reward stages catalog"},
     {{'W','F','A','C'}, ".wfac",  "factions",  nullptr,            "Faction catalog"},
     {{'W','L','C','K'}, ".wlck",  "locks",     nullptr,            "Lock catalog"},
     {{'W','S','K','L'}, ".wskl",  "skills",    nullptr,            "Skill catalog"},

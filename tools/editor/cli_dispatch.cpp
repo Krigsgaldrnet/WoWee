@@ -184,6 +184,7 @@
 #include "cli_random_property_catalog.hpp"
 #include "cli_spell_proc_rules_catalog.hpp"
 #include "cli_auction_houses_catalog.hpp"
+#include "cli_battleground_rewards_catalog.hpp"
 #include "cli_catalog_pluck.hpp"
 #include "cli_catalog_find.hpp"
 #include "cli_catalog_by_name.hpp"
@@ -413,6 +414,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleRandomPropertyCatalog,
     handleSpellProcRulesCatalog,
     handleAuctionHousesCatalog,
+    handleBattlegroundRewardsCatalog,
     handleCatalogPluck,
     handleCatalogFind,
     handleCatalogByName,

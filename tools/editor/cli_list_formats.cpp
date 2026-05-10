@@ -164,6 +164,7 @@ constexpr FormatRow kFormats[] = {
     {"WIRC", ".wirc",  "loot",      "ItemRandomProperties.dbc + LootMgr",  "Item random-property pool catalog (weighted suffix enchants)"},
     {"WPRC", ".wprc",  "spells",    "SpellProcEvents + per-spell procFlags","Spell proc rules catalog (event triggers + ICD + self-loop guard)"},
     {"WAUH", ".wauh",  "economy",   "AuctionHouse.dbc + AuctionMgr",       "Auction house config catalog (deposit/cut rates + duration tiers)"},
+    {"WBRD", ".wbrd",  "pvp",       "BattlemasterList.dbc + BattlegroundMgr","Battleground reward stages catalog (per-bracket honor + marks)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

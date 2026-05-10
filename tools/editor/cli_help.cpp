@@ -2713,6 +2713,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wauh to a human-editable JSON sidecar (defaults to <base>.wauh.json; emits factionAccess as int + name string)\n");
     std::printf("  --import-wauh-json <json-path> [out-base]\n");
     std::printf("                         Import a .wauh.json sidecar back into binary .wauh (factionAccess int OR \"both\"/\"alliance\"/\"horde\"/\"neutral\" — round-trips per-AH config byte-identical)\n");
+    std::printf("  --gen-brd-av <wbrd-base> [name]\n");
+    std::printf("                         Emit .wbrd Alterac Valley reward ladder (bgId=1, brackets 5-6 / 51-69 only, 20 players/side, Mark of AV item 17502)\n");
+    std::printf("  --gen-brd-wsg <wbrd-base> [name]\n");
+    std::printf("                         Emit .wbrd Warsong Gulch reward ladder (bgId=2, all 6 brackets 10-69, 10 players/side, Mark of WSG item 20558, scaling honor 50/100/200/350/500/750)\n");
+    std::printf("  --gen-brd-ab <wbrd-base> [name]\n");
+    std::printf("                         Emit .wbrd Arathi Basin reward ladder (bgId=3, brackets 2-6 / 20-69, 15 players/side, Mark of AB item 20559, weekly bonus quest token included)\n");
+    std::printf("  --info-wbrd <wbrd-base> [--json]\n");
+    std::printf("                         Print WBRD entries (id / bg / bracket / minPlayers / win+loss honor / markId / win+loss marks / bonusItem)\n");
+    std::printf("  --validate-wbrd <wbrd-base> [--json]\n");
+    std::printf("                         Static checks: id+battlegroundId required, bracketIndex 1..6 (vanilla), minPlayersToStart > 0 (else queue would never start a match), no duplicate rewardIds, no duplicate (bgId,bracket) pairs (runtime reward-lookup tie), bonusItemCount > 0 requires bonusItemId; CRITICAL: lossHonor <= winHonor (else losing rewards more than winning, no incentive to play to win). Warns on winMarks=0 with markItemId set (vanilla wins always granted at least 1 mark)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");
