@@ -1597,6 +1597,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WBNK entries (id / kind / size / display order / unlock status + cost / accept-mask / fixed bag item / name)\n");
     std::printf("  --validate-wbnk <wbnk-base> [--json]\n");
     std::printf("                         Static checks: id+name required, kind 0..7, locked-with-zero-cost warning, fixed-slot-with-mask conflict, ambiguous (kind,order)\n");
+    std::printf("  --export-wbnk-json <wbnk-base> [out.json]\n");
+    std::printf("                         Export binary .wbnk to a human-editable JSON sidecar (defaults to <base>.wbnk.json)\n");
+    std::printf("  --import-wbnk-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wbnk.json sidecar back into binary .wbnk (accepts bagKind int OR name string; isUnlocked defaults to 1, mask to AnyContainer)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

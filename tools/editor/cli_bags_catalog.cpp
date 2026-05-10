@@ -124,6 +124,146 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each slot emits all 8 scalar fields plus
+    // a dual int + name form for bagKind so hand-edits can
+    // use either representation. acceptsBagSubclassMask is
+    // dumped as a raw uint32 — users hand-edit using the
+    // kAccepts* bit constants documented in the header.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWbnkExt(base);
+    if (outPath.empty()) outPath = base + ".wbnk.json";
+    if (!wowee::pipeline::WoweeBagSlotLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wbnk-json: WBNK not found: %s.wbnk\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeBagSlotLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"bagSlotId", e.bagSlotId},
+            {"name", e.name},
+            {"description", e.description},
+            {"bagKind", e.bagKind},
+            {"bagKindName", wowee::pipeline::WoweeBagSlot::bagKindName(e.bagKind)},
+            {"containerSize", e.containerSize},
+            {"displayOrder", e.displayOrder},
+            {"isUnlocked", e.isUnlocked},
+            {"fixedBagItemId", e.fixedBagItemId},
+            {"unlockCostCopper", e.unlockCostCopper},
+            {"acceptsBagSubclassMask", e.acceptsBagSubclassMask},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wbnk-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wbnk\n", base.c_str());
+    std::printf("  slots  : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wbnk.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWbnkExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wbnk-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wbnk-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "inventory")  return wowee::pipeline::WoweeBagSlot::Inventory;
+        if (s == "bank")       return wowee::pipeline::WoweeBagSlot::Bank;
+        if (s == "keyring")    return wowee::pipeline::WoweeBagSlot::Keyring;
+        if (s == "quiver")     return wowee::pipeline::WoweeBagSlot::Quiver;
+        if (s == "soul-shard") return wowee::pipeline::WoweeBagSlot::SoulShard;
+        if (s == "stable")     return wowee::pipeline::WoweeBagSlot::Stable;
+        if (s == "reagent")    return wowee::pipeline::WoweeBagSlot::Reagent;
+        if (s == "wallet")     return wowee::pipeline::WoweeBagSlot::Wallet;
+        return wowee::pipeline::WoweeBagSlot::Inventory;
+    };
+    wowee::pipeline::WoweeBagSlot c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeBagSlot::Entry e;
+            e.bagSlotId = je.value("bagSlotId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            if (je.contains("bagKind") &&
+                je["bagKind"].is_number_integer()) {
+                e.bagKind = static_cast<uint8_t>(
+                    je["bagKind"].get<int>());
+            } else if (je.contains("bagKindName") &&
+                       je["bagKindName"].is_string()) {
+                e.bagKind = kindFromName(
+                    je["bagKindName"].get<std::string>());
+            }
+            e.containerSize = static_cast<uint8_t>(
+                je.value("containerSize", 0));
+            e.displayOrder = static_cast<uint8_t>(
+                je.value("displayOrder", 0));
+            // isUnlocked defaults to 1 when omitted — most
+            // slots ship unlocked at character creation; only
+            // bank-bag slots typically need explicit gold.
+            e.isUnlocked = static_cast<uint8_t>(
+                je.value("isUnlocked", 1));
+            e.fixedBagItemId = je.value("fixedBagItemId", 0u);
+            e.unlockCostCopper = je.value("unlockCostCopper", 0u);
+            // acceptsBagSubclassMask defaults to kAcceptsAny
+            // Container so a sidecar that omits the mask still
+            // produces a working generic-bag slot.
+            e.acceptsBagSubclassMask =
+                je.value("acceptsBagSubclassMask",
+                    wowee::pipeline::WoweeBagSlot::kAcceptsAnyContainer);
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeBagSlotLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wbnk-json: failed to save %s.wbnk\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wbnk\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  slots  : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -254,6 +394,12 @@ bool handleBagsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wbnk") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wbnk-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wbnk-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
