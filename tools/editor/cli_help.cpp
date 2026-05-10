@@ -1259,6 +1259,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WAUC houses (id / faction / deposit + cut percent / 3 duration tiers / disallow mask / npc)\n");
     std::printf("  --validate-wauc <wauc-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, faction 0..3, durations short<=medium<=long, cut < 100%%\n");
+    std::printf("  --gen-channels <wchn-base> [name]\n");
+    std::printf("                         Emit .wchn starter: 4 stock channels (General / Trade / LFG / GuildRecruit) with autoJoin defaults\n");
+    std::printf("  --gen-channels-city <wchn-base> [name]\n");
+    std::printf("                         Emit .wchn 5 city channels (Stormwind General/Trade/LFG + Orgrimmar General/Trade) with map+area gates\n");
+    std::printf("  --gen-channels-moderated <wchn-base> [name]\n");
+    std::printf("                         Emit .wchn 3 moderated channels (LocalDefense / WorldDefense moderated / RaidCoordination level 60+)\n");
+    std::printf("  --info-wchn <wchn-base> [--json]\n");
+    std::printf("                         Print WCHN entries (id / type / faction / autoJoin/announce/moderated / level / map+area gates / name)\n");
+    std::printf("  --validate-wchn <wchn-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name not empty, type 0..9, faction 0..2, world+area-gate combo warning\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
