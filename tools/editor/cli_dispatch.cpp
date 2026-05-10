@@ -99,6 +99,7 @@
 #include "cli_bulk_validate.hpp"
 #include "cli_bulk_json.hpp"
 #include "cli_diff_tree.hpp"
+#include "cli_orphan_jsons.hpp"
 #include "cli_macros_catalog.hpp"
 #include "cli_char_features_catalog.hpp"
 #include "cli_pvp_catalog.hpp"
@@ -267,6 +268,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleBulkValidate,
     handleBulkJson,
     handleDiffTree,
+    handleOrphanJsons,
     handleMacrosCatalog,
     handleCharFeaturesCatalog,
     handlePVPCatalog,
