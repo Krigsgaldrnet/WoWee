@@ -2233,6 +2233,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WLDN entries (id / triggerKind / triggerValue / channel / faction filter / minTimePlayed / name)\n");
     std::printf("  --validate-wldn <wldn-base> [--json]\n");
     std::printf("                         Static checks: id+name+messageText required, triggerKind 0..5, channelKind 0..4, factionFilter 1..3, no duplicate ids; per-trigger triggerValue ranges (LevelReach 1-80, FactionStanding +-42000, ItemAcquired/QuestComplete/SpellLearned/ZoneEntered > 0)\n");
+    std::printf("  --export-wldn-json <wldn-base> [out.json]\n");
+    std::printf("                         Export binary .wldn to a human-editable JSON sidecar (defaults to <base>.wldn.json; emits all 3 enums as both int AND name string; triggerValue as signed int32)\n");
+    std::printf("  --import-wldn-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wldn.json sidecar back into binary .wldn (triggerKind int OR \"levelreach\"/\"factionstanding\"/\"itemacquired\"/\"questcomplete\"/\"spelllearned\"/\"zoneentered\"; channelKind \"raidwarning\"/\"systemmsg\"/\"subtitle\"/\"tutorial\"/\"motdappend\"; factionFilter \"alliance\"/\"horde\"/\"both\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

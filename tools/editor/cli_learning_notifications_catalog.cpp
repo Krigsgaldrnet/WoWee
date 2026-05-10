@@ -171,6 +171,199 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseTriggerKindToken(const std::string& s) {
+    using L = wowee::pipeline::WoweeLearningNotifications;
+    if (s == "levelreach")      return L::LevelReach;
+    if (s == "factionstanding") return L::FactionStanding;
+    if (s == "itemacquired")    return L::ItemAcquired;
+    if (s == "questcomplete")   return L::QuestComplete;
+    if (s == "spelllearned")    return L::SpellLearned;
+    if (s == "zoneentered")     return L::ZoneEntered;
+    return -1;
+}
+
+int parseChannelKindToken(const std::string& s) {
+    using L = wowee::pipeline::WoweeLearningNotifications;
+    if (s == "raidwarning") return L::RaidWarning;
+    if (s == "systemmsg")   return L::SystemMsg;
+    if (s == "subtitle")    return L::Subtitle;
+    if (s == "tutorial")    return L::Tutorial;
+    if (s == "motdappend")  return L::MOTDAppend;
+    return -1;
+}
+
+int parseFactionFilterToken(const std::string& s) {
+    using L = wowee::pipeline::WoweeLearningNotifications;
+    if (s == "alliance") return L::AllianceOnly;
+    if (s == "horde")    return L::HordeOnly;
+    if (s == "both")     return L::Both;
+    return -1;
+}
+
+template <typename ParseFn>
+bool readEnumField(const nlohmann::json& je,
+                    const char* intKey,
+                    const char* nameKey,
+                    ParseFn parseFn,
+                    const char* label,
+                    uint32_t entryId,
+                    uint8_t& outValue) {
+    if (je.contains(intKey)) {
+        const auto& v = je[intKey];
+        if (v.is_string()) {
+            int parsed = parseFn(v.get<std::string>());
+            if (parsed < 0) {
+                std::fprintf(stderr,
+                    "import-wldn-json: unknown %s token "
+                    "'%s' on entry id=%u\n",
+                    label, v.get<std::string>().c_str(),
+                    entryId);
+                return false;
+            }
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+        if (v.is_number_integer()) {
+            outValue = static_cast<uint8_t>(v.get<int>());
+            return true;
+        }
+    }
+    if (je.contains(nameKey) && je[nameKey].is_string()) {
+        int parsed = parseFn(je[nameKey].get<std::string>());
+        if (parsed >= 0) {
+            outValue = static_cast<uint8_t>(parsed);
+            return true;
+        }
+    }
+    return true;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWldnExt(base);
+    if (out.empty()) out = base + ".wldn.json";
+    if (!wowee::pipeline::WoweeLearningNotificationsLoader::exists(
+            base)) {
+        std::fprintf(stderr,
+            "export-wldn-json: WLDN not found: %s.wldn\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeLearningNotificationsLoader::load(
+        base);
+    nlohmann::json j;
+    j["magic"] = "WLDN";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"notificationId", e.notificationId},
+            {"name", e.name},
+            {"description", e.description},
+            {"messageText", e.messageText},
+            {"triggerKind", e.triggerKind},
+            {"triggerKindName", triggerKindName(e.triggerKind)},
+            {"channelKind", e.channelKind},
+            {"channelKindName", channelKindName(e.channelKind)},
+            {"factionFilter", e.factionFilter},
+            {"factionFilterName",
+                factionFilterName(e.factionFilter)},
+            {"triggerValue", e.triggerValue},
+            {"soundId", e.soundId},
+            {"minTotalTimePlayed", e.minTotalTimePlayed},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wldn-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu notifications)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wldn.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wldn");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wldn-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wldn-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeLearningNotifications c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wldn-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeLearningNotifications::Entry e;
+        e.notificationId = je.value("notificationId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.messageText = je.value("messageText", std::string{});
+        if (!readEnumField(je, "triggerKind", "triggerKindName",
+                            parseTriggerKindToken, "triggerKind",
+                            e.notificationId,
+                            e.triggerKind)) return 1;
+        if (!readEnumField(je, "channelKind", "channelKindName",
+                            parseChannelKindToken, "channelKind",
+                            e.notificationId,
+                            e.channelKind)) return 1;
+        if (!readEnumField(je, "factionFilter",
+                            "factionFilterName",
+                            parseFactionFilterToken,
+                            "factionFilter",
+                            e.notificationId,
+                            e.factionFilter)) return 1;
+        e.triggerValue = je.value("triggerValue", 0);
+        e.soundId = je.value("soundId", 0u);
+        e.minTotalTimePlayed = je.value("minTotalTimePlayed", 0u);
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeLearningNotificationsLoader::save(
+            c, outBase)) {
+        std::fprintf(stderr,
+            "import-wldn-json: failed to save %s.wldn\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wldn (%zu notifications)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -311,6 +504,12 @@ bool handleLearningNotificationsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wldn") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wldn-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wldn-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
