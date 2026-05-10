@@ -349,6 +349,7 @@ const char* const kArgRequired[] = {
     "--export-wmvc-json", "--import-wmvc-json",
     "--gen-spv", "--gen-spv-talent", "--gen-spv-racial",
     "--info-wspv", "--validate-wspv",
+    "--export-wspv-json", "--import-wspv-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

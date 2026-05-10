@@ -2345,6 +2345,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSPV entries (id / baseSpellId / variantSpellId / conditionKind / conditionValue / priority / name)\n");
     std::printf("  --validate-wspv <wspv-base> [--json]\n");
     std::printf("                         Static checks: id+name+baseSpellId+variantSpellId required, conditionKind 0..5, no duplicate variantIds, no two variants binding the same (baseSpell, conditionKind, conditionValue, priority) tuple (would tie at runtime and resolve non-deterministically); warns on conditionValue=0 (always-zero default match — gate becomes no-op)\n");
+    std::printf("  --export-wspv-json <wspv-base> [out.json]\n");
+    std::printf("                         Export binary .wspv to a human-editable JSON sidecar (defaults to <base>.wspv.json; emits conditionKind as both int AND name string; conditionValue stays as raw uint32 — its semantics depend on conditionKind so no general-purpose pretty-printing)\n");
+    std::printf("  --import-wspv-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wspv.json sidecar back into binary .wspv (conditionKind int OR \"stance\"/\"form\"/\"talent\"/\"race\"/\"equippedweapon\"/\"auraactive\")\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

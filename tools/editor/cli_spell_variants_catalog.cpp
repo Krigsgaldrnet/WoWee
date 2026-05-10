@@ -138,6 +138,148 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int parseConditionKindToken(const std::string& s) {
+    using V = wowee::pipeline::WoweeSpellVariants;
+    if (s == "stance")         return V::Stance;
+    if (s == "form")           return V::Form;
+    if (s == "talent")         return V::Talent;
+    if (s == "race")           return V::Race;
+    if (s == "equippedweapon") return V::EquippedWeapon;
+    if (s == "auraactive")     return V::AuraActive;
+    return -1;
+}
+
+int handleExportJson(int& i, int argc, char** argv) {
+    std::string base = argv[++i];
+    std::string out;
+    if (parseOptArg(i, argc, argv)) out = argv[++i];
+    base = stripWspvExt(base);
+    if (out.empty()) out = base + ".wspv.json";
+    if (!wowee::pipeline::WoweeSpellVariantsLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wspv-json: WSPV not found: %s.wspv\n",
+            base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellVariantsLoader::load(base);
+    nlohmann::json j;
+    j["magic"] = "WSPV";
+    j["version"] = 1;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"variantId", e.variantId},
+            {"name", e.name},
+            {"description", e.description},
+            {"baseSpellId", e.baseSpellId},
+            {"variantSpellId", e.variantSpellId},
+            {"conditionKind", e.conditionKind},
+            {"conditionKindName", conditionKindName(e.conditionKind)},
+            {"priority", e.priority},
+            {"conditionValue", e.conditionValue},
+            {"iconColorRGBA", e.iconColorRGBA},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream os(out);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wspv-json: failed to open %s for write\n",
+            out.c_str());
+        return 1;
+    }
+    os << j.dump(2) << "\n";
+    std::printf("Wrote %s (%zu variants)\n",
+                out.c_str(), c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string in = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = in;
+        if (outBase.size() >= 10 &&
+            outBase.substr(outBase.size() - 10) == ".wspv.json") {
+            outBase.resize(outBase.size() - 10);
+        } else {
+            stripExt(outBase, ".json");
+            stripExt(outBase, ".wspv");
+        }
+    }
+    std::ifstream is(in);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wspv-json: cannot open %s\n", in.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try {
+        is >> j;
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr,
+            "import-wspv-json: JSON parse error: %s\n", ex.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeSpellVariants c;
+    c.name = j.value("name", std::string{});
+    if (!j.contains("entries") || !j["entries"].is_array()) {
+        std::fprintf(stderr,
+            "import-wspv-json: missing or non-array 'entries'\n");
+        return 1;
+    }
+    for (const auto& je : j["entries"]) {
+        wowee::pipeline::WoweeSpellVariants::Entry e;
+        e.variantId = je.value("variantId", 0u);
+        e.name = je.value("name", std::string{});
+        e.description = je.value("description", std::string{});
+        e.baseSpellId = je.value("baseSpellId", 0u);
+        e.variantSpellId = je.value("variantSpellId", 0u);
+        if (je.contains("conditionKind")) {
+            const auto& v = je["conditionKind"];
+            if (v.is_string()) {
+                int parsed = parseConditionKindToken(
+                    v.get<std::string>());
+                if (parsed < 0) {
+                    std::fprintf(stderr,
+                        "import-wspv-json: unknown "
+                        "conditionKind token '%s' on "
+                        "entry id=%u\n",
+                        v.get<std::string>().c_str(),
+                        e.variantId);
+                    return 1;
+                }
+                e.conditionKind = static_cast<uint8_t>(parsed);
+            } else if (v.is_number_integer()) {
+                e.conditionKind = static_cast<uint8_t>(
+                    v.get<int>());
+            }
+        } else if (je.contains("conditionKindName") &&
+                   je["conditionKindName"].is_string()) {
+            int parsed = parseConditionKindToken(
+                je["conditionKindName"].get<std::string>());
+            if (parsed >= 0)
+                e.conditionKind = static_cast<uint8_t>(parsed);
+        }
+        e.priority = static_cast<uint8_t>(
+            je.value("priority", 1u));
+        e.conditionValue = je.value("conditionValue", 0u);
+        e.iconColorRGBA = je.value("iconColorRGBA", 0xFFFFFFFFu);
+        c.entries.push_back(e);
+    }
+    if (!wowee::pipeline::WoweeSpellVariantsLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wspv-json: failed to save %s.wspv\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wspv (%zu variants)\n",
+                outBase.c_str(), c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -276,6 +418,12 @@ bool handleSpellVariantsCatalog(int& i, int argc, char** argv,
     }
     if (std::strcmp(argv[i], "--validate-wspv") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wspv-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wspv-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
