@@ -1231,6 +1231,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WPCD entries (id / group / kind / aggregator / negated / target / min..max value / name)\n");
     std::printf("  --validate-wpcd <wpcd-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, kind in 0..16, aggregator 0..1, kinds that need targetId have non-zero target\n");
+    std::printf("  --export-wpcd-json <wpcd-base> [out.json]\n");
+    std::printf("                         Export binary .wpcd to a human-editable JSON sidecar (defaults to <base>.wpcd.json)\n");
+    std::printf("  --import-wpcd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wpcd.json sidecar back into binary .wpcd (accepts kind/aggregator int OR name forms)\n");
     std::printf("  --gen-pets <wpet-base> [name]\n");
     std::printf("                         Emit .wpet starter: 2 hunter families (Wolf + Cat) + 1 warlock minion (Imp) with WSPL ability refs\n");
     std::printf("  --gen-pets-hunter <wpet-base> [name]\n");

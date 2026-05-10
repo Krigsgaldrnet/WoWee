@@ -109,6 +109,7 @@ const char* const kArgRequired[] = {
     "--export-wgld-json", "--import-wgld-json",
     "--gen-conditions", "--gen-conditions-gated", "--gen-conditions-event",
     "--info-wpcd", "--validate-wpcd",
+    "--export-wpcd-json", "--import-wpcd-json",
     "--gen-pets", "--gen-pets-hunter", "--gen-pets-warlock",
     "--info-wpet", "--validate-wpet",
     "--gen-weather-temperate", "--gen-weather-arctic",
