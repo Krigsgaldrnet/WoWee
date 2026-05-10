@@ -374,6 +374,8 @@ const char* const kArgRequired[] = {
     "--gen-anv", "--gen-anv-bonus", "--gen-anv-launch",
     "--info-wanv", "--validate-wanv",
     "--export-wanv-json", "--import-wanv-json",
+    "--gen-prg", "--gen-prg-horde", "--gen-prg-high",
+    "--info-wprg", "--validate-wprg",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

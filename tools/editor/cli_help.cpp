@@ -2461,6 +2461,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wanv to a human-editable JSON sidecar (defaults to <base>.wanv.json; emits both eventKind and recurrenceKind as int + name string)\n");
     std::printf("  --import-wanv-json <json-path> [out-base]\n");
     std::printf("                         Import a .wanv.json sidecar back into binary .wanv (eventKind int OR \"holiday\"/\"anniversary\"/\"doublexp\"/\"doublehonor\"/\"petbattle\"/\"bgbonus\"/\"seasonalquest\"/\"misc\"; recurrenceKind int OR \"yearly\"/\"monthly\"/\"weekly\"/\"oneoff\")\n");
+    std::printf("  --gen-prg <wprg-base> [name]\n");
+    std::printf("                         Emit .wprg 7 lower-tier Alliance PvP ranks (Private through Knight-Lieutenant) with weekly/lifetime honor thresholds and tier-set gear bindings\n");
+    std::printf("  --gen-prg-horde <wprg-base> [name]\n");
+    std::printf("                         Emit .wprg 7 lower-tier Horde PvP ranks (Scout through Blood Guard) mirroring Alliance honor thresholds with distinct titles\n");
+    std::printf("  --gen-prg-high <wprg-base> [name]\n");
+    std::printf("                         Emit .wprg 8 high-tier ranks (Alliance Knight-Captain through Commander, Horde Legionnaire through Lt. Commander — tiers 8-11)\n");
+    std::printf("  --info-wprg <wprg-base> [--json]\n");
+    std::printf("                         Print WPRG entries (id / faction / tier / weekly RP / lifetime RP / gear / title / name)\n");
+    std::printf("  --validate-wprg <wprg-base> [--json]\n");
+    std::printf("                         Static checks: id+name required, factionFilter 1=Alliance OR 2=Horde, tier 1..14 (vanilla ladder), no duplicate rankIds, no two ranks at same (faction, tier) tuple (runtime lookup tie); warns on empty titlePrefix, per-faction honor threshold non-monotonic (higher tier should require more honor)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

@@ -146,6 +146,7 @@ constexpr FormatRow kFormats[] = {
     {"WSKP", ".wskp",  "world",     "LightParams.dbc + Light.dbc diurnal","Sky parameters catalog (per-zone keyframes)"},
     {"WCFG", ".wcfg",  "server",    "worldserver.conf flat-text config",  "Server config catalog (polymorphic Float/Int/Bool/String values)"},
     {"WANV", ".wanv",  "events",    "GameEvent SQL + per-holiday script", "Anniversary & recurring event catalog (cron-like scheduling)"},
+    {"WPRG", ".wprg",  "pvp",       "vanilla 14-rank PvP ladder ladder",  "PvP ranking grades catalog (faction + tier + honor thresholds)"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine
