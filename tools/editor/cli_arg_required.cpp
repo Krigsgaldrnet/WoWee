@@ -190,6 +190,7 @@ const char* const kArgRequired[] = {
     "--export-wbnk-json", "--import-wbnk-json",
     "--gen-rune", "--gen-rune-blood", "--gen-rune-frost",
     "--info-wrun", "--validate-wrun",
+    "--export-wrun-json", "--import-wrun-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

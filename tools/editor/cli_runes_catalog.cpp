@@ -129,6 +129,131 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each rune cost emits all 9 scalar fields
+    // plus a dual int + name form for spellTreeBranch so
+    // hand-edits can use either representation.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWrunExt(base);
+    if (outPath.empty()) outPath = base + ".wrun.json";
+    if (!wowee::pipeline::WoweeRuneCostLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wrun-json: WRUN not found: %s.wrun\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeRuneCostLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        arr.push_back({
+            {"runeCostId", e.runeCostId},
+            {"spellId", e.spellId},
+            {"name", e.name},
+            {"description", e.description},
+            {"bloodCost", e.bloodCost},
+            {"frostCost", e.frostCost},
+            {"unholyCost", e.unholyCost},
+            {"anyDeathConvertCost", e.anyDeathConvertCost},
+            {"runicPowerCost", e.runicPowerCost},
+            {"spellTreeBranch", e.spellTreeBranch},
+            {"spellTreeBranchName", wowee::pipeline::WoweeRuneCost::spellTreeBranchName(e.spellTreeBranch)},
+        });
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wrun-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wrun\n", base.c_str());
+    std::printf("  costs  : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wrun.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWrunExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wrun-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wrun-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto branchFromName = [](const std::string& s) -> uint8_t {
+        if (s == "blood")   return wowee::pipeline::WoweeRuneCost::BloodTree;
+        if (s == "frost")   return wowee::pipeline::WoweeRuneCost::FrostTree;
+        if (s == "unholy")  return wowee::pipeline::WoweeRuneCost::UnholyTree;
+        if (s == "generic") return wowee::pipeline::WoweeRuneCost::Generic;
+        return wowee::pipeline::WoweeRuneCost::Generic;
+    };
+    wowee::pipeline::WoweeRuneCost c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeRuneCost::Entry e;
+            e.runeCostId = je.value("runeCostId", 0u);
+            e.spellId = je.value("spellId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.bloodCost = static_cast<uint8_t>(je.value("bloodCost", 0));
+            e.frostCost = static_cast<uint8_t>(je.value("frostCost", 0));
+            e.unholyCost = static_cast<uint8_t>(je.value("unholyCost", 0));
+            e.anyDeathConvertCost = static_cast<uint8_t>(
+                je.value("anyDeathConvertCost", 0));
+            e.runicPowerCost = static_cast<int16_t>(
+                je.value("runicPowerCost", 0));
+            if (je.contains("spellTreeBranch") &&
+                je["spellTreeBranch"].is_number_integer()) {
+                e.spellTreeBranch = static_cast<uint8_t>(
+                    je["spellTreeBranch"].get<int>());
+            } else if (je.contains("spellTreeBranchName") &&
+                       je["spellTreeBranchName"].is_string()) {
+                e.spellTreeBranch = branchFromName(
+                    je["spellTreeBranchName"].get<std::string>());
+            }
+            c.entries.push_back(e);
+        }
+    }
+    if (!wowee::pipeline::WoweeRuneCostLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wrun-json: failed to save %s.wrun\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wrun\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  costs  : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -255,6 +380,12 @@ bool handleRunesCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wrun") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wrun-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wrun-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

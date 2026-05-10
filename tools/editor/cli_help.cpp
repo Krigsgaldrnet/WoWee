@@ -1611,6 +1611,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WRUN entries (id / spell / B/F/U costs / death-convertible / RP cost+arrow / branch / name)\n");
     std::printf("  --validate-wrun <wrun-base> [--json]\n");
     std::printf("                         Static checks: id+name+spellId required, branch 0..3, no rune cost > 2 (DK has only 2 of each), runicPower > 100 cap, no-cost warning\n");
+    std::printf("  --export-wrun-json <wrun-base> [out.json]\n");
+    std::printf("                         Export binary .wrun to a human-editable JSON sidecar (defaults to <base>.wrun.json)\n");
+    std::printf("  --import-wrun-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wrun.json sidecar back into binary .wrun (accepts spellTreeBranch int OR name string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
