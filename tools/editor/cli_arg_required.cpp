@@ -230,6 +230,7 @@ const char* const kArgRequired[] = {
     "--export-wgfs-json", "--import-wgfs-json",
     "--gen-cdf", "--gen-cdf-wotlk-raid", "--gen-cdf-fiveman",
     "--info-wcdf", "--validate-wcdf",
+    "--export-wcdf-json", "--import-wcdf-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

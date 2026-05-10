@@ -1799,6 +1799,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCDF entries (id / kind / baseCreatureId / 4 variant ids / name)\n");
     std::printf("  --validate-wcdf <wcdf-base> [--json]\n");
     std::printf("                         Static checks: id+name+baseCreatureId required, spawnGroupKind 0..5, no duplicate ids; warns on WorldBoss with variants, Boss with only n10, duplicate baseIds, all-self-ref non-WorldBoss\n");
+    std::printf("  --export-wcdf-json <wcdf-base> [out.json]\n");
+    std::printf("                         Export binary .wcdf to a human-editable JSON sidecar (defaults to <base>.wcdf.json)\n");
+    std::printf("  --import-wcdf-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcdf.json sidecar back into binary .wcdf (accepts spawnGroupKind int OR spawnGroupKindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
