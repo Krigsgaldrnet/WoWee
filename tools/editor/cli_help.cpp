@@ -2041,6 +2041,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wbos to a human-editable JSON sidecar (defaults to <base>.wbos.json)\n");
     std::printf("  --import-wbos-json <json-path> [out-base]\n");
     std::printf("                         Import a .wbos.json sidecar back into binary .wbos (all per-entry fields preserved verbatim)\n");
+    std::printf("  --gen-hld <whld-base> [name]\n");
+    std::printf("                         Emit .whld 4 ICC raid weekly lockouts (10N / 25N / 10H / 25H) — 12 boss kill cap, 7-day reset\n");
+    std::printf("  --gen-hld-dungeon <whld-base> [name]\n");
+    std::printf("                         Emit .whld 4 5-man heroic dungeon daily lockouts (HoR / FoS / PoS / TotC) — 24h reset, 5-player size\n");
+    std::printf("  --gen-hld-event <whld-base> [name]\n");
+    std::printf("                         Emit .whld 3 world-event lockouts (Brewfest daily / Hallow's End daily / Wintergrasp 2.5h Custom interval)\n");
+    std::printf("  --info-whld <whld-base> [--json]\n");
+    std::printf("                         Print WHLD entries (id / map / diff / kind / interval (formatted) / boss kills / size / bonus rolls / name)\n");
+    std::printf("  --validate-whld <whld-base> [--json]\n");
+    std::printf("                         Static checks: id+name+kind+interval required, no duplicate ids; warns on non-standard group size, kind/interval mismatches (Daily not 24h, Weekly not 7d), 0 boss kill cap\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

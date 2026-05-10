@@ -116,6 +116,7 @@ constexpr FormatRow kFormats[] = {
     {"WSPS", ".wsps",  "spells",    "spell_proc_event SQL + Spell.dbc", "Spell proc trigger catalog"},
     {"WCMR", ".wcmr",  "creatures", "creature_movement waypoints SQL",  "Creature patrol path catalog"},
     {"WBOS", ".wbos",  "raid",      "instance_encounter SQL",           "Boss encounter definition catalog"},
+    {"WHLD", ".whld",  "raid",      "InstanceTemplate.dbc reset fields","Instance lockout schedule catalog"},
 
     // Additional pipeline catalogs without the alternating
     // gen/info/validate CLI surface (loaded by the engine

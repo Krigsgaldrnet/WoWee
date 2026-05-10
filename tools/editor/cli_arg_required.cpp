@@ -282,6 +282,8 @@ const char* const kArgRequired[] = {
     "--gen-bos", "--gen-bos-raid10", "--gen-bos-world",
     "--info-wbos", "--validate-wbos",
     "--export-wbos-json", "--import-wbos-json",
+    "--gen-hld", "--gen-hld-dungeon", "--gen-hld-event",
+    "--info-whld", "--validate-whld",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
