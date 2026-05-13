@@ -456,6 +456,9 @@ add_executable(test_camera
 target_include_directories(test_camera PRIVATE ${TEST_INCLUDE_DIRS})
 target_include_directories(test_camera SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
 target_link_libraries(test_camera PRIVATE catch2_main)
+if(TARGET glm::glm)
+    target_link_libraries(test_camera PRIVATE glm::glm)
+endif()
 add_test(NAME camera COMMAND test_camera)
 register_test_target(test_camera)
 

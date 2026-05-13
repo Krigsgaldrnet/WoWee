@@ -211,7 +211,7 @@ int handleValidateZonePack(int& i, int argc, char** argv) {
             if (e.path().extension() != ".png") continue;
             tex.count++;
             tex.bytes += e.file_size();
-            FILE* f = std::fopen(e.path().c_str(), "rb");
+            FILE* f = std::fopen(e.path().string().c_str(), "rb");
             if (f) {
                 unsigned char sig[8];
                 bool ok = (std::fread(sig, 1, 8, f) == 8 &&
@@ -253,7 +253,7 @@ int handleValidateZonePack(int& i, int argc, char** argv) {
             if (e.path().extension() != ".wav") continue;
             audio.count++;
             audio.bytes += e.file_size();
-            FILE* f = std::fopen(e.path().c_str(), "rb");
+            FILE* f = std::fopen(e.path().string().c_str(), "rb");
             if (f) {
                 char hdr[12];
                 bool ok = (std::fread(hdr, 1, 12, f) == 12 &&

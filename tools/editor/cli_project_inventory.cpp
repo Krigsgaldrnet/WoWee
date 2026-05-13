@@ -267,7 +267,7 @@ int handleProjectAudio(int& i, int argc, char** argv) {
                 if (e.path().extension() != ".wav") continue;
                 r.wavCount++;
                 r.bytes += e.file_size();
-                FILE* f = std::fopen(e.path().c_str(), "rb");
+                FILE* f = std::fopen(e.path().string().c_str(), "rb");
                 if (f) {
                     char hdr[44];
                     if (std::fread(hdr, 1, 44, f) == 44 &&
