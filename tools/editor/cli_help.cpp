@@ -2807,6 +2807,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WLNK entries (id / kind / requireServerLookup / colorRGBA hex / iconRule / name)\n");
     std::printf("  --validate-wlnk <wlnk-base> [--json]\n");
     std::printf("                         Static checks: id+name+linkTemplate required, linkKind 0..5, no duplicate linkIds; CRITICAL: linkTemplate MUST contain at least one %%d/%%s placeholder — composer would emit a static string regardless of input (every link would render identically). Warns on > 12 placeholders (unusual; verify intentional), colorRGBA=0 (fully transparent — link text invisible), and requireServerLookup=true with empty tooltipTemplate (server data would not be displayed anywhere)\n");
+    std::printf("  --export-wlnk-json <wlnk-base> [out.json]\n");
+    std::printf("                         Export binary .wlnk to a human-editable JSON sidecar (defaults to <base>.wlnk.json; emits linkKind as int + name string; requireServerLookup as bool; colorRGBA as uint32)\n");
+    std::printf("  --import-wlnk-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wlnk.json sidecar back into binary .wlnk (linkKind int OR \"item\"/\"quest\"/\"spell\"/\"achievement\"/\"talent\"/\"trade\"; requireServerLookup bool OR int — round-trips linkTemplate/tooltipTemplate/iconRule byte-identical)\n");
     std::printf("  --catalog-pluck <wXXX-file> <id> [--json]\n");
     std::printf("                         Extract one entry by id from any registered catalog format. Auto-detects magic, dispatches to the per-format --info-* handler internally, then prints just the matching entry. Primary-key field is auto-detected (first *Id field, or first numeric)\n");
     std::printf("  --catalog-find <directory> <id> [--magic <WXXX>] [--json]\n");

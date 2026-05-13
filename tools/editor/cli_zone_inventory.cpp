@@ -159,7 +159,7 @@ int handleZoneAudio(int& i, int argc, char** argv) {
         Row r;
         r.path = fs::relative(e.path(), zoneDir).string();
         r.bytes = static_cast<uint64_t>(e.file_size());
-        FILE* f = std::fopen(e.path().c_str(), "rb");
+        FILE* f = std::fopen(e.path().string().c_str(), "rb");
         if (f) {
             char hdr[44];
             if (std::fread(hdr, 1, 44, f) == 44 &&
