@@ -280,13 +280,24 @@ void ChatPanel::render(game::GameHandler& gameHandler,
         std::string fullMsg = formatChatMessage(msg, processedMessage, resolvedSenderName, tsPrefix, gameHandler);
 
         // Detect mention: does this message contain the local player's name?
+        // Scan in-place without allocating a full lowercased copy of the
+        // message every frame for every visible line.
         bool isMention = false;
         if (!selfNameLower.empty() &&
             msg.type != game::ChatType::WHISPER_INFORM &&
-            msg.type != game::ChatType::SYSTEM) {
-            std::string msgLower = fullMsg;
-            for (auto& c : msgLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            isMention = (msgLower.find(selfNameLower) != std::string::npos);
+            msg.type != game::ChatType::SYSTEM &&
+            fullMsg.size() >= selfNameLower.size()) {
+            const size_t nlen = selfNameLower.size();
+            const size_t last = fullMsg.size() - nlen;
+            for (size_t i = 0; i <= last && !isMention; ++i) {
+                bool match = true;
+                for (size_t j = 0; j < nlen; ++j) {
+                    unsigned char a = static_cast<unsigned char>(fullMsg[i + j]);
+                    unsigned char b = static_cast<unsigned char>(selfNameLower[j]);
+                    if (std::tolower(a) != b) { match = false; break; }
+                }
+                if (match) isMention = true;
+            }
         }
 
         // Render message in a group so we can attach a right-click context menu
