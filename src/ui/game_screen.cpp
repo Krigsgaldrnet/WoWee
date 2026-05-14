@@ -1224,14 +1224,20 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
     if (!io.WantCaptureMouse && input.isMouseButtonJustPressed(SDL_BUTTON_RIGHT) && !input.isMouseButtonPressed(SDL_BUTTON_LEFT)) {
         // If a gameobject is already targeted, prioritize interacting with that target
         // instead of re-picking under cursor (which can hit nearby decorative GOs).
+        // Exclude chair-type GOs (type 7): otherwise any right-click (including the
+        // start of a camera rotate) auto-sits the player whenever a chair is targeted.
         if (gameHandler.hasTarget()) {
             auto target = gameHandler.getTarget();
             if (target && target->getType() == game::ObjectType::GAMEOBJECT) {
-                LOG_DEBUG("[GO-DIAG] Right-click: re-interacting with targeted GO 0x",
-                            std::hex, target->getGuid(), std::dec);
-                gameHandler.setTarget(target->getGuid());
-                gameHandler.interactWithGameObject(target->getGuid());
-                return;
+                auto go = std::static_pointer_cast<game::GameObject>(target);
+                auto* goInfo = gameHandler.getCachedGameObjectInfo(go->getEntry());
+                if (!goInfo || goInfo->type != 7) {
+                    LOG_DEBUG("[GO-DIAG] Right-click: re-interacting with targeted GO 0x",
+                                std::hex, target->getGuid(), std::dec);
+                    gameHandler.setTarget(target->getGuid());
+                    gameHandler.interactWithGameObject(target->getGuid());
+                    return;
+                }
             }
         }
 
@@ -1423,7 +1429,13 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                         }
                     }
                 } else if (target->getType() == game::ObjectType::GAMEOBJECT) {
-                    gameHandler.interactWithGameObject(target->getGuid());
+                    // Skip chairs: auto-sit must only happen when the chair is
+                    // under the cursor, never as a side effect of right-click.
+                    auto go = std::static_pointer_cast<game::GameObject>(target);
+                    auto* goInfo = gameHandler.getCachedGameObjectInfo(go->getEntry());
+                    if (!goInfo || goInfo->type != 7) {
+                        gameHandler.interactWithGameObject(target->getGuid());
+                    }
                 } else if (target->getType() == game::ObjectType::PLAYER) {
                     // Right-click another player could start attack in PvP context
                 }
