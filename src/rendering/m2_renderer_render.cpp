@@ -1124,21 +1124,27 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     uint32_t drawOffset = groupSSBOOffset;
                     if (hasBatchTexAnim && instanceDataCount_ + groupSize <= MAX_INSTANCE_DATA) {
                         drawOffset = instanceDataCount_;
+                        // Hoist per-batch lookups: the transform pointer is fixed for
+                        // every instance in this group; only the interpVec3 result
+                        // varies (per-instance animTime).
+                        const pipeline::M2TextureTransform* tt = nullptr;
+                        if (batch.textureAnimIndex != 0xFFFF && model.hasTextureAnimation) {
+                            uint16_t lookupIdx = batch.textureAnimIndex;
+                            if (lookupIdx < model.textureTransformLookup.size()) {
+                                uint16_t transformIdx = model.textureTransformLookup[lookupIdx];
+                                if (transformIdx < model.textureTransforms.size()) {
+                                    tt = &model.textureTransforms[transformIdx];
+                                }
+                            }
+                        }
                         for (size_t j = lodIdx; j < lodEnd; j++) {
                             auto& inst = instances[pending[j].instanceIdx];
                             glm::vec2 uvOffset(0.0f);
-                            if (batch.textureAnimIndex != 0xFFFF && model.hasTextureAnimation) {
-                                uint16_t lookupIdx = batch.textureAnimIndex;
-                                if (lookupIdx < model.textureTransformLookup.size()) {
-                                    uint16_t transformIdx = model.textureTransformLookup[lookupIdx];
-                                    if (transformIdx < model.textureTransforms.size()) {
-                                        const auto& tt = model.textureTransforms[transformIdx];
-                                        glm::vec3 trans = interpVec3(tt.translation,
-                                            inst.currentSequenceIndex, inst.animTime,
-                                            glm::vec3(0.0f), model.globalSequenceDurations);
-                                        uvOffset = glm::vec2(trans.x, trans.y);
-                                    }
-                                }
+                            if (tt) {
+                                glm::vec3 trans = interpVec3(tt->translation,
+                                    inst.currentSequenceIndex, inst.animTime,
+                                    glm::vec3(0.0f), model.globalSequenceDurations);
+                                uvOffset = glm::vec2(trans.x, trans.y);
                             }
                             if (model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
                                 float t = std::chrono::duration<float>(
