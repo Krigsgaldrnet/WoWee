@@ -1,4 +1,5 @@
 #include "cli_gen_audio.hpp"
+#include "cli_subprocess.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -378,12 +379,10 @@ int handleZoneAudioPack(int& i, int argc, char** argv) {
     int written = 0;
     for (const auto& job : jobs) {
         std::filesystem::path out = audioDir / job.fileName;
-        std::string cmd = "\"" + self + "\" --gen-audio-tone \"" +
-                          out.string() + "\" " +
-                          job.freq + " " + job.duration + " " +
-                          job.sampleRate + " " + job.waveform +
-                          " > /dev/null 2>&1";
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(self, {
+            "--gen-audio-tone", out.string(),
+            job.freq, job.duration, job.sampleRate, job.waveform
+        }, /*quiet=*/true);
         if (rc != 0) {
             std::fprintf(stderr,
                 "gen-zone-audio-pack: %s failed (rc=%d)\n",

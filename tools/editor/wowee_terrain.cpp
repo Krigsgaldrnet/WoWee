@@ -269,7 +269,8 @@ bool WoweeTerrain::exportZoneMap(const pipeline::ADTTerrain& terrain,
     namespace fs = std::filesystem;
     fs::create_directories(fs::path(path).parent_path());
 
-    std::vector<uint8_t> pixels(resolution * resolution * 3, 0);
+    std::vector<uint8_t> pixels(
+        static_cast<size_t>(resolution) * static_cast<size_t>(resolution) * 3u, 0);
 
     // Find height range
     float minH = 1e30f, maxH = -1e30f;
