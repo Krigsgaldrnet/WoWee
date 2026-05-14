@@ -1421,6 +1421,7 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
         const ModelData& model = mdlIt->second;
 
         result.instanceIndex = instIdx;
+        result.model = &model;   // cache so the draw-list loop doesn't redo the hash lookup
         result.visibleGroups.clear();
         result.portalCulled = 0;
         result.distanceCulled = 0;
@@ -1493,11 +1494,9 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
     int currentPipelineKind = 0;
 
     for (const auto& dl : drawLists_) {
-        if (dl.instanceIndex >= instances.size()) continue;
+        if (dl.instanceIndex >= instances.size() || dl.model == nullptr) continue;
         const auto& instance = instances[dl.instanceIndex];
-        auto modelIt = loadedModels.find(instance.modelId);
-        if (modelIt == loadedModels.end()) continue;
-        const ModelData& model = modelIt->second;
+        const ModelData& model = *dl.model;
 
 
         // Push model matrix
