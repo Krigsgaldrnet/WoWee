@@ -1433,10 +1433,19 @@ void SocialHandler::handlePartyMemberStats(network::Packet& packet, bool isFull)
 void SocialHandler::handleGuildInfo(network::Packet& packet) {
     GuildInfoData data;
     if (!GuildInfoParser::parse(packet, data)) return;
+    // SMSG_GUILD_INFO is pushed by the server on every guild roster sync
+    // (login, member join/leave, periodic refreshes). Only print when
+    // something the user can see has actually changed; otherwise the
+    // guild banner spams chat on every tick.
+    const bool changed = (guildInfoData_.guildName != data.guildName) ||
+                         (guildInfoData_.numMembers != data.numMembers) ||
+                         (guildInfoData_.numAccounts != data.numAccounts);
     guildInfoData_ = data;
-    owner_.addSystemChatMessage("Guild: " + data.guildName + " (" +
-                         std::to_string(data.numMembers) + " members, " +
-                         std::to_string(data.numAccounts) + " accounts)");
+    if (changed) {
+        owner_.addSystemChatMessage("Guild: " + data.guildName + " (" +
+                             std::to_string(data.numMembers) + " members, " +
+                             std::to_string(data.numAccounts) + " accounts)");
+    }
 }
 
 void SocialHandler::handleGuildRoster(network::Packet& packet) {
