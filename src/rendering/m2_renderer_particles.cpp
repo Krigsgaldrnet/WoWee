@@ -210,6 +210,37 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
     if (!inst.cachedModel) return;
     const auto& gpu = *inst.cachedModel;
 
+    // Hoist per-emitter gravity out of the per-particle loop. Gravity (and the
+    // emissionSpeed fallback) depends only on the emitter and animation time —
+    // not on the particle itself — so interpFloat was being re-evaluated for
+    // every particle even when 100s of particles share one emitter.
+    constexpr size_t kMaxStackEmitters = 16;
+    float emitterGravStack[kMaxStackEmitters];
+    std::vector<float> emitterGravHeap;
+    const size_t numEm = gpu.particleEmitters.size();
+    float* emitterGrav = nullptr;
+    if (numEm > 0) {
+        if (numEm <= kMaxStackEmitters) {
+            emitterGrav = emitterGravStack;
+        } else {
+            emitterGravHeap.resize(numEm);
+            emitterGrav = emitterGravHeap.data();
+        }
+        for (size_t e = 0; e < numEm; ++e) {
+            const auto& pem = gpu.particleEmitters[e];
+            float grav = interpFloat(pem.gravity,
+                                      inst.animTime, inst.currentSequenceIndex,
+                                      gpu.sequences, gpu.globalSequenceDurations);
+            if (grav == 0.0f && !gpu.isFireflyEffect) {
+                float emSpeed = interpFloat(pem.emissionSpeed,
+                                             inst.animTime, inst.currentSequenceIndex,
+                                             gpu.sequences, gpu.globalSequenceDurations);
+                grav = (std::abs(emSpeed) > 0.1f) ? 4.0f : 1.5f;
+            }
+            emitterGrav[e] = grav;
+        }
+    }
+
     for (size_t i = 0; i < inst.particles.size(); ) {
         auto& p = inst.particles[i];
         p.life += dt;
@@ -219,26 +250,8 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
             inst.particles.pop_back();
             continue;
         }
-        // Apply gravity
-        if (p.emitterIndex >= 0 && p.emitterIndex < static_cast<int>(gpu.particleEmitters.size())) {
-            const auto& pem = gpu.particleEmitters[p.emitterIndex];
-            float grav = interpFloat(pem.gravity,
-                                      inst.animTime, inst.currentSequenceIndex,
-                                      gpu.sequences, gpu.globalSequenceDurations);
-            // When M2 gravity is 0, apply default gravity so particles arc downward.
-            // Many fountain M2s rely on bone animation (.anim files) we don't load yet.
-            // Firefly/ambient glow particles intentionally have zero gravity — skip fallback.
-            if (grav == 0.0f && !gpu.isFireflyEffect) {
-                float emSpeed = interpFloat(pem.emissionSpeed,
-                                             inst.animTime, inst.currentSequenceIndex,
-                                             gpu.sequences, gpu.globalSequenceDurations);
-                if (std::abs(emSpeed) > 0.1f) {
-                    grav = 4.0f;  // spray particles
-                } else {
-                    grav = 1.5f;  // mist/drift particles - gentler fall
-                }
-            }
-            p.velocity.z -= grav * dt;
+        if (p.emitterIndex >= 0 && static_cast<size_t>(p.emitterIndex) < numEm) {
+            p.velocity.z -= emitterGrav[p.emitterIndex] * dt;
         }
         p.position += p.velocity * dt;
         i++;
