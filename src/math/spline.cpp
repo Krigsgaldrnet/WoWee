@@ -29,7 +29,25 @@ glm::vec3 CatmullRomSpline::evaluatePosition(uint32_t pathTimeMs) const {
     if (keys_.size() == 1) {
         return keys_[0].position;
     }
-    return evaluate(pathTimeMs).position;
+
+    // Position-only path: skip the tangent computation that evaluate() always
+    // does. Callers that don't need orientation (entity movement interp, etc.)
+    // were paying for the derivative every call.
+    size_t segIdx = findSegment(pathTimeMs);
+    uint32_t t1Ms = keys_[segIdx].timeMs;
+    uint32_t t2Ms = keys_[segIdx + 1].timeMs;
+    uint32_t segDuration = (t2Ms > t1Ms) ? (t2Ms - t1Ms) : 1;
+    float t = glm::clamp(static_cast<float>(pathTimeMs - t1Ms)
+                       / static_cast<float>(segDuration), 0.0f, 1.0f);
+    float t2 = t * t;
+    float t3 = t2 * t;
+    ControlPoints cp = getControlPoints(segIdx);
+    return 0.5f * (
+        (2.0f * cp.p1) +
+        (-cp.p0 + cp.p2) * t +
+        (2.0f * cp.p0 - 5.0f * cp.p1 + 4.0f * cp.p2 - cp.p3) * t2 +
+        (-cp.p0 + 3.0f * cp.p1 - 3.0f * cp.p2 + cp.p3) * t3
+    );
 }
 
 SplineEvalResult CatmullRomSpline::evaluate(uint32_t pathTimeMs) const {
