@@ -1174,10 +1174,21 @@ void Renderer::update(float deltaTime) {
             LOG_WARNING("SLOW cameraController->update: ", lastCameraUpdateMs, "ms");
         }
 
-        // Update 3D audio listener position/orientation to match camera
+        // Update 3D audio listener position/orientation to match camera.
+        // getUp() internally calls getRight() which calls getForward() again,
+        // and we ask for getForward() once more on the same line — that's 3
+        // independent trig sequences. Cache the basis vectors once.
         if (camera) {
+            const glm::vec3 fwd = camera->getForward();
+            const glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
+            glm::vec3 right = glm::cross(fwd, worldUp);
+            float rLen = glm::length(right);
+            right = (rLen < 1e-6f) ? glm::vec3(1.0f, 0.0f, 0.0f) : right / rLen;
+            glm::vec3 up = glm::cross(right, fwd);
+            float uLen = glm::length(up);
+            up = (uLen < 1e-6f) ? glm::vec3(0.0f, 0.0f, 1.0f) : up / uLen;
             audio::AudioEngine::instance().setListenerPosition(camera->getPosition());
-            audio::AudioEngine::instance().setListenerOrientation(camera->getForward(), camera->getUp());
+            audio::AudioEngine::instance().setListenerOrientation(fwd, up);
         }
     } else {
         lastCameraUpdateMs = 0.0;
