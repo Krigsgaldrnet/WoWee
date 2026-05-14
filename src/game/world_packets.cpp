@@ -1141,8 +1141,9 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
                 return false;
             }
             uint32_t value = packet.readUInt32();
-            // fieldIndex is monotonically increasing here, so end() is a good insertion hint.
-            block.fields.emplace_hint(block.fields.end(), fieldIndex, value);
+            // fieldIndex is monotonically increasing here — append directly to the
+            // sorted flat vector (no tree-node allocation per field anymore).
+            block.fields.append_sorted(fieldIndex, value);
             valuesReadCount++;
 
             LOG_DEBUG("    Field[", fieldIndex, "] = 0x", std::hex, value, std::dec);
@@ -1270,6 +1271,7 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
                 return false;
             }
 
+            data.outOfRangeGuids.reserve(count);
             for (uint32_t i = 0; i < count; ++i) {
                 uint64_t guid = packet.readPackedGuid();
                 data.outOfRangeGuids.push_back(guid);

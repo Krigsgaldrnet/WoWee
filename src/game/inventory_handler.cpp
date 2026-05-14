@@ -2528,7 +2528,7 @@ uint64_t InventoryHandler::resolveOnlineItemGuid(uint32_t itemId) const {
     return 0;
 }
 
-void InventoryHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields) {
+void InventoryHandler::detectInventorySlotBases(const FlatFieldMap& fields) {
     if (owner_.invSlotBaseRef() >= 0 && owner_.packSlotBaseRef() >= 0) return;
     if (fields.empty()) return;
 
@@ -2613,7 +2613,7 @@ void InventoryHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_
     }
 }
 
-bool InventoryHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& fields) {
+bool InventoryHandler::applyInventoryFields(const FlatFieldMap& fields) {
     bool slotsChanged = false;
     int equipBase = (owner_.invSlotBaseRef() >= 0) ? owner_.invSlotBaseRef() : static_cast<int>(fieldIndex(UF::PLAYER_FIELD_INV_SLOT_HEAD));
     int packBase = (owner_.packSlotBaseRef() >= 0) ? owner_.packSlotBaseRef() : static_cast<int>(fieldIndex(UF::PLAYER_FIELD_PACK_SLOT_1));
@@ -2693,7 +2693,7 @@ bool InventoryHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& 
     return slotsChanged;
 }
 
-void InventoryHandler::extractContainerFields(uint64_t containerGuid, const std::map<uint16_t, uint32_t>& fields) {
+void InventoryHandler::extractContainerFields(uint64_t containerGuid, const FlatFieldMap& fields) {
     const uint16_t numSlotsIdx = fieldIndex(UF::CONTAINER_FIELD_NUM_SLOTS);
     const uint16_t slot1Idx = fieldIndex(UF::CONTAINER_FIELD_SLOT_1);
     if (numSlotsIdx == 0xFFFF || slot1Idx == 0xFFFF) return;
@@ -3036,7 +3036,7 @@ void InventoryHandler::maybeDetectVisibleItemLayout() {
     }
     if (nonZero < 2) return;
 
-    const uint16_t maxKey = owner_.lastPlayerFieldsRef().rbegin()->first;
+    const uint16_t maxKey = owner_.lastPlayerFieldsRef().back().first;
     int bestBase = -1;
     int bestStride = 0;
     int bestMatches = 0;
@@ -3096,7 +3096,7 @@ void InventoryHandler::maybeDetectVisibleItemLayout() {
     // If heuristic didn't find a match, keep using the default WotLK layout (base=284, stride=2).
 }
 
-void InventoryHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields) {
+void InventoryHandler::updateOtherPlayerVisibleItems(uint64_t guid, const FlatFieldMap& fields) {
     if (guid == 0 || guid == owner_.getPlayerGuid()) return;
 
     // Use the current base/stride (defaults are correct for WotLK 3.3.5a: base=284, stride=2).

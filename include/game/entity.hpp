@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include "math/spline.hpp"
+#include "game/flat_field_map.hpp"
 
 namespace wowee {
 namespace game {
@@ -255,7 +256,7 @@ public:
         return fields.find(index) != fields.end();
     }
 
-    const std::map<uint16_t, uint32_t>& getFields() const {
+    const FlatFieldMap& getFields() const {
         return fields;
     }
 
@@ -269,8 +270,8 @@ protected:
     float z = 0.0f;
     float orientation = 0.0f;
 
-    // Update fields (dynamic values)
-    std::map<uint16_t, uint32_t> fields;
+    // Update fields (dynamic values) — flat sorted vector. See FlatFieldMap docs.
+    FlatFieldMap fields;
 
     // Movement interpolation state
     bool isMoving_ = false;

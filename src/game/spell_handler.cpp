@@ -2139,7 +2139,7 @@ void SpellHandler::loadSkillLineDbc() {
     LOG_INFO("GameHandler: Loaded ", owner_.skillLineNamesRef().size(), " skill line names");
 }
 
-void SpellHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields) {
+void SpellHandler::extractSkillFields(const FlatFieldMap& fields) {
     loadSkillLineDbc();
 
     const uint16_t PLAYER_SKILL_INFO_START = fieldIndex(UF::PLAYER_SKILL_INFO_START);
@@ -2214,7 +2214,7 @@ void SpellHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields
         owner_.fireAddonEvent("SKILL_LINES_CHANGED", {});
 }
 
-void SpellHandler::extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields) {
+void SpellHandler::extractExploredZoneFields(const FlatFieldMap& fields) {
     const size_t zoneCount = owner_.getPacketParsers()
         ? static_cast<size_t>(owner_.getPacketParsers()->exploredZonesCount())
         : GameHandler::PLAYER_EXPLORED_ZONES_COUNT;

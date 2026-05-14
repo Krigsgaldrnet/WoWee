@@ -1090,11 +1090,11 @@ void GameHandler::loadSkillLineDbc() {
     if (spellHandler_) spellHandler_->loadSkillLineDbc();
 }
 
-void GameHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields) {
+void GameHandler::extractSkillFields(const FlatFieldMap& fields) {
     if (spellHandler_) spellHandler_->extractSkillFields(fields);
 }
 
-void GameHandler::extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields) {
+void GameHandler::extractExploredZoneFields(const FlatFieldMap& fields) {
     if (spellHandler_) spellHandler_->extractExploredZoneFields(fields);
 }
 
