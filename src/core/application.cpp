@@ -2665,12 +2665,26 @@ void Application::updateQuestMarkers() {
         if (!entity) continue;
         if (entity->getType() == game::ObjectType::UNIT) {
             auto unit = std::static_pointer_cast<game::Unit>(entity);
-            std::string name = unit->getName();
-            std::transform(name.begin(), name.end(), name.begin(),
-                           [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-            if (name.find("spirit healer") != std::string::npos ||
-                name.find("spirit guide") != std::string::npos) {
-                continue; // Spirit healers/guides use their own white visual cue.
+            const std::string& name = unit->getName();
+            // Case-insensitive substring scan without copying or lowercasing the
+            // whole name into a fresh std::string every frame. Spirit healers
+            // and spirit guides use their own white visual cue, so skip them.
+            auto containsCI = [&](const char* needle, size_t nlen) {
+                if (name.size() < nlen) return false;
+                const size_t last = name.size() - nlen;
+                for (size_t i = 0; i <= last; ++i) {
+                    bool match = true;
+                    for (size_t j = 0; j < nlen; ++j) {
+                        unsigned char a = static_cast<unsigned char>(name[i + j]);
+                        unsigned char b = static_cast<unsigned char>(needle[j]);
+                        if (std::tolower(a) != b) { match = false; break; }
+                    }
+                    if (match) return true;
+                }
+                return false;
+            };
+            if (containsCI("spirit healer", 13) || containsCI("spirit guide", 12)) {
+                continue;
             }
         }
 
