@@ -1072,11 +1072,19 @@ void InventoryHandler::repairAll(uint64_t vendorGuid, bool useGuildBank) {
     if (!isClassicLikeExpansion()) packet.writeUInt8(useGuildBank ? 1 : 0);
     owner_.getSocket()->send(packet);
 
-    // Only do optimistic update if we verified the player can afford it
-    if (totalCost > 0) {
-        if (!useGuildBank) {
-            owner_.playerMoneyCopperRef() -= totalCost;
-        }
+    // Only do optimistic update for the player-funded path: we verified the
+    // player has the gold, so server acceptance is essentially guaranteed.
+    //
+    // Guild-bank repair (useGuildBank=true) cannot be confirmed client-side:
+    // the server silently rejects when the player has no guild, no
+    // GUILD_BANK_RIGHT_REPAIR permission, or the guild bank lacks funds —
+    // in all those cases Player::DurabilityRepair returns early WITHOUT
+    // setting durability and WITHOUT sending an UPDATE_OBJECT, so any
+    // optimistic durability bump would persist on screen until relog
+    // (when the server's actual state reloads). Wait for the server's
+    // UPDATE_OBJECT to confirm instead.
+    if (totalCost > 0 && !useGuildBank) {
+        owner_.playerMoneyCopperRef() -= totalCost;
         for (auto& [guid, info] : owner_.onlineItemsRef()) {
             if (info.maxDurability > 0 && info.curDurability < info.maxDurability) {
                 info.curDurability = info.maxDurability;

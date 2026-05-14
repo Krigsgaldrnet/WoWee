@@ -910,7 +910,13 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             gameHandler.tabTarget(movement.x, movement.y, movement.z);
         }
 
-        if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_SETTINGS, true)) {
+        // Escape (TOGGLE_SETTINGS) must not fire while chat input is active —
+        // otherwise pressing Escape to close chat also closes any open window or
+        // opens the escape menu, since ImGui deactivates InputText on Escape but
+        // the same press still propagates here. KeybindingManager only blocks
+        // A-Z/0-9 during text input, not Escape.
+        if (!textFocus &&
+            KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_SETTINGS, true)) {
             if (settingsPanel_.showSettingsWindow) {
                 settingsPanel_.showSettingsWindow = false;
             } else if (windowManager_.showEscapeMenu) {
