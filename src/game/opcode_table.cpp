@@ -215,24 +215,40 @@ const char* OpcodeTable::logicalToName(LogicalOpcode op) {
 }
 
 bool OpcodeTable::loadFromJson(const std::string& path) {
-    // Start fresh — resolved JSON inheritance is the single source of truth for opcode mappings.
+    // Resolved JSON inheritance is the single source of truth for opcode mappings.
+    // Load into a scratch map (the recursive loader supports add/remove via
+    // _extends/_remove), then bake it into the flat vector for fast toWire().
     logicalToWire_.clear();
+    logicalToWireSize_ = 0;
     wireToLogical_.clear();
+    std::unordered_map<uint16_t, uint16_t> scratch;
     std::unordered_set<std::string> loadingStack;
     if (!loadOpcodeJsonRecursive(std::filesystem::path(path),
-                                 logicalToWire_, wireToLogical_, loadingStack) ||
-        logicalToWire_.empty()) {
+                                 scratch, wireToLogical_, loadingStack) ||
+        scratch.empty()) {
         LOG_WARNING("OpcodeTable: no opcodes loaded from ", path);
         return false;
     }
 
-    LOG_INFO("OpcodeTable: loaded ", logicalToWire_.size(), " opcodes from ", path);
+    // Bake into the flat lookup table. Sized to cover the highest logical id we saw;
+    // unmapped slots stay 0xFFFF (the same sentinel toWire used to return on miss).
+    uint16_t maxIdx = 0;
+    for (const auto& [logical, _wire] : scratch) {
+        if (logical > maxIdx) maxIdx = logical;
+    }
+    logicalToWire_.assign(static_cast<size_t>(maxIdx) + 1, 0xFFFF);
+    for (const auto& [logical, wire] : scratch) {
+        logicalToWire_[logical] = wire;
+    }
+    logicalToWireSize_ = scratch.size();
+
+    LOG_INFO("OpcodeTable: loaded ", logicalToWireSize_, " opcodes from ", path);
     return true;
 }
 
 uint16_t OpcodeTable::toWire(LogicalOpcode op) const {
-    auto it = logicalToWire_.find(static_cast<uint16_t>(op));
-    return (it != logicalToWire_.end()) ? it->second : 0xFFFF;
+    const size_t idx = static_cast<size_t>(op);
+    return (idx < logicalToWire_.size()) ? logicalToWire_[idx] : 0xFFFF;
 }
 
 std::optional<LogicalOpcode> OpcodeTable::fromWire(uint16_t wireValue) const {
@@ -244,7 +260,7 @@ std::optional<LogicalOpcode> OpcodeTable::fromWire(uint16_t wireValue) const {
 }
 
 bool OpcodeTable::hasOpcode(LogicalOpcode op) const {
-    return logicalToWire_.count(static_cast<uint16_t>(op)) > 0;
+    return toWire(op) != 0xFFFF;
 }
 
 } // namespace game

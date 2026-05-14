@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include <optional>
 
 namespace wowee {
@@ -50,14 +51,20 @@ public:
     bool hasOpcode(LogicalOpcode op) const;
 
     /** Number of mapped opcodes. */
-    size_t size() const { return logicalToWire_.size(); }
+    size_t size() const { return logicalToWireSize_; }
 
     /** Get canonical enum name for a logical opcode. */
     static const char* logicalToName(LogicalOpcode op);
 
 private:
-    std::unordered_map<uint16_t, uint16_t> logicalToWire_;   // LogicalOpcode → wire
-    std::unordered_map<uint16_t, uint16_t> wireToLogical_;   // wire → LogicalOpcode
+    // LogicalOpcode → wire. Flat dense vector indexed by LogicalOpcode value;
+    // toWire() then becomes a bounds check + array read instead of a hash lookup
+    // (wireOpcode() is called from ~300 sites, several per-frame on movement).
+    // Entries default to 0xFFFF meaning "unmapped".
+    std::vector<uint16_t> logicalToWire_;
+    size_t logicalToWireSize_ = 0;  // count of mapped entries
+
+    std::unordered_map<uint16_t, uint16_t> wireToLogical_;   // wire → LogicalOpcode (sparse)
 
     static std::optional<LogicalOpcode> nameToLogical(const std::string& name);
 };
