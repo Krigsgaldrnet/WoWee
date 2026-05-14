@@ -1287,12 +1287,19 @@ void SpellHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
         uint64_t nowMs = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
+        // Grow once to fit the highest slot, instead of push_back-in-a-loop per update.
+        if (!data.updates.empty()) {
+            size_t maxSlot = 0;
+            for (const auto& [slot, aura] : data.updates) {
+                if (slot > maxSlot) maxSlot = slot;
+            }
+            if (auraList->size() <= maxSlot) {
+                auraList->resize(maxSlot + 1);
+            }
+        }
         for (auto [slot, aura] : data.updates) {
             if (aura.durationMs >= 0) {
                 aura.receivedAtMs = nowMs;
-            }
-            while (auraList->size() <= slot) {
-                auraList->push_back(AuraSlot{});
             }
             (*auraList)[slot] = aura;
         }
