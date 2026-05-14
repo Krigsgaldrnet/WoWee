@@ -69,10 +69,11 @@ public:
         auto it = playerNameCache.find(guid);
         if (it != playerNameCache.end()) return it->second;
         auto entity = entityManager.getEntity(guid);
-        if (entity) {
-            if (auto* unit = dynamic_cast<const Unit*>(entity.get())) {
-                if (!unit->getName().empty()) return unit->getName();
-            }
+        if (entity && entity->isUnit()) {
+            // isUnit() is the type-tag check; skip dynamic_cast since the tag
+            // already guarantees the Unit subclass.
+            const auto* unit = static_cast<const Unit*>(entity.get());
+            if (!unit->getName().empty()) return unit->getName();
         }
         return kEmpty;
     }

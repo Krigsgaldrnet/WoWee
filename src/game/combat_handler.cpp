@@ -1278,10 +1278,12 @@ void CombatHandler::tabTarget(float playerX, float playerY, float playerZ) {
         owner_.tabCycleListRef().clear();
         owner_.tabCycleIndexRef() = -1;
 
-        struct EntityDist { uint64_t guid; float distance; };
+        struct EntityDist { uint64_t guid; float distSq; };
         std::vector<EntityDist> sortable;
+        const auto& entities = owner_.getEntityManager().getEntities();
+        sortable.reserve(entities.size());
 
-        for (const auto& [guid, entity] : owner_.getEntityManager().getEntities()) {
+        for (const auto& [guid, entity] : entities) {
             auto t = entity->getType();
             if (t != ObjectType::UNIT && t != ObjectType::PLAYER) continue;
             if (guid == owner_.getPlayerGuid()) continue;
@@ -1289,12 +1291,14 @@ void CombatHandler::tabTarget(float playerX, float playerY, float playerZ) {
             float dx = entity->getX() - playerX;
             float dy = entity->getY() - playerY;
             float dz = entity->getZ() - playerZ;
-            sortable.push_back({guid, std::sqrt(dx*dx + dy*dy + dz*dz)});
+            // Sort by squared distance — monotonic with distance, skips sqrt per entity.
+            sortable.push_back({guid, dx*dx + dy*dy + dz*dz});
         }
 
         std::sort(sortable.begin(), sortable.end(),
-                  [](const EntityDist& a, const EntityDist& b) { return a.distance < b.distance; });
+                  [](const EntityDist& a, const EntityDist& b) { return a.distSq < b.distSq; });
 
+        owner_.tabCycleListRef().reserve(sortable.size());
         for (const auto& ed : sortable) {
             owner_.tabCycleListRef().push_back(ed.guid);
         }

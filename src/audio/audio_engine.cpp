@@ -616,18 +616,20 @@ void AudioEngine::update(float deltaTime) {
         return;
     }
 
-    // Clean up finished sounds
-    for (auto it = activeSounds_.begin(); it != activeSounds_.end(); ) {
-        if (!ma_sound_is_playing(it->sound)) {
-            // Sound finished, clean up
-            ma_sound_uninit(it->sound);
-            std::free(it->sound);
-            ma_audio_buffer* buffer = static_cast<ma_audio_buffer*>(it->buffer);
+    // Clean up finished sounds — swap-and-pop avoids the O(N) shift that
+    // vector::erase does for each removal (and the ref-count atomics in
+    // ActiveSound's shared_ptr made that shift noticeably more expensive).
+    for (size_t i = 0; i < activeSounds_.size(); ) {
+        if (!ma_sound_is_playing(activeSounds_[i].sound)) {
+            ma_sound_uninit(activeSounds_[i].sound);
+            std::free(activeSounds_[i].sound);
+            ma_audio_buffer* buffer = static_cast<ma_audio_buffer*>(activeSounds_[i].buffer);
             ma_audio_buffer_uninit(buffer);
             std::free(buffer);
-            it = activeSounds_.erase(it);
+            activeSounds_[i] = std::move(activeSounds_.back());
+            activeSounds_.pop_back();
         } else {
-            ++it;
+            ++i;
         }
     }
 }

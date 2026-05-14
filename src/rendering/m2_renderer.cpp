@@ -1,5 +1,6 @@
 #include "rendering/m2_renderer.hpp"
 #include "rendering/m2_renderer_internal.h"
+#include "rendering/render_constants.hpp"
 #include "rendering/m2_model_classifier.hpp"
 #include "rendering/vk_context.hpp"
 #include "rendering/vk_buffer.hpp"
@@ -57,6 +58,18 @@ void M2Instance::updateModelMatrix() {
 
     modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
     invModelMatrix = glm::inverse(modelMatrix);
+}
+
+void M2Instance::recomputeCachedCullFactors() {
+    float worldRadius = cachedBoundRadius * scale;
+    float cullRadius = worldRadius;
+    if (cachedDisableAnimation) cullRadius = std::max(cullRadius, 3.0f);
+    float factor = std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
+    if (cachedDisableAnimation) factor *= 2.6f;
+    if (cachedIsGroundDetail)   factor *= 0.9f;
+    cachedEffectiveMaxDistSqFactor = factor;
+    cachedPaddedRadius = std::max(cullRadius * rendering::M2_PADDED_RADIUS_SCALE,
+                                  cullRadius + rendering::M2_PADDED_RADIUS_MIN_MARGIN);
 }
 
 M2Renderer::M2Renderer() {

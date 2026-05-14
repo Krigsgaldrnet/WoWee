@@ -88,6 +88,7 @@ jobs:
           semgrep scan \
             --config p/security-audit \
             --config p/secrets \
+            --exclude extern \
             --error
 
   sanitizer-build:

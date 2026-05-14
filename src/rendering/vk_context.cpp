@@ -146,7 +146,9 @@ void VkContext::shutdown() {
     inFlightBatches_.clear();
 
     if (immFence) { vkDestroyFence(device, immFence, nullptr); immFence = VK_NULL_HANDLE; }
+    // Destroying the pool implicitly frees immCmdBuf_; just drop the handle.
     if (immCommandPool) { vkDestroyCommandPool(device, immCommandPool, nullptr); immCommandPool = VK_NULL_HANDLE; }
+    immCmdBuf_ = VK_NULL_HANDLE;
     if (transferCommandPool_) { vkDestroyCommandPool(device, transferCommandPool_, nullptr); transferCommandPool_ = VK_NULL_HANDLE; }
 
     // Persist pipeline cache to disk before tearing down the device.
@@ -1914,21 +1916,26 @@ void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
 }
 
 VkCommandBuffer VkContext::beginSingleTimeCommands() {
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = immCommandPool;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(device, &allocInfo, &cmd);
+    // Lazily allocate once and reuse. The pool was created with
+    // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT so individual buffers
+    // can be reset without freeing the underlying allocation.
+    if (immCmdBuf_ == VK_NULL_HANDLE) {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = immCommandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+        vkAllocateCommandBuffers(device, &allocInfo, &immCmdBuf_);
+    } else {
+        vkResetCommandBuffer(immCmdBuf_, 0);
+    }
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    vkBeginCommandBuffer(immCmdBuf_, &beginInfo);
 
-    return cmd;
+    return immCmdBuf_;
 }
 
 void VkContext::endSingleTimeCommands(VkCommandBuffer cmd) {
@@ -1942,8 +1949,7 @@ void VkContext::endSingleTimeCommands(VkCommandBuffer cmd) {
     vkQueueSubmit(graphicsQueue, 1, &submitInfo, immFence);
     vkWaitForFences(device, 1, &immFence, VK_TRUE, UINT64_MAX);
     vkResetFences(device, 1, &immFence);
-
-    vkFreeCommandBuffers(device, immCommandPool, 1, &cmd);
+    // Buffer stays allocated; it will be reset on the next beginSingleTimeCommands.
 }
 
 void VkContext::immediateSubmit(std::function<void(VkCommandBuffer cmd)>&& function) {

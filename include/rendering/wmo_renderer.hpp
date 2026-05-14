@@ -733,6 +733,7 @@ private:
 
     struct InstanceDrawList {
         size_t instanceIndex;
+        const ModelData* model = nullptr;     // cached pointer; saves a hashmap find per instance per frame
         std::vector<uint32_t> visibleGroups;  // group indices that passed culling
         uint32_t portalCulled = 0;
         uint32_t distanceCulled = 0;
@@ -740,7 +741,6 @@ private:
     std::vector<std::future<void>> cullFutures_;
     std::vector<size_t> visibleInstances_;      // reused per frame
     std::vector<InstanceDrawList> drawLists_;    // reused per frame
-    std::vector<uint32_t> portalVisibleGroups_; // reused per frame (portal culling scratch)
     std::unordered_set<uint32_t> portalVisibleGroupSet_; // reused per frame (portal culling scratch)
 
     // Collision query profiling — atomic because getFloorHeight is dispatched

@@ -210,6 +210,37 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
     if (!inst.cachedModel) return;
     const auto& gpu = *inst.cachedModel;
 
+    // Hoist per-emitter gravity out of the per-particle loop. Gravity (and the
+    // emissionSpeed fallback) depends only on the emitter and animation time —
+    // not on the particle itself — so interpFloat was being re-evaluated for
+    // every particle even when 100s of particles share one emitter.
+    constexpr size_t kMaxStackEmitters = 16;
+    float emitterGravStack[kMaxStackEmitters];
+    std::vector<float> emitterGravHeap;
+    const size_t numEm = gpu.particleEmitters.size();
+    float* emitterGrav = nullptr;
+    if (numEm > 0) {
+        if (numEm <= kMaxStackEmitters) {
+            emitterGrav = emitterGravStack;
+        } else {
+            emitterGravHeap.resize(numEm);
+            emitterGrav = emitterGravHeap.data();
+        }
+        for (size_t e = 0; e < numEm; ++e) {
+            const auto& pem = gpu.particleEmitters[e];
+            float grav = interpFloat(pem.gravity,
+                                      inst.animTime, inst.currentSequenceIndex,
+                                      gpu.sequences, gpu.globalSequenceDurations);
+            if (grav == 0.0f && !gpu.isFireflyEffect) {
+                float emSpeed = interpFloat(pem.emissionSpeed,
+                                             inst.animTime, inst.currentSequenceIndex,
+                                             gpu.sequences, gpu.globalSequenceDurations);
+                grav = (std::abs(emSpeed) > 0.1f) ? 4.0f : 1.5f;
+            }
+            emitterGrav[e] = grav;
+        }
+    }
+
     for (size_t i = 0; i < inst.particles.size(); ) {
         auto& p = inst.particles[i];
         p.life += dt;
@@ -219,26 +250,8 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
             inst.particles.pop_back();
             continue;
         }
-        // Apply gravity
-        if (p.emitterIndex >= 0 && p.emitterIndex < static_cast<int>(gpu.particleEmitters.size())) {
-            const auto& pem = gpu.particleEmitters[p.emitterIndex];
-            float grav = interpFloat(pem.gravity,
-                                      inst.animTime, inst.currentSequenceIndex,
-                                      gpu.sequences, gpu.globalSequenceDurations);
-            // When M2 gravity is 0, apply default gravity so particles arc downward.
-            // Many fountain M2s rely on bone animation (.anim files) we don't load yet.
-            // Firefly/ambient glow particles intentionally have zero gravity — skip fallback.
-            if (grav == 0.0f && !gpu.isFireflyEffect) {
-                float emSpeed = interpFloat(pem.emissionSpeed,
-                                             inst.animTime, inst.currentSequenceIndex,
-                                             gpu.sequences, gpu.globalSequenceDurations);
-                if (std::abs(emSpeed) > 0.1f) {
-                    grav = 4.0f;  // spray particles
-                } else {
-                    grav = 1.5f;  // mist/drift particles - gentler fall
-                }
-            }
-            p.velocity.z -= grav * dt;
+        if (p.emitterIndex >= 0 && static_cast<size_t>(p.emitterIndex) < numEm) {
+            p.velocity.z -= emitterGrav[p.emitterIndex] * dt;
         }
         p.position += p.velocity * dt;
         i++;
@@ -519,10 +532,60 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
         if (!inst.cachedModel) continue;
         const auto& gpu = *inst.cachedModel;
 
+        // Cache the last emitter's per-emitter state so adjacent particles
+        // sharing an emitter (the common case — particles from one source
+        // cluster together) skip the texture/key/map-lookup work entirely.
+        int lastEmitterIdx = -1;
+        VkTexture* cachedTex = nullptr;
+        uint16_t cachedTilesX = 1, cachedTilesY = 1;
+        uint32_t cachedTotalTiles = 1;
+        uint16_t cachedBlendType = 0;
+        const pipeline::M2ParticleEmitter* cachedEm = nullptr;
+        ParticleGroup* cachedGroup = nullptr;
+        // animFrame depends only on inst.animTime + totalTiles, so it's also
+        // emitter-stable within one frame.
+        uint32_t cachedAnimFrame = 0;
+        float cachedTilesFloat = 1.0f;
+        bool cachedIsTiled = false;
+        float invAnimMs = 1.0f / 1000.0f;
+
         for (const auto& p : inst.particles) {
             if (p.emitterIndex < 0 || p.emitterIndex >= static_cast<int>(gpu.particleEmitters.size())) continue;
-            const auto& em = gpu.particleEmitters[p.emitterIndex];
 
+            if (p.emitterIndex != lastEmitterIdx) {
+                lastEmitterIdx = p.emitterIndex;
+                cachedEm = &gpu.particleEmitters[p.emitterIndex];
+
+                cachedTex = whiteTexture_.get();
+                if (p.emitterIndex < static_cast<int>(gpu.particleTextures.size())) {
+                    cachedTex = gpu.particleTextures[p.emitterIndex];
+                }
+                cachedTilesX = std::max<uint16_t>(cachedEm->textureCols, 1);
+                cachedTilesY = std::max<uint16_t>(cachedEm->textureRows, 1);
+                cachedTotalTiles = static_cast<uint32_t>(cachedTilesX) *
+                                   static_cast<uint32_t>(cachedTilesY);
+                cachedBlendType = cachedEm->blendingType;
+                ParticleGroupKey key{cachedTex, cachedBlendType, cachedTilesX, cachedTilesY};
+                cachedGroup = &groups[key];
+                cachedGroup->texture = cachedTex;
+                cachedGroup->blendType = cachedBlendType;
+                cachedGroup->tilesX = cachedTilesX;
+                cachedGroup->tilesY = cachedTilesY;
+                if (cachedGroup->preAllocSet == VK_NULL_HANDLE &&
+                    p.emitterIndex < static_cast<int>(gpu.particleTexSets.size())) {
+                    cachedGroup->preAllocSet = gpu.particleTexSets[p.emitterIndex];
+                }
+
+                cachedIsTiled = (cachedEm->flags & kParticleFlagTiled) && cachedTotalTiles > 1;
+                if (cachedIsTiled) {
+                    float animSeconds = inst.animTime * invAnimMs;
+                    cachedAnimFrame = static_cast<uint32_t>(std::floor(animSeconds * cachedTotalTiles))
+                                      % cachedTotalTiles;
+                    cachedTilesFloat = static_cast<float>(cachedTotalTiles);
+                }
+            }
+
+            const auto& em = *cachedEm;
             float lifeRatio = p.life / std::max(p.maxLife, 0.001f);
             glm::vec3 color = interpFBlockVec3(em.particleColor, lifeRatio);
             float alpha = std::min(interpFBlockFloat(em.particleAlpha, lifeRatio), 1.0f);
@@ -531,9 +594,8 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             if (!gpu.isSpellEffect && !gpu.isFireflyEffect) {
                 color = glm::mix(color, glm::vec3(1.0f), 0.7f);
                 if (rawScale > 2.0f) alpha *= 0.02f;
-                if (em.blendingType == 3 || em.blendingType == 4) alpha *= 0.05f;
+                if (cachedBlendType == 3 || cachedBlendType == 4) alpha *= 0.05f;
             }
-            // Spell effect particles: mild boost so tiny M2 scales stay visible
             float scale = rawScale;
             if (gpu.isSpellEffect) {
                 scale = std::max(rawScale * 1.5f, 0.15f);
@@ -541,46 +603,23 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 scale = std::min(rawScale, 1.5f);
             }
 
-            VkTexture* tex = whiteTexture_.get();
-            if (p.emitterIndex < static_cast<int>(gpu.particleTextures.size())) {
-                tex = gpu.particleTextures[p.emitterIndex];
-            }
-
-            uint16_t tilesX = std::max<uint16_t>(em.textureCols, 1);
-            uint16_t tilesY = std::max<uint16_t>(em.textureRows, 1);
-            uint32_t totalTiles = static_cast<uint32_t>(tilesX) * static_cast<uint32_t>(tilesY);
-            ParticleGroupKey key{tex, em.blendingType, tilesX, tilesY};
-            auto& group = groups[key];
-            group.texture = tex;
-            group.blendType = em.blendingType;
-            group.tilesX = tilesX;
-            group.tilesY = tilesY;
-            // Capture pre-allocated descriptor set on first insertion for this key
-            if (group.preAllocSet == VK_NULL_HANDLE &&
-                p.emitterIndex < static_cast<int>(gpu.particleTexSets.size())) {
-                group.preAllocSet = gpu.particleTexSets[p.emitterIndex];
-            }
-
-            group.vertexData.push_back(p.position.x);
-            group.vertexData.push_back(p.position.y);
-            group.vertexData.push_back(p.position.z);
-            group.vertexData.push_back(color.r);
-            group.vertexData.push_back(color.g);
-            group.vertexData.push_back(color.b);
-            group.vertexData.push_back(alpha);
-            group.vertexData.push_back(scale);
+            auto& vd = cachedGroup->vertexData;
+            vd.push_back(p.position.x);
+            vd.push_back(p.position.y);
+            vd.push_back(p.position.z);
+            vd.push_back(color.r);
+            vd.push_back(color.g);
+            vd.push_back(color.b);
+            vd.push_back(alpha);
+            vd.push_back(scale);
             float tileIndex = p.tileIndex;
-            if ((em.flags & kParticleFlagTiled) && totalTiles > 1) {
-                float animSeconds = inst.animTime / 1000.0f;
-                uint32_t animFrame = static_cast<uint32_t>(std::floor(animSeconds * totalTiles)) % totalTiles;
-                tileIndex = p.tileIndex + static_cast<float>(animFrame);
-                float tilesFloat = static_cast<float>(totalTiles);
-                // Wrap tile index within totalTiles range
-                while (tileIndex >= tilesFloat) {
-                    tileIndex -= tilesFloat;
+            if (cachedIsTiled) {
+                tileIndex = p.tileIndex + static_cast<float>(cachedAnimFrame);
+                while (tileIndex >= cachedTilesFloat) {
+                    tileIndex -= cachedTilesFloat;
                 }
             }
-            group.vertexData.push_back(tileIndex);
+            vd.push_back(tileIndex);
             totalParticles++;
         }
     }

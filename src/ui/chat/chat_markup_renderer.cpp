@@ -131,9 +131,10 @@ void ChatMarkupRenderer::render(
                     }
                 }
             }
-            std::string display = "[" + seg.text + "]";
+            // Let ImGui format the brackets inline — was heap-allocating a
+            // bracketed copy on every chat-line draw, per visible link.
             ImGui::PushStyleColor(ImGuiCol_Text, seg.color);
-            ImGui::TextWrapped("%s", display.c_str());
+            ImGui::TextWrapped("[%s]", seg.text.c_str());
             ImGui::PopStyleColor();
             if (ImGui::IsItemHovered()) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -167,9 +168,10 @@ void ChatMarkupRenderer::render(
                 }
                 ImGui::SameLine(0, 2);
             }
-            std::string display = "[" + seg.text + "]";
+            // Let ImGui format the brackets inline — was heap-allocating a
+            // bracketed copy on every chat-line draw, per visible link.
             ImGui::PushStyleColor(ImGuiCol_Text, seg.color);
-            ImGui::TextWrapped("%s", display.c_str());
+            ImGui::TextWrapped("[%s]", seg.text.c_str());
             ImGui::PopStyleColor();
             if (ImGui::IsItemHovered() && ctx.spellbook && ctx.gameHandler && ctx.assetMgr) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -188,9 +190,8 @@ void ChatMarkupRenderer::render(
             break;
         }
         case SegmentType::QuestLink: {
-            std::string display = "[" + seg.text + "]";
             ImGui::PushStyleColor(ImGuiCol_Text, colors::kWarmGold);
-            ImGui::TextWrapped("%s", display.c_str());
+            ImGui::TextWrapped("[%s]", seg.text.c_str());
             ImGui::PopStyleColor();
             if (ImGui::IsItemHovered()) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -221,9 +222,8 @@ void ChatMarkupRenderer::render(
             break;
         }
         case SegmentType::AchievementLink: {
-            std::string display = "[" + seg.text + "]";
             ImGui::PushStyleColor(ImGuiCol_Text, colors::kBrightGold);
-            ImGui::TextWrapped("%s", display.c_str());
+            ImGui::TextWrapped("[%s]", seg.text.c_str());
             ImGui::PopStyleColor();
             if (ImGui::IsItemHovered()) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);

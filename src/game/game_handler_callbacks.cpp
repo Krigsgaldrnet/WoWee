@@ -2117,7 +2117,9 @@ bool GameHandler::hasQuestInLog(uint32_t questId) const {
 
 Unit* GameHandler::getUnitByGuid(uint64_t guid) {
     auto entity = entityController_->getEntityManager().getEntity(guid);
-    return entity ? dynamic_cast<Unit*>(entity.get()) : nullptr;
+    // Use the type tag to skip RTTI — both UNIT and PLAYER object types derive from Unit.
+    if (!entity || !entity->isUnit()) return nullptr;
+    return static_cast<Unit*>(entity.get());
 }
 
 std::string GameHandler::guidToUnitId(uint64_t guid) const {

@@ -142,6 +142,12 @@ private:
 
         // Textures loaded from BLP (indexed by texture array position)
         std::vector<VkTexture*> textureIds;
+
+        // Cached batch render order sorted by (priorityPlane, materialLayer).
+        // Built once at load time — the sort only depends on the model's static
+        // batch metadata, so doing it per-instance per-frame in render() was
+        // pure overhead.
+        std::vector<size_t> sortedBatchIndices;
     };
 
     // Character instance

@@ -92,6 +92,7 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
     instance.cachedIsInstancePortal = mdlRef.isInstancePortal;
     instance.cachedIsValid = mdlRef.isValid();
     instance.cachedModel = &mdlRef;
+    instance.recomputeCachedCullFactors();
 
     // Initialize animation: play first sequence (usually Stand/Idle)
     const auto& mdl = mdlRef;
@@ -213,6 +214,7 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
     instance.cachedIsInvisibleTrap = mdl2.isInvisibleTrap;
     instance.cachedIsValid = mdl2.isValid();
     instance.cachedModel = &mdl2;
+    instance.recomputeCachedCullFactors();
 
     // Initialize animation
     if (mdl2.hasAnimation && !mdl2.disableAnimation) {
@@ -674,20 +676,14 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
     }
 
     // --- Upload per-instance cull data (SSBO, binding 1) ---
+    // The per-instance radius math used to be recomputed here every frame; it's
+    // now precomputed once by recomputeCachedCullFactors() since it depends only
+    // on static instance state (scale, bound radius, animation/ground flags).
     if (cullInputMapped_[frameIndex]) {
         auto* input = static_cast<CullInstanceGPU*>(cullInputMapped_[frameIndex]);
         for (uint32_t i = 0; i < numInstances; i++) {
             const auto& inst = instances[i];
-            float worldRadius = inst.cachedBoundRadius * inst.scale;
-            float cullRadius = worldRadius;
-            if (inst.cachedDisableAnimation) {
-                cullRadius = std::max(cullRadius, 3.0f);
-            }
-            float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
-            if (inst.cachedDisableAnimation)  effectiveMaxDistSq *= 2.6f;
-            if (inst.cachedIsGroundDetail)     effectiveMaxDistSq *= 0.9f;
-
-            float paddedRadius = std::max(cullRadius * rendering::M2_PADDED_RADIUS_SCALE, cullRadius + rendering::M2_PADDED_RADIUS_MIN_MARGIN);
+            float effectiveMaxDistSq = maxRenderDistanceSq * inst.cachedEffectiveMaxDistSqFactor;
 
             uint32_t flags = 0;
             if (inst.cachedIsValid)          flags |= 1u;
@@ -700,7 +696,7 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
             if (i < prevFrameVisible_.size() && prevFrameVisible_[i] < 2)
                 flags |= 8u;
 
-            input[i].sphere = glm::vec4(inst.position, paddedRadius);
+            input[i].sphere = glm::vec4(inst.position, inst.cachedPaddedRadius);
             input[i].effectiveMaxDistSq = effectiveMaxDistSq;
             input[i].flags = flags;
         }
@@ -843,38 +839,36 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     for (uint32_t i = 0; i < totalInstances; ++i) {
         const auto& instance = instances[i];
 
+        float distSq;
+        float effectiveMaxDistSq;
+
+        // effectiveMaxDistSqFactor and paddedRadius are precomputed per-instance
+        // by recomputeCachedCullFactors(); per-frame work is just the dot product
+        // and a single multiply.
         if (forceNoCull_) {
             if (!instance.cachedIsValid) continue;
+            glm::vec3 toCam = instance.position - camPos;
+            distSq = glm::dot(toCam, toCam);
+            effectiveMaxDistSq = maxRenderDistanceSq * instance.cachedEffectiveMaxDistSqFactor;
         } else if (gpuCullAvailable && i < numInstances) {
             if (!visibility[i]) continue;
+            glm::vec3 toCam = instance.position - camPos;
+            distSq = glm::dot(toCam, toCam);
+            effectiveMaxDistSq = maxRenderDistanceSq * instance.cachedEffectiveMaxDistSqFactor;
         } else {
+            // CPU fallback: distSq used twice (early-out + visibility), so compute once.
             if (!instance.cachedIsValid || instance.cachedIsSmoke || instance.cachedIsInvisibleTrap) continue;
 
             glm::vec3 toCam = instance.position - camPos;
-            float distSqTest = glm::dot(toCam, toCam);
-            if (distSqTest > maxPossibleDistSq) continue;
+            distSq = glm::dot(toCam, toCam);
+            if (distSq > maxPossibleDistSq) continue;
 
-            float worldRadius = instance.cachedBoundRadius * instance.scale;
-            float cullRadius = worldRadius;
-            if (instance.cachedDisableAnimation) cullRadius = std::max(cullRadius, 3.0f);
-            float effDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
-            if (instance.cachedDisableAnimation) effDistSq *= 2.6f;
-            if (instance.cachedIsGroundDetail) effDistSq *= 0.9f;
-            if (distSqTest > effDistSq) continue;
+            effectiveMaxDistSq = maxRenderDistanceSq * instance.cachedEffectiveMaxDistSqFactor;
+            if (distSq > effectiveMaxDistSq) continue;
 
-            float paddedRadius = std::max(cullRadius * rendering::M2_PADDED_RADIUS_SCALE, cullRadius + rendering::M2_PADDED_RADIUS_MIN_MARGIN);
-            if (cullRadius > 0.0f && !frustum.intersectsSphere(instance.position, paddedRadius)) continue;
+            float paddedRadius = instance.cachedPaddedRadius;
+            if (paddedRadius > 0.0f && !frustum.intersectsSphere(instance.position, paddedRadius)) continue;
         }
-
-        // Compute distSq + effectiveMaxDistSq for sorting and fade alpha (cheap for visible-only)
-        glm::vec3 toCam = instance.position - camPos;
-        float distSq = glm::dot(toCam, toCam);
-        float worldRadius = instance.cachedBoundRadius * instance.scale;
-        float cullRadius = worldRadius;
-        if (instance.cachedDisableAnimation) cullRadius = std::max(cullRadius, 3.0f);
-        float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
-        if (instance.cachedDisableAnimation)  effectiveMaxDistSq *= 2.6f;
-        if (instance.cachedIsGroundDetail)     effectiveMaxDistSq *= 0.9f;
 
         sortedVisible_.push_back({i, instance.modelId, distSq, effectiveMaxDistSq});
     }
@@ -1243,18 +1237,13 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         if (entry.index >= instances.size()) continue;
         auto& instance = instances[entry.index];
 
-        // Quick skip: if model has no transparent batches at all
-        if (entry.modelId != currentModelId) {
-            auto mdlIt = models.find(entry.modelId);
-            if (mdlIt == models.end()) continue;
-            if (!mdlIt->second.hasTransparentBatches && !mdlIt->second.isSpellEffect) continue;
-        }
-
+        // Model boundary: do the lookup once, skip if no transparent batches.
         if (entry.modelId != currentModelId) {
             currentModelId = entry.modelId;
             currentModelValid = false;
-            auto mdlIt = models.find(currentModelId);
+            auto mdlIt = models.find(entry.modelId);
             if (mdlIt == models.end()) continue;
+            if (!mdlIt->second.hasTransparentBatches && !mdlIt->second.isSpellEffect) continue;
             currentModel = &mdlIt->second;
             if (!currentModel->vertexBuffer || !currentModel->indexBuffer) continue;
             currentModelValid = true;

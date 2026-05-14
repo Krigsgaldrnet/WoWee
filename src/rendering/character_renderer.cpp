@@ -1465,6 +1465,20 @@ bool CharacterRenderer::loadModel(const pipeline::M2Model& model, uint32_t id) {
 
     vkCtx_->endUploadBatch();
 
+    // Precompute batch render order (priorityPlane, materialLayer). The result
+    // depends only on the model, so caching it here removes the per-frame
+    // per-instance allocate + sort from render().
+    gpuModel.sortedBatchIndices.resize(gpuModel.data.batches.size());
+    std::iota(gpuModel.sortedBatchIndices.begin(), gpuModel.sortedBatchIndices.end(), 0);
+    std::stable_sort(gpuModel.sortedBatchIndices.begin(), gpuModel.sortedBatchIndices.end(),
+        [&batches = gpuModel.data.batches](size_t a, size_t b) {
+            const auto& ba = batches[a];
+            const auto& bb = batches[b];
+            if (ba.priorityPlane != bb.priorityPlane)
+                return ba.priorityPlane < bb.priorityPlane;
+            return ba.materialLayer < bb.materialLayer;
+        });
+
     models[id] = std::move(gpuModel);
 
     core::Logger::getInstance().debug("Loaded M2 model ", id, " (", model.vertices.size(),
@@ -2012,25 +2026,28 @@ void CharacterRenderer::calculateBoneMatrices(CharacterInstance& instance) {
             instance.boneMatrices[i] = localTransform;
         }
 
-        // Diagnostic: detect bones with extreme translation
-        float tx = std::abs(instance.boneMatrices[i][3][0]);
-        float ty = std::abs(instance.boneMatrices[i][3][1]);
-        float tz = std::abs(instance.boneMatrices[i][3][2]);
+        // Diagnostic: detect bones with extreme translation. Gated so the abs()
+        // probes and the post-loop counter bump only run for the first few frames.
         static int diagFrames = 0;
-        if (diagFrames < 3 && (tx > 50.0f || ty > 50.0f || tz > 50.0f)) {
-            LOG_WARNING("BONE DIAG: bone[", i, "] keyBone=", bone.keyBoneId,
-                        " flags=0x", std::hex, bone.flags, std::dec,
-                        " parent=", bone.parentBone,
-                        " pivot=(", bone.pivot.x, ",", bone.pivot.y, ",", bone.pivot.z, ")",
-                        " mat_t=(", instance.boneMatrices[i][3][0], ",",
-                        instance.boneMatrices[i][3][1], ",", instance.boneMatrices[i][3][2], ")",
-                        " local_t=(", localTransform[3][0], ",", localTransform[3][1], ",",
-                        localTransform[3][2], ")",
-                        " animTime=", instance.animationTime,
-                        " gsTime=", instance.globalSequenceTime,
-                        " seqIdx=", instance.currentSequenceIndex);
+        if (diagFrames < 3) {
+            float tx = std::abs(instance.boneMatrices[i][3][0]);
+            float ty = std::abs(instance.boneMatrices[i][3][1]);
+            float tz = std::abs(instance.boneMatrices[i][3][2]);
+            if (tx > 50.0f || ty > 50.0f || tz > 50.0f) {
+                LOG_WARNING("BONE DIAG: bone[", i, "] keyBone=", bone.keyBoneId,
+                            " flags=0x", std::hex, bone.flags, std::dec,
+                            " parent=", bone.parentBone,
+                            " pivot=(", bone.pivot.x, ",", bone.pivot.y, ",", bone.pivot.z, ")",
+                            " mat_t=(", instance.boneMatrices[i][3][0], ",",
+                            instance.boneMatrices[i][3][1], ",", instance.boneMatrices[i][3][2], ")",
+                            " local_t=(", localTransform[3][0], ",", localTransform[3][1], ",",
+                            localTransform[3][2], ")",
+                            " animTime=", instance.animationTime,
+                            " gsTime=", instance.globalSequenceTime,
+                            " seqIdx=", instance.currentSequenceIndex);
+            }
+            if (i == numBones - 1) diagFrames++;
         }
-        if (i == numBones - 1) diagFrames++;
     }
 }
 
@@ -2395,19 +2412,9 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 return 0;
             };
 
-            // Sort batches by (priorityPlane, materialLayer) so equipment layers
-            // render in the order the M2 format intends. priorityPlane separates
-            // overlay effects; materialLayer orders coplanar body parts.
-            std::vector<size_t> sortedBatchIndices(gpuModel.data.batches.size());
-            std::iota(sortedBatchIndices.begin(), sortedBatchIndices.end(), 0);
-            std::stable_sort(sortedBatchIndices.begin(), sortedBatchIndices.end(),
-                [&](size_t a, size_t b) {
-                    const auto& ba = gpuModel.data.batches[a];
-                    const auto& bb = gpuModel.data.batches[b];
-                    if (ba.priorityPlane != bb.priorityPlane)
-                        return ba.priorityPlane < bb.priorityPlane;
-                    return ba.materialLayer < bb.materialLayer;
-                });
+            // Use precomputed batch render order (cached on gpuModel at load time;
+            // depends only on static batch metadata, so per-frame re-sorting was waste).
+            const auto& sortedBatchIndices = gpuModel.sortedBatchIndices;
 
             for (int pass = 0; pass < 2; pass++) {
             for (size_t bi : sortedBatchIndices) {

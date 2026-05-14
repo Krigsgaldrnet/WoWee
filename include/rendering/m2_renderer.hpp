@@ -218,8 +218,15 @@ struct M2Instance {
     bool cachedIsValid = false;
     bool skipCollision = false;    // WMO interior doodads — skip player wall collision
     float cachedBoundRadius = 0.0f;
+    // Pre-computed per-instance cull factors (depend only on static flags + scale +
+    // bound radius), populated by recomputeCachedCullFactors(). The per-frame SSBO
+    // upload just multiplies by the smoothed render distance and packs the rest.
+    float cachedEffectiveMaxDistSqFactor = 1.0f;  // multiplied by maxRenderDistanceSq each frame
+    float cachedPaddedRadius = 0.0f;              // sphere radius used by the cull compute
     float portalSpinAngle = 0.0f;  // Accumulated spin angle for portal rotation
     const M2ModelGPU* cachedModel = nullptr;  // Avoid per-frame hash lookups
+
+    void recomputeCachedCullFactors();
 
     // Frame-skip optimization (update distant animations less frequently)
     uint8_t frameSkipCounter = 0;
