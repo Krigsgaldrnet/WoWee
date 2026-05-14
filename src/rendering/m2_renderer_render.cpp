@@ -956,12 +956,18 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             while (groupEnd < sortedVisible_.size() && sortedVisible_[groupEnd].modelId == groupModelId)
                 groupEnd++;
 
-            auto mdlIt = models.find(groupModelId);
-            if (mdlIt == models.end() || !mdlIt->second.vertexBuffer || !mdlIt->second.indexBuffer) {
+            // Pull the model through the first entry's instance.cachedModel pointer
+            // (set at addInstance) instead of doing models.find(groupModelId) per group.
+            const auto& firstEntry = sortedVisible_[visStart];
+            if (firstEntry.index >= instances.size() || !instances[firstEntry.index].cachedModel) {
                 visStart = groupEnd;
                 continue;
             }
-            const M2ModelGPU& model = mdlIt->second;
+            const M2ModelGPU& model = *instances[firstEntry.index].cachedModel;
+            if (!model.vertexBuffer || !model.indexBuffer) {
+                visStart = groupEnd;
+                continue;
+            }
 
             bool modelNeedsAnimation = model.hasAnimation && !model.disableAnimation;
             const bool foliageLikeModel = model.isFoliageLike;
@@ -1237,14 +1243,15 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         if (entry.index >= instances.size()) continue;
         auto& instance = instances[entry.index];
 
-        // Model boundary: do the lookup once, skip if no transparent batches.
+        // Model boundary: read cachedModel off the instance — was doing a
+        // per-boundary models.find() even though every instance already has
+        // the pointer cached at addInstance time.
         if (entry.modelId != currentModelId) {
             currentModelId = entry.modelId;
             currentModelValid = false;
-            auto mdlIt = models.find(entry.modelId);
-            if (mdlIt == models.end()) continue;
-            if (!mdlIt->second.hasTransparentBatches && !mdlIt->second.isSpellEffect) continue;
-            currentModel = &mdlIt->second;
+            currentModel = instance.cachedModel;
+            if (!currentModel) continue;
+            if (!currentModel->hasTransparentBatches && !currentModel->isSpellEffect) continue;
             if (!currentModel->vertexBuffer || !currentModel->indexBuffer) continue;
             currentModelValid = true;
             VkDeviceSize vbOff = 0;
