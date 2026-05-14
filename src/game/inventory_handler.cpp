@@ -796,9 +796,8 @@ void InventoryHandler::sendLootRoll(uint64_t objectGuid, uint32_t slot, uint8_t 
     pkt.writeUInt32(slot);
     pkt.writeUInt8(rollType);
     owner_.getSocket()->send(pkt);
-    if (rollType == 128) { // pass
-        pendingLootRollActive_ = false;
-    }
+    // Once we've sent any choice (pass/need/greed/disenchant), close the dialog.
+    pendingLootRollActive_ = false;
 }
 
 void InventoryHandler::handleLootRoll(network::Packet& packet) {
@@ -831,11 +830,12 @@ void InventoryHandler::handleLootRoll(network::Packet& packet) {
         pendingLootRoll_.playerRolls.push_back(result);
     }
 
+    // RollVote enum: 0=Pass, 1=Need, 2=Greed, 3=Disenchant.
     const char* typeStr = "passed on";
-    if (rollType == 0) typeStr = "rolled Need";
-    else if (rollType == 1) typeStr = "rolled Greed";
-    else if (rollType == 2) typeStr = "rolled Disenchant";
-    if (rollType <= 2) {
+    if (rollType == 1) typeStr = "rolled Need";
+    else if (rollType == 2) typeStr = "rolled Greed";
+    else if (rollType == 3) typeStr = "rolled Disenchant";
+    if (rollType >= 1 && rollType <= 3) {
         owner_.addSystemChatMessage(playerName + " " + typeStr + " - " + std::to_string(rollNumber));
     } else {
         owner_.addSystemChatMessage(playerName + " passed.");
@@ -869,9 +869,10 @@ void InventoryHandler::handleLootRollWon(network::Packet& packet) {
     uint32_t wonQuality = info ? info->quality : 1u;
     std::string link = buildItemLink(itemId, wonQuality, itemName);
 
+    // RollVote enum: 1=Need, 2=Greed, 3=Disenchant (0=Pass cannot win).
     const char* typeStr = "Need";
-    if (rollType == 1) typeStr = "Greed";
-    else if (rollType == 2) typeStr = "Disenchant";
+    if (rollType == 2) typeStr = "Greed";
+    else if (rollType == 3) typeStr = "Disenchant";
 
     owner_.addSystemChatMessage(winnerName + " won " + link + " (" + typeStr + " - " + std::to_string(rollNumber) + ")");
     pendingLootRollActive_ = false;

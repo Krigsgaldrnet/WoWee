@@ -510,49 +510,50 @@ void DialogManager::renderLootRollPopup(game::GameHandler& gameHandler,
         }
         ImGui::Spacing();
 
-        // voteMask bits: 0x01=pass, 0x02=need, 0x04=greed, 0x08=disenchant
+        // voteMask bits: 0x01=pass, 0x02=need, 0x04=greed, 0x08=disenchant.
+        // CMSG_LOOT_ROLL rollType (WotLK RollVote enum):
+        //   0=PASS, 1=NEED, 2=GREED, 3=DISENCHANT
+        // Do NOT confuse the bit position in voteMask with the rollType to send.
         const uint8_t vm = roll.voteMask;
         bool first = true;
         if (vm & 0x02) {
             if (ImGui::Button("Need", ImVec2(80, 30)))
-                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 0);
+                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 1);
             first = false;
         }
         if (vm & 0x04) {
             if (!first) ImGui::SameLine();
             if (ImGui::Button("Greed", ImVec2(80, 30)))
-                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 1);
+                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 2);
             first = false;
         }
         if (vm & 0x08) {
             if (!first) ImGui::SameLine();
             if (ImGui::Button("Disenchant", ImVec2(95, 30)))
-                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 2);
+                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 3);
             first = false;
         }
         if (vm & 0x01) {
             if (!first) ImGui::SameLine();
             if (ImGui::Button("Pass", ImVec2(70, 30)))
-                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 96);
+                gameHandler.sendLootRoll(roll.objectGuid, roll.slot, 0);
         }
 
         // Live roll results from group members
         if (!roll.playerRolls.empty()) {
             ImGui::Separator();
             ImGui::TextDisabled("Rolls so far:");
-            // Roll-type label + color
-            static constexpr const char* kRollLabels[] = {"Need", "Greed", "Disenchant", "Pass"};
+            // Roll-type label + color, indexed by RollVote enum
+            // (0=Pass, 1=Need, 2=Greed, 3=Disenchant).
+            static constexpr const char* kRollLabels[] = {"Pass", "Need", "Greed", "Disenchant"};
             static constexpr ImVec4 kRollColors[] = {
+                kColorDarkGray,                    // Pass — gray
                 ImVec4(0.2f, 0.9f, 0.2f, 1.0f),  // Need  — green
                 ImVec4(0.3f, 0.6f, 1.0f, 1.0f),  // Greed — blue
                 ImVec4(0.7f, 0.3f, 0.9f, 1.0f),  // Disenchant — purple
-                kColorDarkGray,  // Pass  — gray
             };
             auto rollTypeIndex = [](uint8_t t) -> int {
-                if (t == 0) return 0;
-                if (t == 1) return 1;
-                if (t == 2) return 2;
-                return 3; // pass (96 or unknown)
+                return (t < 4) ? static_cast<int>(t) : 0;
             };
 
             if (ImGui::BeginTable("##lootrolls", 3,
@@ -568,7 +569,7 @@ void DialogManager::renderLootRollPopup(game::GameHandler& gameHandler,
                     ImGui::TableSetColumnIndex(1);
                     ImGui::TextColored(kRollColors[ri], "%s", kRollLabels[ri]);
                     ImGui::TableSetColumnIndex(2);
-                    if (r.rollType != 96) {
+                    if (r.rollType != 0) {
                         ImGui::TextColored(kRollColors[ri], "%d", static_cast<int>(r.rollNum));
                     } else {
                         ImGui::TextDisabled("—");
