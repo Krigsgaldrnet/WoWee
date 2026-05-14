@@ -86,8 +86,11 @@ void ChatBubbleManager::render(game::GameHandler& gameHandler, const UIServices&
             alpha = bubble.timeRemaining / 2.0f;
         }
 
-        // Draw bubble window
-        std::string winId = "##ChatBubble" + std::to_string(bubble.senderGuid);
+        // Draw bubble window — format the window ID into a stack buffer
+        // so we don't allocate a fresh std::string per bubble per frame.
+        char winId[40];
+        std::snprintf(winId, sizeof(winId), "##ChatBubble%llu",
+                      static_cast<unsigned long long>(bubble.senderGuid));
         ImGui::SetNextWindowPos(ImVec2(screenX, screenY), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
         ImGui::SetNextWindowBgAlpha(0.7f * alpha);
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -98,7 +101,7 @@ void ChatBubbleManager::render(game::GameHandler& gameHandler, const UIServices&
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
 
-        ImGui::Begin(winId.c_str(), nullptr, flags);
+        ImGui::Begin(winId, nullptr, flags);
 
         ImVec4 textColor = bubble.isYell
             ? ImVec4(1.0f, 0.2f, 0.2f, alpha)
