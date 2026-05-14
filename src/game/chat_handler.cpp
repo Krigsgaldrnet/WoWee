@@ -9,6 +9,8 @@
 #include "rendering/animation_controller.hpp"
 #include "core/logger.hpp"
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 
 namespace wowee {
 namespace game {
@@ -230,12 +232,29 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
         }
     }
 
-    // Filter BG queue announcer spam (server-side module on ChromieCraft/AzerothCore).
-    // Arrives as SAY (type=0) with color codes: |cffff0000[BG Queue Announcer]:|r ...
+    // Filter BG/Arena queue announcer spam (server-side module on
+    // ChromieCraft/AzerothCore). Arrives as SAY (type=0) with color codes:
+    //   |cffff0000[BG Queue Announcer]:|r ...
+    //   |cffff0000[Arena Queue Announcer]:|r ...
+    // Case-insensitive substring match catches all known variants.
     {
         const auto& msg = data.message;
-        if (msg.find("BG Queue Announcer") != std::string::npos ||
-            msg.find("Queue status") != std::string::npos) {
+        auto containsCI = [&](const char* needle) {
+            const size_t nlen = std::strlen(needle);
+            if (msg.size() < nlen) return false;
+            const size_t last = msg.size() - nlen;
+            for (size_t i = 0; i <= last; ++i) {
+                bool match = true;
+                for (size_t j = 0; j < nlen; ++j) {
+                    unsigned char a = static_cast<unsigned char>(msg[i + j]);
+                    unsigned char b = static_cast<unsigned char>(needle[j]);
+                    if (std::tolower(a) != std::tolower(b)) { match = false; break; }
+                }
+                if (match) return true;
+            }
+            return false;
+        };
+        if (containsCI("queue announcer") || containsCI("queue status")) {
             return;
         }
     }
