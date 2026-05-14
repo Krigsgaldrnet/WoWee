@@ -1345,10 +1345,17 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_SET_REST_START] = [this](network::Packet& packet) {
         if (packet.hasRemaining(4)) {
             uint32_t restTrigger = packet.readUInt32();
-            isResting_ = (restTrigger > 0);
-            addSystemChatMessage(isResting_ ? "You are now resting."
-                                            : "You are no longer resting.");
-                            fireAddonEvent("PLAYER_UPDATE_RESTING", {});
+            const bool nowResting = (restTrigger > 0);
+            // The server pushes SMSG_SET_REST_START periodically while in
+            // a rest area, so only emit chat / fire the addon event on
+            // actual transitions — otherwise "You are now resting." spams
+            // the chat log every tick.
+            if (nowResting != isResting_) {
+                isResting_ = nowResting;
+                addSystemChatMessage(isResting_ ? "You are now resting."
+                                                : "You are no longer resting.");
+                fireAddonEvent("PLAYER_UPDATE_RESTING", {});
+            }
         }
     };
     dispatchTable_[Opcode::SMSG_UPDATE_AURA_DURATION] = [this](network::Packet& packet) {

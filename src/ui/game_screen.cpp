@@ -910,7 +910,13 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             gameHandler.tabTarget(movement.x, movement.y, movement.z);
         }
 
-        if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_SETTINGS, true)) {
+        // Escape (TOGGLE_SETTINGS) must not fire while chat input is active —
+        // otherwise pressing Escape to close chat also closes any open window or
+        // opens the escape menu, since ImGui deactivates InputText on Escape but
+        // the same press still propagates here. KeybindingManager only blocks
+        // A-Z/0-9 during text input, not Escape.
+        if (!textFocus &&
+            KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_SETTINGS, true)) {
             if (settingsPanel_.showSettingsWindow) {
                 settingsPanel_.showSettingsWindow = false;
             } else if (windowManager_.showEscapeMenu) {
@@ -1101,7 +1107,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                     hitCenter = core::coords::canonicalToRender(glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
                     hitCenter.z += isGo ? 1.2f : 1.0f;
                 } else {
-                    hitRadius = std::max(hitRadius * 1.1f, 0.8f);
+                    hitRadius = std::max(hitRadius * 1.25f, 1.0f);
                 }
 
                 float hitT;
@@ -1159,9 +1165,11 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                     float hitRadius = 0.0f;
                     bool hasBounds = core::Application::getInstance().getRenderBoundsForGuid(guid, hitCenter, hitRadius);
                     if (!hasBounds) {
-                        // Fallback hitbox based on entity type
-                        float heightOffset = 1.5f;
-                        hitRadius = 1.5f;
+                        // Fallback hitbox based on entity type. Match the hover-cursor sizes
+                        // (game_screen.cpp ~line 1100) so the targeting reticle agrees with
+                        // the cursor affordance — otherwise NPCs feel "hard to click".
+                        float heightOffset = 1.0f;
+                        hitRadius = 1.8f;
                         if (t == game::ObjectType::UNIT) {
                             auto unit = std::static_pointer_cast<game::Unit>(entity);
                             // Critters have very low max health (< 100)
@@ -1176,7 +1184,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                         hitCenter = core::coords::canonicalToRender(glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
                         hitCenter.z += heightOffset;
                     } else {
-                        hitRadius = std::max(hitRadius * 1.1f, 0.6f);
+                        hitRadius = std::max(hitRadius * 1.25f, 1.0f);
                     }
 
                     float hitT;
@@ -1287,6 +1295,13 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                                 heightOffset = 0.3f;
                             }
                         } else if (t == game::ObjectType::GAMEOBJECT) {
+                            // Skip chair-type GOs (type 7) from the right-click world picker.
+                            // Their 2.5m fallback sphere gets hit when right-click-rotating
+                            // the camera near a chair, causing the player to auto-sit. Users
+                            // can still left-click a chair to target it, then right-click to sit.
+                            auto go = std::static_pointer_cast<game::GameObject>(entity);
+                            auto* goInfo = gameHandler.getCachedGameObjectInfo(go->getEntry());
+                            if (goInfo && goInfo->type == 7) continue;
                             hitRadius = 2.5f;
                             heightOffset = 1.2f;
                         }
@@ -1306,7 +1321,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                             }
                         }
                     } else {
-                        hitRadius = std::max(hitRadius * 1.1f, 0.6f);
+                        hitRadius = std::max(hitRadius * 1.25f, 1.0f);
                     }
 
                     float hitT;

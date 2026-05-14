@@ -19,15 +19,15 @@ Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 
 > **Legal Disclaimer**: This is an educational/research project. It does not include any Blizzard Entertainment assets, data files, or proprietary code. World of Warcraft and all related assets are the property of Blizzard Entertainment, Inc. This project is not affiliated with or endorsed by Blizzard Entertainment. Users are responsible for supplying their own legally obtained game data files and for ensuring compliance with all applicable laws in their jurisdiction.
 
-## Status & Direction (2026-04-14)
+## Status & Direction (2026-05-13)
 
 - **Compatibility**: **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a** are all supported via expansion profiles and per-expansion packet parsers. All three expansions are roughly on par.
 - **Tested against**: AzerothCore/ChromieCraft, TrinityCore, Mangos, and Turtle WoW (1.17).
-- **Current focus**: code quality (SOLID decomposition, documentation), rendering stability, and multi-expansion coverage.
+- **Current focus**: stability hardening after a large god-object decomposition pass — chasing down behavioral regressions that crept in during the refactor (NPC/UI hitboxes, packet handlers, periodic-spam guards, optimistic-state syncs).
 - **Warden**: Full module execution via Unicorn Engine CPU emulation. Decrypts (RC4→RSA→zlib), parses and relocates the PE module, executes via x86 emulation with Windows API interception. Module cache at `~/.local/share/wowee/warden_cache/`.
-- **CI**: GitHub Actions builds for Linux (x86-64, ARM64), Windows (MSYS2 x86-64 + ARM64), and macOS (ARM64). Security scans via CodeQL, Semgrep, and sanitizers.
+- **CI**: GitHub Actions builds for Linux (x86-64, ARM64), Windows (MSYS2 x86-64 + ARM64), and macOS (ARM64). Security scans via CodeQL, Semgrep, and sanitizers. 31 unit-test suites covering protocol parsers, animation FSMs, world-map state, chat markup, macro evaluator, and editor units.
 - **Container builds**: Multi-platform Docker build system for Linux, macOS (arm64/x86_64 via osxcross), and Windows (LLVM-MinGW) cross-compilation.
-- **Release**: v1.8.9-preview — 530+ WoW API functions, 140+ events, 664 opcode handlers.
+- **Release**: v1.9.1-preview — 530+ WoW API functions, 140+ events, 664 opcode handlers.
 
 ## World Editor
 
@@ -47,9 +47,9 @@ cmake --build build --target wowee_editor
 
 **6 editing modes** (Sculpt, Paint, Objects, Water, NPCs, Quests) with 30+ terrain tools, multi-select, time-of-day lighting, quest chains, and full undo/redo.
 
-**7 novel open format replacements** for all Blizzard proprietary formats: WOT/WHM (terrain), WOC (collision), WOM1/WOM2 (static+animated models), WOB (buildings), zone.json (map def), PNG (textures), JSON (data tables). See `tools/editor/FORMAT_SPEC.md` for full specifications.
+**146+ novel open format catalogs** covering everything from terrain (WOT/WHM/WOC), models (WOM1/WOM2/WOM3, WOB), and textures (BLP→PNG) to data-table replacements for spells, items, quests, NPCs, gossip, factions, achievements, mail templates, calendar events, glyphs, talents, currencies, BG rewards, voiceovers, and more. Every catalog round-trips through JSON for human-friendly editing and version control. See `tools/editor/FORMAT_SPEC.md` for the binary specs.
 
-Exported zones auto-load in the wowee client from `custom_zones/` or `output/` directories.
+Exported zones auto-load in the wowee client from `custom_zones/` or `output/` directories. Sidecar files (`.wom`, `.wob`, `.png`, `.json`) placed next to legacy `.m2` / `.wmo` / `.blp` / `.dbc` are picked up at load time, enabling incremental migration of an existing extracted Data tree without overwriting originals.
 
 **AzerothCore integration**: File > Generate Server Module creates a ready-to-import module with SQL spawn tables, map registration, teleport commands, zone flags, and a server admin README.
 
@@ -345,7 +345,7 @@ make -j$(nproc)
 
 - **Platform**: Linux (primary), Windows (MSYS2/MSVC), macOS — C++20, CMake 3.15+
 - **Dependencies**: SDL2, Vulkan, GLM, OpenSSL, ImGui, FFmpeg, Unicorn Engine (StormLib for asset extraction tooling)
-- **Architecture**: Modular design with clear separation (core, rendering, networking, game logic, asset pipeline, UI, audio)
+- **Architecture**: Modular design with clear separation (core, rendering, networking, game logic, asset pipeline, UI, audio). The original god-object classes were decomposed into domain-focused subsystems: `GameHandler` → dispatch table + 8 domain handlers + `EntityController` + `GameServices`; `ChatPanel` → 15+ modules with 11 command files under `src/ui/chat/`; `WorldMap` → 16 modules under `src/rendering/world_map/`; `TransportManager` → 7 spline parsers + path repository + `CatmullRomSpline` in `src/math/`; `AnimationController` → composed FSM (Locomotion / Combat / Activity / Mount) with 30-phase character animation state machine.
 - **Networking**: Non-blocking TCP, SRP6a authentication, RC4 encryption, WoW 3.3.5a protocol
 - **Asset Loading**: Extracted loose-file tree + `manifest.json` indexing, async terrain streaming, overlay layers
 - **Sky System**: WoW-accurate DBC-driven architecture
@@ -370,7 +370,25 @@ This project does not include any Blizzard Entertainment proprietary data, asset
 
 ## Known Issues
 
-MANY issues this is actively under development
+This is a work in progress and the bug list is non-trivial. Current known
+gaps (as of v1.9.1-preview):
+
+- **Warden RSA modulus** is a placeholder; full anti-cheat parity needs
+  the modulus extracted from a real WoW.exe. Module execution itself
+  (Unicorn x86 emulation) is otherwise working.
+- **Quest GameObject loot** (e.g. Bundle of Wood on ChromieCraft) is not
+  100% reliable — the CMSG_GAMEOBJ_USE → cast → CMSG_LOOT chain works for
+  most chests but a few quest objectives still need confirmation.
+- **Transport edge cases** — most trams/ships/zeppelins ride correctly,
+  but the long Northrend rotational paths still show the occasional
+  spline wrap glitch.
+- **World-map zone hover** has edge cases at continent boundaries.
+- **Pet bar protocol** uses values targeted at AzerothCore-style servers;
+  other forks may need adjustment.
+
+If you hit something that looks wrong, please open an issue with the
+relevant log line — the dispatch tables print `LOG_INFO` / `LOG_DEBUG`
+for most packet handlers, which makes triage straightforward.
 
 ## Star History
 

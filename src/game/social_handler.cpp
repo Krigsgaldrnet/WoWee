@@ -1433,10 +1433,19 @@ void SocialHandler::handlePartyMemberStats(network::Packet& packet, bool isFull)
 void SocialHandler::handleGuildInfo(network::Packet& packet) {
     GuildInfoData data;
     if (!GuildInfoParser::parse(packet, data)) return;
+    // SMSG_GUILD_INFO is pushed by the server on every guild roster sync
+    // (login, member join/leave, periodic refreshes). Only print when
+    // something the user can see has actually changed; otherwise the
+    // guild banner spams chat on every tick.
+    const bool changed = (guildInfoData_.guildName != data.guildName) ||
+                         (guildInfoData_.numMembers != data.numMembers) ||
+                         (guildInfoData_.numAccounts != data.numAccounts);
     guildInfoData_ = data;
-    owner_.addSystemChatMessage("Guild: " + data.guildName + " (" +
-                         std::to_string(data.numMembers) + " members, " +
-                         std::to_string(data.numAccounts) + " accounts)");
+    if (changed) {
+        owner_.addSystemChatMessage("Guild: " + data.guildName + " (" +
+                             std::to_string(data.numMembers) + " members, " +
+                             std::to_string(data.numAccounts) + " accounts)");
+    }
 }
 
 void SocialHandler::handleGuildRoster(network::Packet& packet) {
@@ -1961,8 +1970,15 @@ void SocialHandler::handleBattlefieldStatus(network::Packet& packet) {
         packet.readUInt32(); packet.readUInt32();
     }
 
+    // Server pushes SMSG_BATTLEFIELD_STATUS periodically (~30s ticks while queued)
+    // and also for each queue slot at zone change / login. Only emit a chat line
+    // when the slot's statusId actually transitions; otherwise the same "Queued
+    // for X." or "Entered X." spams chat every tick.
+    bool statusChanged = false;
     if (queueSlot < bgQueues_.size()) {
-        bool wasInvite = (bgQueues_[queueSlot].statusId == 2);
+        uint32_t prevStatus = bgQueues_[queueSlot].statusId;
+        bool wasInvite = (prevStatus == 2);
+        statusChanged = (prevStatus != statusId) || (bgQueues_[queueSlot].bgTypeId != bgTypeId);
         bgQueues_[queueSlot].queueSlot = queueSlot;
         bgQueues_[queueSlot].bgTypeId = bgTypeId;
         bgQueues_[queueSlot].arenaType = arenaType;
@@ -1970,13 +1986,17 @@ void SocialHandler::handleBattlefieldStatus(network::Packet& packet) {
         bgQueues_[queueSlot].bgName = bgName;
         if (statusId == 1) { bgQueues_[queueSlot].avgWaitTimeSec = avgWaitSec; bgQueues_[queueSlot].timeInQueueSec = timeInQueueSec; }
         if (statusId == 2 && !wasInvite) { bgQueues_[queueSlot].inviteTimeout = inviteTimeout; bgQueues_[queueSlot].inviteReceivedTime = std::chrono::steady_clock::now(); }
+    } else {
+        statusChanged = true;
     }
 
-    switch (statusId) {
-        case 1: owner_.addSystemChatMessage("Queued for " + bgName + "."); break;
-        case 2: owner_.addSystemChatMessage(bgName + " is ready!"); break;
-        case 3: owner_.addSystemChatMessage("Entered " + bgName + "."); break;
-        default: break;
+    if (statusChanged) {
+        switch (statusId) {
+            case 1: owner_.addSystemChatMessage("Queued for " + bgName + "."); break;
+            case 2: owner_.addSystemChatMessage(bgName + " is ready!"); break;
+            case 3: owner_.addSystemChatMessage("Entered " + bgName + "."); break;
+            default: break;
+        }
     }
     if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("UPDATE_BATTLEFIELD_STATUS", {std::to_string(statusId)});
 }

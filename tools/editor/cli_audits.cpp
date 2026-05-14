@@ -1,4 +1,5 @@
 #include "cli_audits.hpp"
+#include "cli_subprocess.hpp"
 #include "cli_weld.hpp"
 
 #include "pipeline/wowee_model.hpp"
@@ -63,9 +64,8 @@ int runPerZoneAudit(const std::string& projectDir,
     std::printf("%s: %s\n", cmdName.c_str(), projectDir.c_str());
     std::printf("  zones: %zu\n\n", zones.size());
     for (const auto& z : zones) {
-        std::string cmd = "\"" + selfPath + "\" " + perZoneFlag + " \"" +
-                          z + "\" > /dev/null 2>&1";
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(selfPath,
+            {perZoneFlag, z}, /*quiet=*/true);
         std::string name = fs::path(z).filename().string();
         if (rc == 0) {
             ++passed;

@@ -396,7 +396,16 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
         offset = chunkEnd;
     }
 
-    // Initialize groups array
+    // Initialize groups array. Cap at a sanity limit so a hostile or
+    // corrupted WMO header can't trigger a multi-gigabyte allocation —
+    // Blizzard's largest real WMOs cap out around a few hundred groups.
+    constexpr uint32_t kMaxWMOGroups = 4096;
+    if (model.nGroups > kMaxWMOGroups) {
+        core::Logger::getInstance().warning(
+            "WMO: nGroups=", model.nGroups,
+            " exceeds sanity cap ", kMaxWMOGroups, ", clamping");
+        model.nGroups = kMaxWMOGroups;
+    }
     model.groups.resize(model.nGroups);
 
     // WMO loaded log disabled

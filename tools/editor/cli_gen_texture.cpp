@@ -3046,7 +3046,8 @@ int handleHoneycomb(int& i, int argc, char** argv) {
     int rowMax = static_cast<int>(H / vStep) + 3;
     int colMin = -2;
     int colMax = static_cast<int>(W / hStep) + 3;
-    seeds.reserve((rowMax - rowMin + 1) * (colMax - colMin + 1));
+    seeds.reserve(static_cast<size_t>(rowMax - rowMin + 1) *
+                  static_cast<size_t>(colMax - colMin + 1));
     for (int row = rowMin; row <= rowMax; ++row) {
         float shift = (row & 1) ? hStep * 0.5f : 0.0f;
         for (int col = colMin; col <= colMax; ++col) {

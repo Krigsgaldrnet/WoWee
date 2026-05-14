@@ -1,4 +1,5 @@
 #include "cli_zone_packs.hpp"
+#include "cli_subprocess.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -35,10 +36,12 @@ bool parseSeedFlag(int& i, int argc, char** argv,
     return true;
 }
 
-// Run a sub-process via std::system, log on failure, return rc==0.
-bool runSilently(const std::string& cmd) {
-    std::string full = cmd + " > /dev/null 2>&1";
-    return std::system(full.c_str()) == 0;
+// Spawn `argv0` with argument list; suppress child stdout/stderr; return
+// rc==0. Uses cli_subprocess::runChild so no shell parsing happens — the
+// previous std::system path was an `argv[0]` + path concat fed to the
+// shell (CodeQL cpp/command-line-injection).
+bool runSilently(const std::string& argv0, const std::vector<std::string>& args) {
+    return wowee::editor::cli::runChild(argv0, args, /*quiet=*/true) == 0;
 }
 
 int handleTexturePack(int& i, int argc, char** argv) {
@@ -81,9 +84,9 @@ int handleTexturePack(int& i, int argc, char** argv) {
     int written = 0;
     for (const auto& job : jobs) {
         std::filesystem::path out = texDir / job.outName;
-        std::string cmd = "\"" + self + "\" " + job.flag + " \"" + out.string() + "\"";
-        for (const auto& a : job.args) cmd += " " + a;
-        if (!runSilently(cmd)) {
+        std::vector<std::string> childArgs = {job.flag, out.string()};
+        for (const auto& a : job.args) childArgs.push_back(a);
+        if (!runSilently(self, childArgs)) {
             std::fprintf(stderr,
                 "gen-zone-texture-pack: %s failed\n", job.flag.c_str());
         } else {
@@ -138,9 +141,9 @@ int handleMeshPack(int& i, int argc, char** argv) {
     int written = 0;
     for (const auto& job : jobs) {
         std::filesystem::path out = meshDir / job.outBase;
-        std::string cmd = "\"" + self + "\" " + job.flag + " \"" + out.string() + "\"";
-        for (const auto& a : job.args) cmd += " " + a;
-        if (!runSilently(cmd)) {
+        std::vector<std::string> childArgs = {job.flag, out.string()};
+        for (const auto& a : job.args) childArgs.push_back(a);
+        if (!runSilently(self, childArgs)) {
             std::fprintf(stderr,
                 "gen-zone-mesh-pack: %s failed\n", job.flag.c_str());
         } else {
@@ -170,16 +173,14 @@ int handleZoneStarterPack(int& i, int argc, char** argv) {
     std::printf("gen-zone-starter-pack: %s (seed %u)\n",
                 zoneDir.c_str(), seed);
     std::printf("  step 1/2: textures\n");
-    std::string cmd1 = "\"" + self + "\" --gen-zone-texture-pack \"" +
-                       zoneDir + "\" --seed " + seedStr;
-    if (std::system(cmd1.c_str()) != 0) {
+    if (wowee::editor::cli::runChild(self,
+            {"--gen-zone-texture-pack", zoneDir, "--seed", seedStr}) != 0) {
         std::fprintf(stderr, "gen-zone-starter-pack: texture step failed\n");
         return 1;
     }
     std::printf("  step 2/2: meshes\n");
-    std::string cmd2 = "\"" + self + "\" --gen-zone-mesh-pack \"" +
-                       zoneDir + "\" --seed " + seedStr;
-    if (std::system(cmd2.c_str()) != 0) {
+    if (wowee::editor::cli::runChild(self,
+            {"--gen-zone-mesh-pack", zoneDir, "--seed", seedStr}) != 0) {
         std::fprintf(stderr, "gen-zone-starter-pack: mesh step failed\n");
         return 1;
     }
@@ -229,12 +230,10 @@ int handleProjectStarterPack(int& i, int argc, char** argv) {
         std::string name = fs::path(zones[z]).filename().string();
         std::printf("  [%zu/%zu] %s (seed %s)\n",
                     z + 1, zones.size(), name.c_str(), zoneSeed.c_str());
-        std::string c1 = "\"" + self + "\" --gen-zone-starter-pack \"" +
-                         zones[z] + "\" --seed " + zoneSeed;
-        bool ok1 = runSilently(c1);
-        std::string c2 = "\"" + self + "\" --gen-zone-audio-pack \"" +
-                         zones[z] + "\"";
-        bool ok2 = runSilently(c2);
+        bool ok1 = runSilently(self,
+            {"--gen-zone-starter-pack", zones[z], "--seed", zoneSeed});
+        bool ok2 = runSilently(self,
+            {"--gen-zone-audio-pack", zones[z]});
         if (ok1 && ok2) {
             ++passed;
             std::printf("           OK  textures + meshes + audio\n");

@@ -14,26 +14,66 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#  include <io.h>
+#  define WOWEE_DUP   _dup
+#  define WOWEE_DUP2  _dup2
+#  define WOWEE_FILENO _fileno
+#  define WOWEE_CLOSE _close
+#else
+#  include <unistd.h>
+#  define WOWEE_DUP   dup
+#  define WOWEE_DUP2  dup2
+#  define WOWEE_FILENO fileno
+#  define WOWEE_CLOSE close
+#endif
+
 namespace wowee {
 namespace editor {
 namespace cli {
 
 namespace {
 
+// Redirect stdout to `dst` for the lifetime of this object. Uses fd-level
+// dup/dup2 instead of `stdout = tmp;` because the C standard does not
+// guarantee `stdout` is an assignable lvalue (Apple/Windows reject it).
+class StdoutRedirect {
+public:
+    explicit StdoutRedirect(FILE* dst) {
+        std::fflush(stdout);
+        savedFd_ = WOWEE_DUP(WOWEE_FILENO(stdout));
+        if (savedFd_ >= 0 && dst) {
+            WOWEE_DUP2(WOWEE_FILENO(dst), WOWEE_FILENO(stdout));
+        }
+    }
+    ~StdoutRedirect() { restore(); }
+    void restore() {
+        if (savedFd_ < 0) return;
+        std::fflush(stdout);
+        WOWEE_DUP2(savedFd_, WOWEE_FILENO(stdout));
+        WOWEE_CLOSE(savedFd_);
+        savedFd_ = -1;
+    }
+    StdoutRedirect(const StdoutRedirect&) = delete;
+    StdoutRedirect& operator=(const StdoutRedirect&) = delete;
+private:
+    int savedFd_ = -1;
+};
+
 int handleListCommands(int& i, int argc, char** argv) {
     // Capture printUsage's stdout and grep for '--flag' tokens at
     // the start of each line. This auto-tracks the help text as
     // commands are added — no parallel list to maintain. Result
     // is a sorted, deduped, one-per-line list of recognized flags.
-    FILE* old = stdout;
     // Temp file lets us read printUsage's output back. fmemopen
     // would be cleaner but isn't available on Windows; tmpfile is
     // portable.
     FILE* tmp = std::tmpfile();
     if (!tmp) { std::fprintf(stderr, "list-commands: tmpfile failed\n"); return 1; }
-    stdout = tmp;
-    wowee::editor::cli::printUsage(argv[0]);
-    stdout = old;
+    {
+        StdoutRedirect redir(tmp);
+        wowee::editor::cli::printUsage(argv[0]);
+    }
     std::fseek(tmp, 0, SEEK_SET);
     std::set<std::string> commands;
     char line[512];
@@ -68,12 +108,12 @@ int handleInfoCliStats(int& i, int argc, char** argv) {
                     std::strcmp(argv[i + 1], "--json") == 0);
     if (jsonOut) i++;
     // Re-use --list-commands' parser. Capture printUsage stdout.
-    FILE* old = stdout;
     FILE* tmp = std::tmpfile();
     if (!tmp) { std::fprintf(stderr, "info-cli-stats: tmpfile failed\n"); return 1; }
-    stdout = tmp;
-    wowee::editor::cli::printUsage(argv[0]);
-    stdout = old;
+    {
+        StdoutRedirect redir(tmp);
+        wowee::editor::cli::printUsage(argv[0]);
+    }
     std::fseek(tmp, 0, SEEK_SET);
     std::set<std::string> commands;
     char line[512];
@@ -135,15 +175,15 @@ int handleInfoCliCategories(int& i, int argc, char** argv) {
     // lists every command in each category — handy for "I
     // know I want to gen something but what shapes/textures
     // are available?"
-    FILE* old = stdout;
     FILE* tmp = std::tmpfile();
     if (!tmp) {
         std::fprintf(stderr, "info-cli-categories: tmpfile failed\n");
         return 1;
     }
-    stdout = tmp;
-    wowee::editor::cli::printUsage(argv[0]);
-    stdout = old;
+    {
+        StdoutRedirect redir(tmp);
+        wowee::editor::cli::printUsage(argv[0]);
+    }
     std::fseek(tmp, 0, SEEK_SET);
     std::set<std::string> commands;
     char line[512];
@@ -206,14 +246,14 @@ int handleInfoCliHelp(int& i, int argc, char** argv) {
     // line containing the pattern (case-insensitive). Continuation
     // lines (the indented description on the line after a flag)
     // are emitted along with the flag line for context.
-    FILE* old = stdout;
     FILE* tmp = std::tmpfile();
     if (!tmp) {
         std::fprintf(stderr, "info-cli-help: tmpfile failed\n"); return 1;
     }
-    stdout = tmp;
-    wowee::editor::cli::printUsage(argv[0]);
-    stdout = old;
+    {
+        StdoutRedirect redir(tmp);
+        wowee::editor::cli::printUsage(argv[0]);
+    }
     std::fseek(tmp, 0, SEEK_SET);
     std::vector<std::string> lines;
     char buf[1024];
@@ -320,12 +360,12 @@ int handleValidateCliHelp(int& i, int argc, char** argv) {
                     std::strcmp(argv[i + 1], "--json") == 0);
     if (jsonOut) i++;
     // Capture printUsage's stdout.
-    FILE* old = stdout;
     FILE* tmp = std::tmpfile();
     if (!tmp) { std::fprintf(stderr, "validate-cli-help: tmpfile failed\n"); return 1; }
-    stdout = tmp;
-    wowee::editor::cli::printUsage(argv[0]);
-    stdout = old;
+    {
+        StdoutRedirect redir(tmp);
+        wowee::editor::cli::printUsage(argv[0]);
+    }
     std::fseek(tmp, 0, SEEK_SET);
     std::string helpText;
     char chunk[1024];

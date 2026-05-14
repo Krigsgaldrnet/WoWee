@@ -1,4 +1,5 @@
 #include "cli_repair.hpp"
+#include "cli_subprocess.hpp"
 
 #include "zone_manifest.hpp"
 #include "npc_spawner.hpp"
@@ -167,12 +168,12 @@ int handleRepairProject(int& i, int argc, char** argv) {
         std::printf("\n--- %s ---\n",
                     fs::path(zoneDir).filename().string().c_str());
         // Flush so the section marker lands before the spawned
-        // child's stdout — std::system inherits FDs but each
-        // process has its own buffer.
+        // child's stdout — exec inherits FDs but each process has
+        // its own buffer.
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" --repair-zone \"" +
-                          zoneDir + "\"" + (dryRun ? " --dry-run" : "");
-        int rc = std::system(cmd.c_str());
+        std::vector<std::string> args = {"--repair-zone", zoneDir};
+        if (dryRun) args.push_back("--dry-run");
+        int rc = wowee::editor::cli::runChild(self, args);
         if (rc != 0) totalFailed++;
     }
     std::printf("\n--- summary ---\n");

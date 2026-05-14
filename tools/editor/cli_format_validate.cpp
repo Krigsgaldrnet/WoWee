@@ -1,4 +1,5 @@
 #include "cli_format_validate.hpp"
+#include "cli_subprocess.hpp"
 
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
@@ -911,15 +912,11 @@ int handleAuditProject(int& i, int argc, char** argv) {
     // sub-check's stdout to a separate temp file so the final
     // verdict isn't drowned in their output.
     auto runStep = [&](const std::string& flag) -> int {
-        std::string cmd = "\"" + self + "\" " + flag + " \"" + projectDir + "\"";
-        // Suppress stdout so the audit's own report stays
-        // readable; users can rerun the individual sub-check
-        // for full output if needed.
-        cmd += " >/dev/null 2>&1";
-        // std::system returns 0 on success across POSIX and
-        // Windows. Anything else is a failure for our purposes;
-        // we just need PASS/FAIL granularity here.
-        return std::system(cmd.c_str());
+        // Suppress child stdout/stderr so the audit's own report stays
+        // readable; users can rerun the individual sub-check for full
+        // output if needed.
+        return wowee::editor::cli::runChild(self,
+            {flag, projectDir}, /*quiet=*/true);
     };
     struct Step { const char* name; const char* flag; int rc; };
     std::vector<Step> steps = {
@@ -975,10 +972,9 @@ int handleBenchAuditProject(int& i, int argc, char** argv) {
     };
     double totalMs = 0;
     for (auto& s : steps) {
-        std::string cmd = "\"" + self + "\" " + s.flag + " \"" +
-                           projectDir + "\" >/dev/null 2>&1";
         auto t0 = std::chrono::steady_clock::now();
-        s.rc = std::system(cmd.c_str());
+        s.rc = wowee::editor::cli::runChild(self,
+            {s.flag, projectDir}, /*quiet=*/true);
         auto t1 = std::chrono::steady_clock::now();
         s.ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         totalMs += s.ms;

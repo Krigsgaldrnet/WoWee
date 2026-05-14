@@ -1,4 +1,5 @@
 #include "cli_data_tree.hpp"
+#include "cli_subprocess.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -52,8 +53,7 @@ int handleMigrateDataTree(int& i, int argc, char** argv) {
     for (auto& s : steps) {
         std::printf("\n=== %s (%s) ===\n", s.name, s.flag);
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" " + s.flag + " \"" + srcDir + "\"";
-        s.rc = std::system(cmd.c_str());
+        s.rc = wowee::editor::cli::runChild(self, {s.flag, srcDir});
         if (s.rc != 0) totalFailed++;
     }
     std::printf("\n=== migrate-data-tree summary ===\n");
@@ -105,10 +105,8 @@ int handleBenchMigrateDataTree(int& i, int argc, char** argv) {
     };
     double totalMs = 0;
     for (auto& s : steps) {
-        std::string cmd = "\"" + self + "\" " + s.flag + " \"" + srcDir + "\"";
-        cmd += " >/dev/null 2>&1";
         auto t0 = std::chrono::steady_clock::now();
-        s.rc = std::system(cmd.c_str());
+        s.rc = wowee::editor::cli::runChild(self, {s.flag, srcDir}, /*quiet=*/true);
         auto t1 = std::chrono::steady_clock::now();
         s.ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         totalMs += s.ms;

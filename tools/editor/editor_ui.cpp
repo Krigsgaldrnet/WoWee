@@ -1,4 +1,5 @@
 #include "editor_ui.hpp"
+#include "cli_subprocess.hpp"
 #include "editor_app.hpp"
 #include "terrain_editor.hpp"
 #include "texture_painter.hpp"
@@ -20,10 +21,12 @@
 #include "rendering/terrain_renderer.hpp"
 #include "rendering/camera.hpp"
 #include <imgui.h>
-#include <cstring>
-#include <cstdio>
 #include <algorithm>
 #include <cctype>
+#include <climits>
+#include <cstdio>
+#include <cstring>
+#include <limits>
 
 namespace wowee {
 namespace editor {
@@ -984,7 +987,12 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             if (ImGui::SmallButton("Rnd")) noiseSeed = static_cast<int>(std::rand());
             if (ImGui::SmallButton("<<")) noiseSeed = std::max(0, noiseSeed - 1);
             ImGui::SameLine();
-            if (ImGui::SmallButton(">>")) noiseSeed++;
+            // Clamp ++ to INT_MAX-1 so signed overflow on the increment is impossible.
+            if (ImGui::SmallButton(">>")) {
+                noiseSeed = (noiseSeed < std::numeric_limits<int>::max() - 1)
+                                ? noiseSeed + 1
+                                : std::numeric_limits<int>::max();
+            }
             ImGui::SameLine();
             if (ImGui::SmallButton("Randomize All")) {
                 noiseSeed = static_cast<int>(std::rand());
@@ -3021,14 +3029,21 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
             // uses 'start ""'.
             auto playFile = [](const std::string& path) {
                 if (path.empty()) return;
+                // Open file in OS default app without invoking a shell —
+                // CodeQL flagged the previous std::system path as
+                // command-injection because `path` is concatenated into
+                // a shell command. Use platform-native exec instead.
+                wowee::editor::cli::runChild(
 #if defined(__APPLE__)
-                std::string cmd = "open \"" + path + "\" >/dev/null 2>&1 &";
+                    "/usr/bin/open",
 #elif defined(_WIN32)
-                std::string cmd = "start \"\" \"" + path + "\"";
+                    // `start` is a cmd.exe builtin, not an .exe — use the
+                    // explorer fallback which works with CreateProcess.
+                    "explorer.exe",
 #else
-                std::string cmd = "xdg-open \"" + path + "\" >/dev/null 2>&1 &";
+                    "/usr/bin/xdg-open",
 #endif
-                std::system(cmd.c_str());
+                    {path}, /*quiet=*/true);
             };
             if (!manifest.musicTrack.empty()) {
                 ImGui::SameLine();

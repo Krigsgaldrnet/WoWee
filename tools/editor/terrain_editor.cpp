@@ -1843,10 +1843,13 @@ bool TerrainEditor::importHeightmapImage(const std::string& path, float heightSc
 
     // Try 16-bit first for precision
     unsigned short* data16 = stbi_load_16(path.c_str(), &w, &h, &channels, 1);
+    // Pre-multiply as size_t so an attacker-supplied (or just very large)
+    // 65535×65535 image can't overflow int before the resize is sized.
+    const size_t pixelCount = static_cast<size_t>(w) * static_cast<size_t>(h);
     if (data16) {
         is16 = true;
-        heightData.resize(w * h);
-        for (int i = 0; i < w * h; i++)
+        heightData.resize(pixelCount);
+        for (size_t i = 0; i < pixelCount; i++)
             heightData[i] = static_cast<float>(data16[i]) / 65535.0f;
         stbi_image_free(data16);
     } else {
@@ -1856,8 +1859,9 @@ bool TerrainEditor::importHeightmapImage(const std::string& path, float heightSc
             commitGeneratorUndo();
             return false;
         }
-        heightData.resize(w * h);
-        for (int i = 0; i < w * h; i++)
+        const size_t pixelCount8 = static_cast<size_t>(w) * static_cast<size_t>(h);
+        heightData.resize(pixelCount8);
+        for (size_t i = 0; i < pixelCount8; i++)
             heightData[i] = static_cast<float>(data8[i]) / 255.0f;
         stbi_image_free(data8);
     }

@@ -2106,6 +2106,10 @@ void EntitySpawner::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float
             for (uint16_t sid : allGeosets) {
                 const uint16_t group = static_cast<uint16_t>(sid / 100);
                 if (group == 3 || group == 4 || group == 8 || group == 12 || group == 13 || group == 15) continue;
+                // Group 17 = eye glow (DK/Night Elf "shining eyes" overlay), group 18 = related
+                // glow geosets. NPCs are never DK/NE players opting into eye glow, so strip
+                // these groups so creatures don't get unwanted glowing blue night-elf eyes.
+                if (group == 17 || group == 18) continue;
                 // Some humanoid models carry cloak cloth in group 16. Strip this too
                 // when no cape is equipped to avoid "everyone has a cape".
                 if (!hasRenderableCape && group == 16) continue;

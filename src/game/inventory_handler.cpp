@@ -796,9 +796,8 @@ void InventoryHandler::sendLootRoll(uint64_t objectGuid, uint32_t slot, uint8_t 
     pkt.writeUInt32(slot);
     pkt.writeUInt8(rollType);
     owner_.getSocket()->send(pkt);
-    if (rollType == 128) { // pass
-        pendingLootRollActive_ = false;
-    }
+    // Once we've sent any choice (pass/need/greed/disenchant), close the dialog.
+    pendingLootRollActive_ = false;
 }
 
 void InventoryHandler::handleLootRoll(network::Packet& packet) {
@@ -831,11 +830,12 @@ void InventoryHandler::handleLootRoll(network::Packet& packet) {
         pendingLootRoll_.playerRolls.push_back(result);
     }
 
+    // RollVote enum: 0=Pass, 1=Need, 2=Greed, 3=Disenchant.
     const char* typeStr = "passed on";
-    if (rollType == 0) typeStr = "rolled Need";
-    else if (rollType == 1) typeStr = "rolled Greed";
-    else if (rollType == 2) typeStr = "rolled Disenchant";
-    if (rollType <= 2) {
+    if (rollType == 1) typeStr = "rolled Need";
+    else if (rollType == 2) typeStr = "rolled Greed";
+    else if (rollType == 3) typeStr = "rolled Disenchant";
+    if (rollType >= 1 && rollType <= 3) {
         owner_.addSystemChatMessage(playerName + " " + typeStr + " - " + std::to_string(rollNumber));
     } else {
         owner_.addSystemChatMessage(playerName + " passed.");
@@ -869,9 +869,10 @@ void InventoryHandler::handleLootRollWon(network::Packet& packet) {
     uint32_t wonQuality = info ? info->quality : 1u;
     std::string link = buildItemLink(itemId, wonQuality, itemName);
 
+    // RollVote enum: 1=Need, 2=Greed, 3=Disenchant (0=Pass cannot win).
     const char* typeStr = "Need";
-    if (rollType == 1) typeStr = "Greed";
-    else if (rollType == 2) typeStr = "Disenchant";
+    if (rollType == 2) typeStr = "Greed";
+    else if (rollType == 3) typeStr = "Disenchant";
 
     owner_.addSystemChatMessage(winnerName + " won " + link + " (" + typeStr + " - " + std::to_string(rollNumber) + ")");
     pendingLootRollActive_ = false;
@@ -1072,11 +1073,19 @@ void InventoryHandler::repairAll(uint64_t vendorGuid, bool useGuildBank) {
     if (!isClassicLikeExpansion()) packet.writeUInt8(useGuildBank ? 1 : 0);
     owner_.getSocket()->send(packet);
 
-    // Only do optimistic update if we verified the player can afford it
-    if (totalCost > 0) {
-        if (!useGuildBank) {
-            owner_.playerMoneyCopperRef() -= totalCost;
-        }
+    // Only do optimistic update for the player-funded path: we verified the
+    // player has the gold, so server acceptance is essentially guaranteed.
+    //
+    // Guild-bank repair (useGuildBank=true) cannot be confirmed client-side:
+    // the server silently rejects when the player has no guild, no
+    // GUILD_BANK_RIGHT_REPAIR permission, or the guild bank lacks funds —
+    // in all those cases Player::DurabilityRepair returns early WITHOUT
+    // setting durability and WITHOUT sending an UPDATE_OBJECT, so any
+    // optimistic durability bump would persist on screen until relog
+    // (when the server's actual state reloads). Wait for the server's
+    // UPDATE_OBJECT to confirm instead.
+    if (totalCost > 0 && !useGuildBank) {
+        owner_.playerMoneyCopperRef() -= totalCost;
         for (auto& [guid, info] : owner_.onlineItemsRef()) {
             if (info.maxDurability > 0 && info.curDurability < info.maxDurability) {
                 info.curDurability = info.maxDurability;
