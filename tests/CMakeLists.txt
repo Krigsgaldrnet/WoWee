@@ -482,6 +482,11 @@ target_include_directories(test_editor_units SYSTEM PRIVATE
     ${CMAKE_SOURCE_DIR}/extern/nlohmann
 )
 target_link_libraries(test_editor_units PRIVATE catch2_main)
+# npc_spawner.hpp pulls in <glm/glm.hpp>; link it when available so the
+# test target builds on hosts where glm is system-installed (Homebrew etc).
+if(TARGET glm::glm)
+    target_link_libraries(test_editor_units PRIVATE glm::glm)
+endif()
 add_test(NAME editor_units COMMAND test_editor_units)
 register_test_target(test_editor_units)
 
