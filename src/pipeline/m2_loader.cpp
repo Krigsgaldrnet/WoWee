@@ -347,6 +347,27 @@ T readValue(const std::vector<uint8_t>& data, uint32_t offset) {
     return value;
 }
 
+// Sanity caps for header-supplied counts. Real-game M2 maximums are
+// far below these (Blizzard's largest bones-per-model is ~256, largest
+// animations-per-model is ~600). The caps exist purely so a hostile
+// or corrupted M2 can't trigger a huge `reserve()` allocation or run
+// a multi-billion iteration loop before hitting the per-element bounds
+// check inside the loop.
+constexpr uint32_t kMaxM2Bones        = 65536;
+constexpr uint32_t kMaxM2Animations   = 65536;
+constexpr uint32_t kMaxM2UVAnims      = 16384;
+constexpr uint32_t kMaxM2Attachments  = 4096;
+
+inline uint32_t capCount(uint32_t value, uint32_t maxValue, const char* what) {
+    if (value > maxValue) {
+        core::Logger::getInstance().warning(
+            "M2: header field ", what, "=", value,
+            " exceeds sanity cap ", maxValue, ", clamping");
+        return maxValue;
+    }
+    return value;
+}
+
 template<typename T>
 std::vector<T> readArray(const std::vector<uint8_t>& data, uint32_t offset, uint32_t count) {
     std::vector<T> result;
@@ -808,6 +829,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
 
     // Read animation sequences (needed before bones to know sequence count)
     if (header.nAnimations > 0 && header.ofsAnimations > 0) {
+        header.nAnimations = capCount(header.nAnimations, kMaxM2Animations, "nAnimations");
         model.sequences.reserve(header.nAnimations);
 
         if (header.version < 264) {
@@ -867,6 +889,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
 
     // Read bones with full animation track data
     if (header.nBones > 0 && header.ofsBones > 0) {
+        header.nBones = capCount(header.nBones, kMaxM2Bones, "nBones");
         size_t boneStructSize = (header.version < 264) ? sizeof(M2BoneDiskVanilla) : sizeof(M2BoneDisk);
         uint64_t expectedBoneSize = static_cast<uint64_t>(header.nBones) * boneStructSize;
         if (header.ofsBones + expectedBoneSize > m2Data.size()) {
@@ -1044,6 +1067,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
             ? sizeof(M2TextureTransformDisk)
             : sizeof(M2TextureTransformDiskVanilla);
 
+        header.nUVAnimation = capCount(header.nUVAnimation, kMaxM2UVAnims, "nUVAnimation");
         model.textureTransforms.reserve(header.nUVAnimation);
         for (uint32_t i = 0; i < header.nUVAnimation; i++) {
             uint32_t ofs = header.ofsUVAnimation + i * uvStructSize;
@@ -1106,6 +1130,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
 
     // Read attachment points (vanilla uses 48-byte struct, WotLK uses 40-byte)
     if (header.nAttachments > 0 && header.ofsAttachments > 0) {
+        header.nAttachments = capCount(header.nAttachments, kMaxM2Attachments, "nAttachments");
         model.attachments.reserve(header.nAttachments);
         if (header.version < 264) {
             auto diskAttachments = readArray<M2AttachmentDiskVanilla>(m2Data, header.ofsAttachments, header.nAttachments);
