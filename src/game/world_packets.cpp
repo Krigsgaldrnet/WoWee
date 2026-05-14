@@ -1111,6 +1111,19 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
     uint16_t highestSetBit = 0;
     uint32_t valuesReadCount = 0;
 
+    // Pre-reserve the field vector based on popcount of the mask so the
+    // monotonic append loop below doesn't reallocate as it grows.
+    uint32_t totalSetBits = 0;
+    for (int blockIdx = 0; blockIdx < blockCount; ++blockIdx) {
+#if defined(__GNUC__) || defined(__clang__)
+        totalSetBits += static_cast<uint32_t>(__builtin_popcount(updateMask[blockIdx]));
+#else
+        uint32_t v = updateMask[blockIdx];
+        while (v) { totalSetBits += (v & 1u); v >>= 1u; }
+#endif
+    }
+    if (totalSetBits > 0) block.fields.reserve(totalSetBits);
+
     // Read only set bits in each mask block (faster than scanning all 32 bits).
     for (int blockIdx = 0; blockIdx < blockCount; ++blockIdx) {
         uint32_t mask = updateMask[blockIdx];
