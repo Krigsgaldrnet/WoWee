@@ -208,6 +208,11 @@ private:
     // Immediate submit resources
     VkCommandPool immCommandPool = VK_NULL_HANDLE;
     VkFence immFence = VK_NULL_HANDLE;
+    // Cached, reusable cmd buffer for beginSingleTimeCommands. Pool was created
+    // with RESET_COMMAND_BUFFER_BIT so we can reset and reuse instead of
+    // round-tripping through vkAllocateCommandBuffers + vkFreeCommandBuffers
+    // every immediate submit (the M2 frustum-cull dispatch fires this per frame).
+    VkCommandBuffer immCmdBuf_ = VK_NULL_HANDLE;
 
     // Batch upload state (nesting-safe via depth counter)
     int uploadBatchDepth_ = 0;
