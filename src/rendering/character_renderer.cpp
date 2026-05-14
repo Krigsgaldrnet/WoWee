@@ -2066,14 +2066,22 @@ glm::mat4 CharacterRenderer::getBoneTransform(const pipeline::M2Bone& bone, floa
     glm::quat rotation = interpolateQuat(bone.rotation, rSeq, rTime);
     glm::vec3 scale = interpolateVec3(bone.scale, sSeq, sTime, glm::vec3(1.0f));
 
-    // M2 bone transform: T(pivot) * T(trans) * R(rot) * S(scale) * T(-pivot)
-    // At rest (no animation): T(pivot) * I * I * I * T(-pivot) = identity
-    glm::mat4 transform = glm::translate(glm::mat4(1.0f), bone.pivot);
-    transform = glm::translate(transform, translation);
-    transform *= glm::toMat4(rotation);
-    transform = glm::scale(transform, scale);
-    transform = glm::translate(transform, -bone.pivot);
-
+    // M2 bone transform: T(pivot) * T(trans) * R(rot) * S(scale) * T(-pivot).
+    // Build directly instead of chaining glm::translate/rotate/scale (each of
+    // those is a full mat4 multiply). The composed matrix has:
+    //   linear part      = R * diag(scale)     (3 column scales of R)
+    //   translation part = pivot + trans - RS * pivot
+    glm::mat3 R = glm::mat3_cast(rotation);
+    glm::vec3 c0 = R[0] * scale.x;
+    glm::vec3 c1 = R[1] * scale.y;
+    glm::vec3 c2 = R[2] * scale.z;
+    glm::vec3 t  = (bone.pivot + translation)
+                   - (c0 * bone.pivot.x + c1 * bone.pivot.y + c2 * bone.pivot.z);
+    glm::mat4 transform;
+    transform[0] = glm::vec4(c0, 0.0f);
+    transform[1] = glm::vec4(c1, 0.0f);
+    transform[2] = glm::vec4(c2, 0.0f);
+    transform[3] = glm::vec4(t,  1.0f);
     return transform;
 }
 
