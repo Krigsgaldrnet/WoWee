@@ -395,11 +395,15 @@ std::vector<LightingManager::WeightedVolume> LightingManager::findLightVolumes(c
         if (weight > 0.0f) {
             weighted.push_back({&volume, weight});
 
-            // Debug logging for first few volumes
-            if (weighted.size() <= 3) {
+            // One-time diagnostic on the first map/frame this function fires —
+            // was logging the first three volumes EVERY FRAME, generating a
+            // continuous LOG_INFO stream during normal gameplay.
+            static int diagFramesRemaining = 1;
+            if (diagFramesRemaining > 0 && weighted.size() <= 3) {
                 LOG_INFO("Light volume ", volume.lightId, ": distSq=", distSq,
                          " inner=", volume.innerRadius, " outer=", volume.outerRadius,
                          " weight=", weight);
+                if (weighted.size() == 3) --diagFramesRemaining;
             }
         }
     }
