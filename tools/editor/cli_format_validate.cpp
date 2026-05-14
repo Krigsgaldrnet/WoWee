@@ -947,7 +947,7 @@ int handleAuditProject(int& i, int argc, char** argv) {
     return 1;
 }
 
-int handleBenchAuditProject(int& i, int argc, char** argv) {
+int handleBenchAuditProject(int& i, [[maybe_unused]] int argc, char** argv) {
     // Time each --audit-project sub-step end-to-end so users
     // can see where the slow checks are. Useful for tuning a
     // CI pipeline: drop the slowest check from a fast-feedback

@@ -606,7 +606,7 @@ int handleStripDataTree(int& i, int argc, char** argv) {
     return failed == 0 ? 0 : 1;
 }
 
-int handleAuditDataTree(int& i, int argc, char** argv) {
+int handleAuditDataTree(int& i, [[maybe_unused]] int argc, char** argv) {
     // Non-destructive CI gate. Walks <srcDir> and exits 1 if
     // any proprietary file (.m2/.wmo/.blp/.dbc) lacks a
     // matching open sidecar at the same (parent, stem). The

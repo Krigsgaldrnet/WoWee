@@ -190,8 +190,8 @@ int handleGenMeshFromHeightmap(int& i, int argc, char** argv) {
     float halfW = W * scaleXZ * 0.5f;
     float halfH = H * scaleXZ * 0.5f;
     auto sample = [&](int x, int y) {
-        if (x < 0) x = 0; if (x >= W) x = W - 1;
-        if (y < 0) y = 0; if (y >= H) y = H - 1;
+        x = std::clamp(x, 0, W - 1);
+        y = std::clamp(y, 0, H - 1);
         return data[y * W + x] / 255.0f * scaleY;
     };
     wom.vertices.reserve(static_cast<size_t>(W) * H);
@@ -330,7 +330,7 @@ int handleExportMeshHeightmap(int& i, int argc, char** argv) {
             size_t idx = static_cast<size_t>(y) * W + x;
             float h = wom.vertices[idx].position.y;
             float t = (range > 1e-6f) ? (h - yMin) / range : 0.0f;
-            if (t < 0) t = 0; if (t > 1) t = 1;
+            t = std::clamp(t, 0.0f, 1.0f);
             uint8_t g = static_cast<uint8_t>(t * 255.0f + 0.5f);
             size_t i2 = idx * 3;
             pixels[i2 + 0] = g;

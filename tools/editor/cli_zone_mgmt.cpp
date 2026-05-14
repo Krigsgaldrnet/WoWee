@@ -20,7 +20,7 @@ namespace cli {
 
 namespace {
 
-int handleCopyZone(int& i, int argc, char** argv) {
+int handleCopyZone(int& i, int /*argc*/, char** argv) {
     // Duplicate a zone — copy every file then rename slug-prefixed
     // ones (heightmap/terrain/collision sidecars carry the slug in
     // their filenames, e.g. "Sample_28_30.whm") so the new zone is
@@ -119,7 +119,7 @@ int handleCopyZone(int& i, int argc, char** argv) {
     return 0;
 }
 
-int handleRenameZone(int& i, int argc, char** argv) {
+int handleRenameZone(int& i, int /*argc*/, char** argv) {
     // In-place rename — like --copy-zone but no copy. Useful when
     // the user wants to fix a typo or change a name without
     // doubling disk usage. Renames the directory itself too

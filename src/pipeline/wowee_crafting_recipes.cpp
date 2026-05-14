@@ -205,7 +205,6 @@ WoweeCraftingRecipes::Entry makeRecipe(
 
 WoweeCraftingRecipes WoweeCraftingRecipesLoader::makeAlchemyPotions(
     const std::string& catalogName) {
-    using R = WoweeCraftingRecipes;
     WoweeCraftingRecipes c;
     c.name = catalogName;
     // Vanilla Alchemy potions. Reagent itemIds are
@@ -240,7 +239,6 @@ WoweeCraftingRecipes WoweeCraftingRecipesLoader::makeAlchemyPotions(
 
 WoweeCraftingRecipes WoweeCraftingRecipesLoader::makeEngineering(
     const std::string& catalogName) {
-    using R = WoweeCraftingRecipes;
     WoweeCraftingRecipes c;
     c.name = catalogName;
     // Rough Blasting Powder: 1 Rough Stone (2835)
@@ -267,7 +265,6 @@ WoweeCraftingRecipes WoweeCraftingRecipesLoader::makeEngineering(
 
 WoweeCraftingRecipes WoweeCraftingRecipesLoader::makeBlacksmithing(
     const std::string& catalogName) {
-    using R = WoweeCraftingRecipes;
     WoweeCraftingRecipes c;
     c.name = catalogName;
     // Rough Sharpening Stone: 1 Rough Stone -> 1

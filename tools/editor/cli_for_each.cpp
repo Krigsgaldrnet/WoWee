@@ -23,7 +23,7 @@ int handleForEachZone(int& i, int argc, char** argv) {
     // command after '--' for each one. '{}' in the command is
     // substituted with the zone path (find -exec convention).
     //
-    //   wowee_editor --for-each-zone custom_zones -- \\
+    //   wowee_editor --for-each-zone custom_zones -- (continued)
     //     wowee_editor --validate-all {}
     //
     // Returns the count of failed runs as the exit code (capped
@@ -111,9 +111,9 @@ int handleForEachTile(int& i, int argc, char** argv) {
     // (zoneDir/mapName_TX_TY) — the form most tile-level
     // editor commands take.
     //
-    //   wowee_editor --for-each-tile MyZone -- \\
+    //   wowee_editor --for-each-tile MyZone -- (continued)
     //     wowee_editor --build-woc {}
-    //   wowee_editor --for-each-tile MyZone -- \\
+    //   wowee_editor --for-each-tile MyZone -- (continued)
     //     wowee_editor --validate-whm {}
     std::string zoneDir = argv[++i];
     if (i + 1 < argc && std::strcmp(argv[i + 1], "--") == 0) ++i;

@@ -97,7 +97,7 @@ int handleAddTile(int& i, int argc, char** argv) {
     return 0;
 }
 
-int handleRemoveTile(int& i, int argc, char** argv) {
+int handleRemoveTile(int& i, int /*argc*/, char** argv) {
     // Symmetric counterpart to --add-tile. Drops the entry from
     // ZoneManifest::tiles AND deletes the WHM/WOT/WOC files on
     // disk so the zone is left consistent (no orphan sidecars).
