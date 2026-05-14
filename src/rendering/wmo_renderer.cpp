@@ -1425,8 +1425,7 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
         result.portalCulled = 0;
         result.distanceCulled = 0;
 
-        // Portal-based visibility — reuse member scratch buffers (avoid per-frame alloc)
-        portalVisibleGroups_.clear();
+        // Portal-based visibility — reuse member scratch buffer (avoid per-frame alloc)
         bool usePortalCulling = doPortalCull && !model.portals.empty() && !model.portalRefs.empty();
         if (usePortalCulling) {
             // If the actual camera is outside all groups, skip portal culling.
@@ -1444,14 +1443,14 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
             glm::vec4 localCamPos = instance.invModelMatrix * glm::vec4(portalViewerPos, 1.0f);
             getVisibleGroupsViaPortals(model, glm::vec3(localCamPos), frustum,
                                        instance.modelMatrix, portalVisibleGroupSet_);
-            portalVisibleGroups_.assign(portalVisibleGroupSet_.begin(), portalVisibleGroupSet_.end());
-            std::sort(portalVisibleGroups_.begin(), portalVisibleGroups_.end());
+            // Use the unordered_set directly — was copying into portalVisibleGroups_,
+            // sorting it, and binary-searching per group. The set lookup is O(1)
+            // per group and skips the per-instance copy + sort.
         }
 
         for (size_t gi = 0; gi < model.groups.size(); ++gi) {
             if (usePortalCulling &&
-                !std::binary_search(portalVisibleGroups_.begin(), portalVisibleGroups_.end(),
-                                    static_cast<uint32_t>(gi))) {
+                portalVisibleGroupSet_.find(static_cast<uint32_t>(gi)) == portalVisibleGroupSet_.end()) {
                 result.portalCulled++;
                 continue;
             }
