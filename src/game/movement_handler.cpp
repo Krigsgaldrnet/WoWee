@@ -1463,6 +1463,9 @@ void MovementHandler::handleMonsterMove(network::Packet& packet) {
             glm::vec3 startCanonical = core::coords::serverToCanonical(
                 glm::vec3(data.x, data.y, data.z));
             std::vector<std::array<float, 3>> path;
+            // Path = start + waypoints + dest. Reserve once to avoid the
+            // 2–3 reallocations push_back would trigger as it doubles.
+            path.reserve(data.waypoints.size() + 2);
             path.push_back({startCanonical.x, startCanonical.y, startCanonical.z});
             for (const auto& wp : data.waypoints) {
                 glm::vec3 wpCanonical = core::coords::serverToCanonical(
