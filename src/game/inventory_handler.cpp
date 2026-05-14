@@ -2430,8 +2430,8 @@ void InventoryHandler::queryItemInfo(uint32_t entry, uint64_t guid) {
         ? owner_.getPacketParsers()->buildItemQuery(entry, queryGuid)
         : ItemQueryPacket::build(entry, queryGuid);
     owner_.getSocket()->send(packet);
-    LOG_DEBUG("queryItemInfo: entry=", entry, " guid=0x", std::hex, queryGuid, std::dec,
-              " pending=", owner_.pendingItemQueriesRef().size());
+    LOG_INFO("queryItemInfo: SENT entry=", entry, " guid=0x", std::hex, queryGuid, std::dec,
+             " pending=", owner_.pendingItemQueriesRef().size());
 }
 
 void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
@@ -2454,8 +2454,9 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
     }
 
     owner_.pendingItemQueriesRef().erase(data.entry);
-    LOG_DEBUG("handleItemQueryResponse: entry=", data.entry, " name='", data.name,
-             "' class=", data.itemClass, " subClass=", data.subClass,
+    LOG_INFO("handleItemQueryResponse: RECV entry=", data.entry, " name='", data.name,
+             "' displayInfoId=", data.displayInfoId,
+             " class=", data.itemClass, " subClass=", data.subClass,
              " invType=", data.inventoryType, " valid=", data.valid);
 
     if (data.valid) {
