@@ -227,25 +227,24 @@ void Weather::update(const Camera& camera, float deltaTime) {
         particles.pop_back();
     }
 
-    // Update each particle
-    for (auto& particle : particles) {
-        updateParticle(particle, camera, deltaTime);
-    }
-
-    // Update position buffer
+    // Combined update + position copy. Hoist camera.getPosition() out of
+    // the per-particle call (each was re-reading the camera member) and
+    // fold the position-copy pass into the update loop so we only walk
+    // the particle vector once.
+    const glm::vec3 cameraPos = camera.getPosition();
     particlePositions.clear();
     particlePositions.reserve(particles.size());
-    for (const auto& particle : particles) {
+    for (auto& particle : particles) {
+        updateParticle(particle, cameraPos, deltaTime);
         particlePositions.push_back(particle.position);
     }
 }
 
-void Weather::updateParticle(Particle& particle, const Camera& camera, float deltaTime) {
+void Weather::updateParticle(Particle& particle, const glm::vec3& cameraPos, float deltaTime) {
     // Update lifetime
     particle.lifetime += deltaTime;
 
     // Reset if lifetime exceeded or too far from camera
-    glm::vec3 cameraPos = camera.getPosition();
     glm::vec3 toCamera = particle.position - cameraPos;
     float distSq = glm::dot(toCamera, toCamera);
 

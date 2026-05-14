@@ -124,7 +124,7 @@ private:
     };
 
     void resetParticles(const Camera& camera);
-    void updateParticle(Particle& particle, const Camera& camera, float deltaTime);
+    void updateParticle(Particle& particle, const glm::vec3& cameraPos, float deltaTime);
     glm::vec3 getRandomPosition(const glm::vec3& center) const;
 
     // Vulkan objects
