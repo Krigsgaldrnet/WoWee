@@ -1915,7 +1915,14 @@ if(WIN32)
     endif()
 endif()
 if(NOT MSVC)
-    target_compile_options(wowee_editor PRIVATE -Wall -Wextra -Wpedantic -Wno-missing-field-initializers)
+    # The editor's CLI handlers share a `(int& i, int argc, char** argv)`
+    # signature so they can be plugged into a function-pointer dispatch
+    # table; many handlers don't reference argc directly. Suppress that
+    # warning here rather than littering 30+ handlers with [[maybe_unused]].
+    target_compile_options(wowee_editor PRIVATE
+        -Wall -Wextra -Wpedantic
+        -Wno-missing-field-initializers
+        -Wno-unused-parameter)
 endif()
 if(GLSLC)
     add_dependencies(wowee_editor wowee_shaders)

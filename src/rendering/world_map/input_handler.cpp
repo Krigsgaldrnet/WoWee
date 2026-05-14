@@ -11,7 +11,7 @@ namespace world_map {
 
 InputResult InputHandler::process(ViewLevel currentLevel,
                                    int hoveredZoneIdx,
-                                   bool cosmicEnabled) {
+                                   [[maybe_unused]] bool cosmicEnabled) {
     InputResult result;
     auto& input = core::Input::getInstance();
 

@@ -70,9 +70,11 @@ constexpr uint32_t RACE_TROLL     = 1u << 7;
 constexpr uint32_t RACE_BLOODELF  = 1u << 9;
 constexpr uint32_t RACE_DRAENEI   = 1u << 10;
 
-// Class bits, mirroring WCHC layout. Used by presets.
+// Class bits, mirroring WCHC layout. Used by presets. Kept complete (with
+// [[maybe_unused]] on the unreferenced ones) so the bit layout is
+// documented in code rather than only on the wiki.
 constexpr uint32_t CLS_WARRIOR    = 1u << 0;
-constexpr uint32_t CLS_PALADIN    = 1u << 1;
+[[maybe_unused]] constexpr uint32_t CLS_PALADIN = 1u << 1;
 constexpr uint32_t CLS_HUNTER     = 1u << 2;
 constexpr uint32_t CLS_PRIEST     = 1u << 4;
 constexpr uint32_t CLS_DK         = 1u << 5;

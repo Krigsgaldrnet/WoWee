@@ -1066,8 +1066,10 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     // Always set mapName from the loaded ADT in case zone.json was absent
     // or stale.
     if (zoneManifest_.mapName.empty()) zoneManifest_.mapName = mapName;
-    if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0)
-        objectsDirty_ = true; autoSavePendingChanges_ = true;
+    if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0) {
+        objectsDirty_ = true;
+        autoSavePendingChanges_ = true;
+    }
 }
 
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {
