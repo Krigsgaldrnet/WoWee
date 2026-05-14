@@ -1398,10 +1398,14 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
     lastDistanceCulledGroups = 0;
 
     // ── Phase 1: Visibility culling ──────────────────────────
+    // Was loadedModels.count(modelId) per instance — but cullInstance below
+    // already does loadedModels.find() and bails on miss, so this pre-filter
+    // was a redundant hashmap lookup per instance every frame. Just include
+    // every instance; the cull step prunes unloaded ones.
     visibleInstances_.clear();
+    visibleInstances_.reserve(instances.size());
     for (size_t i = 0; i < instances.size(); ++i) {
-        if (loadedModels.count(instances[i].modelId))
-            visibleInstances_.push_back(i);
+        visibleInstances_.push_back(i);
     }
 
     glm::vec3 camPos = camera.getPosition();
