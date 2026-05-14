@@ -453,14 +453,14 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
         }
 
         // Frustum + distance cull: skip expensive bone computation for off-screen instances.
-        float worldRadius = instance.cachedBoundRadius * instance.scale;
-        float cullRadius = worldRadius;
+        // Both effectiveMaxDistSq and paddedRadius are precomputed per instance in
+        // recomputeCachedCullFactors(); we only need the per-frame distance and frustum test.
         glm::vec3 toCam = instance.position - cachedCamPos_;
         float distSq = glm::dot(toCam, toCam);
-        float effectiveMaxDistSq = cachedMaxRenderDistSq_ * std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
+        float effectiveMaxDistSq = cachedMaxRenderDistSq_ * instance.cachedEffectiveMaxDistSqFactor;
         if (distSq > effectiveMaxDistSq) continue;
-        float paddedRadius = std::max(cullRadius * rendering::M2_PADDED_RADIUS_SCALE, cullRadius + rendering::M2_PADDED_RADIUS_MIN_MARGIN);
-        if (cullRadius > 0.0f && !updateFrustum.intersectsSphere(instance.position, paddedRadius)) continue;
+        float paddedRadius = instance.cachedPaddedRadius;
+        if (paddedRadius > 0.0f && !updateFrustum.intersectsSphere(instance.position, paddedRadius)) continue;
 
         // LOD 3 skip: models beyond 150 units use the lowest LOD mesh which has
         // no visible skeletal animation.  Keep their last-computed bone matrices
