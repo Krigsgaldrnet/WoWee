@@ -1,4 +1,5 @@
 #include "cli_items.hpp"
+#include "cli_subprocess.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -323,9 +324,8 @@ int handleValidateProjectItems(int& i, int argc, char** argv) {
         std::printf("--- %s ---\n",
                     fs::path(zoneDir).filename().string().c_str());
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" --validate-items \"" +
-                           zoneDir + "\"";
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(self,
+            {"--validate-items", zoneDir});
         if (rc == 0) passed++;
         else failed++;
     }

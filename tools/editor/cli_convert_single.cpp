@@ -221,7 +221,8 @@ int handleConvertJsonDbc(int& i, int argc, char** argv) {
     // strings reuse the same offset in the block. The first byte
     // of the block is always '\0' so offset=0 means empty string,
     // matching Blizzard's convention.
-    std::vector<uint8_t> recordBytes(recordCount * recordSize, 0);
+    std::vector<uint8_t> recordBytes(
+        static_cast<size_t>(recordCount) * static_cast<size_t>(recordSize), 0);
     std::vector<uint8_t> stringBlock;
     stringBlock.push_back(0);  // leading NUL — empty-string offset
     std::unordered_map<std::string, uint32_t> stringOffsets;

@@ -1,4 +1,5 @@
 #include "cli_random.hpp"
+#include "cli_subprocess.hpp"
 
 #include "zone_manifest.hpp"
 #include "npc_spawner.hpp"
@@ -361,10 +362,8 @@ int handleGenRandomZone(int& i, int argc, char** argv) {
                 slug.c_str(), tx, ty);
     std::fflush(stdout);
     // 1. Scaffold.
-    std::string scaffoldCmd = "\"" + self + "\" --scaffold-zone \"" +
-                               slug + "\" " + std::to_string(tx) + " " +
-                               std::to_string(ty);
-    int rc = std::system(scaffoldCmd.c_str());
+    int rc = wowee::editor::cli::runChild(self,
+        {"--scaffold-zone", slug, std::to_string(tx), std::to_string(ty)});
     if (rc != 0) {
         std::fprintf(stderr,
             "gen-random-zone: scaffold step failed (rc=%d)\n", rc);
@@ -372,11 +371,11 @@ int handleGenRandomZone(int& i, int argc, char** argv) {
     }
     // 2. Random populate.
     std::fflush(stdout);
-    std::string popCmd = "\"" + self + "\" --random-populate-zone \"" +
-                          zoneDir + "\" --seed " + std::to_string(seed) +
-                          " --creatures " + std::to_string(creatures) +
-                          " --objects " + std::to_string(objects);
-    rc = std::system(popCmd.c_str());
+    rc = wowee::editor::cli::runChild(self, {
+        "--random-populate-zone", zoneDir,
+        "--seed", std::to_string(seed),
+        "--creatures", std::to_string(creatures),
+        "--objects", std::to_string(objects)});
     if (rc != 0) {
         std::fprintf(stderr,
             "gen-random-zone: populate step failed (rc=%d)\n", rc);
@@ -384,10 +383,10 @@ int handleGenRandomZone(int& i, int argc, char** argv) {
     }
     // 3. Random items.
     std::fflush(stdout);
-    std::string itemsCmd = "\"" + self + "\" --random-populate-items \"" +
-                            zoneDir + "\" --seed " + std::to_string(seed + 1) +
-                            " --count " + std::to_string(items);
-    rc = std::system(itemsCmd.c_str());
+    rc = wowee::editor::cli::runChild(self, {
+        "--random-populate-items", zoneDir,
+        "--seed", std::to_string(seed + 1),
+        "--count", std::to_string(items)});
     if (rc != 0) {
         std::fprintf(stderr,
             "gen-random-zone: items step failed (rc=%d)\n", rc);
@@ -458,14 +457,13 @@ int handleGenRandomProject(int& i, int argc, char** argv) {
         std::printf("\n=== %s (tile %d, %d) ===\n",
                     zoneName.c_str(), tx, ty);
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" --gen-random-zone \"" +
-                           zoneName + "\" " +
-                           std::to_string(tx) + " " + std::to_string(ty) +
-                           " --seed " + std::to_string(seed + n) +
-                           " --creatures " + std::to_string(creatures) +
-                           " --objects " + std::to_string(objects) +
-                           " --items " + std::to_string(items);
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(self, {
+            "--gen-random-zone", zoneName,
+            std::to_string(tx), std::to_string(ty),
+            "--seed", std::to_string(seed + n),
+            "--creatures", std::to_string(creatures),
+            "--objects", std::to_string(objects),
+            "--items", std::to_string(items)});
         if (rc == 0) produced++;
         else failed++;
     }

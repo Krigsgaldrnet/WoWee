@@ -1657,6 +1657,7 @@ add_executable(wowee_editor
     tools/editor/cli_for_each.cpp
     tools/editor/cli_check.cpp
     tools/editor/cli_introspect.cpp
+    tools/editor/cli_subprocess.cpp
     tools/editor/cli_texture_helpers.cpp
     tools/editor/cli_mesh_info.cpp
     tools/editor/cli_zone_data.cpp

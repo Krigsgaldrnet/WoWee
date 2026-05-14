@@ -1,4 +1,5 @@
 #include "cli_convert.hpp"
+#include "cli_subprocess.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -50,9 +51,8 @@ int handleConvertM2Batch(int& i, int argc, char** argv) {
     int ok = 0, failed = 0;
     for (const auto& m2 : m2Files) {
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" --convert-m2 \"" + m2 + "\"";
-        cmd += " >/dev/null 2>&1";
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(self,
+            {"--convert-m2", m2}, /*quiet=*/true);
         if (rc == 0) {
             ok++;
             std::printf("  [ok]   %s\n", m2.c_str());
@@ -113,9 +113,8 @@ int handleConvertWmoBatch(int& i, int argc, char** argv) {
     int ok = 0, failed = 0;
     for (const auto& wmo : wmoFiles) {
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" --convert-wmo \"" + wmo + "\"";
-        cmd += " >/dev/null 2>&1";
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(self,
+            {"--convert-wmo", wmo}, /*quiet=*/true);
         if (rc == 0) {
             ok++;
             std::printf("  [ok]   %s\n", wmo.c_str());
@@ -161,9 +160,8 @@ int handleConvertBlpBatch(int& i, int argc, char** argv) {
     int ok = 0, failed = 0;
     for (const auto& blp : blpFiles) {
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" --convert-blp-png \"" + blp + "\"";
-        cmd += " >/dev/null 2>&1";
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(self,
+            {"--convert-blp-png", blp}, /*quiet=*/true);
         if (rc == 0) {
             ok++;
             std::printf("  [ok]   %s\n", blp.c_str());
@@ -209,9 +207,8 @@ int handleConvertDbcBatch(int& i, int argc, char** argv) {
     int ok = 0, failed = 0;
     for (const auto& dbc : dbcFiles) {
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" --convert-dbc-json \"" + dbc + "\"";
-        cmd += " >/dev/null 2>&1";
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(self,
+            {"--convert-dbc-json", dbc}, /*quiet=*/true);
         if (rc == 0) {
             ok++;
             std::printf("  [ok]   %s\n", dbc.c_str());

@@ -1,4 +1,5 @@
 #include "cli_spawn_audit.hpp"
+#include "cli_subprocess.hpp"
 
 #include "npc_spawner.hpp"
 #include "object_placer.hpp"
@@ -718,12 +719,12 @@ int handleAuditProjectSpawns(int& i, int argc, char** argv) {
         std::printf("--- %s ---\n",
                     fs::path(zoneDir).filename().string().c_str());
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" --audit-zone-spawns \"" +
-                           zoneDir + "\"";
+        std::vector<std::string> args = {"--audit-zone-spawns", zoneDir};
         if (!thresholdArg.empty()) {
-            cmd += " --threshold " + thresholdArg;
+            args.push_back("--threshold");
+            args.push_back(thresholdArg);
         }
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(self, args);
         if (rc == 0) passed++;
         else failed++;
     }
@@ -774,9 +775,8 @@ int handleSnapProjectToGround(int& i, int argc, char** argv) {
         std::printf("--- %s ---\n",
                     fs::path(zoneDir).filename().string().c_str());
         std::fflush(stdout);
-        std::string cmd = "\"" + self + "\" --snap-zone-to-ground \"" +
-                           zoneDir + "\"";
-        int rc = std::system(cmd.c_str());
+        int rc = wowee::editor::cli::runChild(self,
+            {"--snap-zone-to-ground", zoneDir});
         if (rc == 0) passed++;
         else failed++;
     }
