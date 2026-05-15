@@ -1,6 +1,6 @@
 # Warden Implementation
 
-**Status**: Complete
+**Status**: Partial — infrastructure complete, execution path still has stubs (`src/game/warden_module.cpp:1023,1155,1167`). The module is loaded, decrypted, and parsed, but import binding and `WardenFuncList` extraction return placeholder values; the server falls back to fake responses via `GameHandler` (`warden_module.cpp:234`).
 **WoW Version**: 3.3.5a (build 12340)
 
 ---
@@ -21,7 +21,7 @@ directly in an emulated environment with Windows API hooks, without Wine or a Wi
 ```
 1. MD5       - Verify module checksum matches server challenge
 2. RC4       - Decrypt module payload
-3. RSA-2048  - Verify module signature (modulus extracted from WoW.exe at 0x005e3a03)
+3. RSA-2048  - Verify module signature (currently uses a hardcoded placeholder modulus — see Crypto Layer below)
 4. zlib      - Decompress module
 5. Parse     - Read PE header (sections, relocations, imports)
 6. Relocate  - Apply base relocations to load address
@@ -67,7 +67,11 @@ the cached decompressed module is loaded directly, skipping steps 1-4.
 | SHA1 | HMAC and check hashes |
 | RSA-2048 | Module signature verification |
 
-The RSA public modulus is extracted from WoW.exe (`.rdata` section at offset 0x005e3a03).
+The RSA public modulus used here is a hardcoded placeholder
+(`include/game/warden_module.hpp`). The real 3.3.5a modulus lives in
+the retail `WoW.exe` `.rdata` section and must be extracted from a
+client install at runtime; until that path is implemented, signature
+verification will not match a stock Blizzard module.
 
 ---
 

@@ -310,16 +310,15 @@ Environments\Stars\*.m2 (actual sky dome models)
 **Solution:** Blend skyboxes using same volume weighting as lighting:
 
 ```cpp
-// In SkySystem::render()
+// In SkySystem::render() — Vulkan path
+// Bind a sky pipeline whose VkPipelineColorBlendAttachmentState is
+// configured for additive blending (srcColor=SRC_ALPHA, dstColor=ONE,
+// blendOp=ADD), then render each skybox in weight order:
 if (activeVolumes.size() >= 2) {
-    // Render primary skybox
-    skybox1->render(camera, alpha = volumes[0].weight);
-
-    // Blend in secondary skybox
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // Additive blending
-    skybox2->render(camera, alpha = volumes[1].weight);
-    glDisable(GL_BLEND);
+    // Primary skybox (alpha = volumes[0].weight)
+    skybox1->render(camera, volumes[0].weight);
+    // Secondary skybox blends additively on top
+    skybox2->render(camera, volumes[1].weight);
 }
 ```
 
