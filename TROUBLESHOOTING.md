@@ -43,7 +43,7 @@ This guide covers common issues and solutions for WoWee.
 ### Black Screen or Rendering Issues
 - **Cause**: Missing shaders, GPU memory allocation failure, or incorrect graphics settings
 - **Solution**:
-  1. Check logs: Look in `~/.wowee/logs/` for error messages
+  1. Check logs: Look in `logs/wowee.log` (relative to the working directory, typically `build/bin/`) for error messages
   2. Verify shaders compiled: Check for `.spv` files in `assets/shaders/compiled/`
   3. Reduce shadow distance: Press Escape → Video Settings → Lower shadow distance from 300m to 100m
   4. Disable shadows entirely if issues persist

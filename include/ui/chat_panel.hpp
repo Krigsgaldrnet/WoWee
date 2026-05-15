@@ -144,8 +144,11 @@ private:
     UIServices services_;
 
     // ---- Chat input state ----
-    // NOTE: These will migrate to ChatInput in Phase 6 (slim ChatPanel).
-    // ChatInput class is ready at include/ui/chat/chat_input.hpp.
+    // A ChatInput class exists at include/ui/chat/chat_input.hpp and is the
+    // intended eventual home for these fields, but the Phase-6 ChatPanel
+    // decomposition (6.2/6.6/6.7) shipped without migrating the input
+    // buffers — chat_panel*.cpp still reads/writes them directly. Keep here
+    // until a follow-up extraction lands.
     char chatInputBuffer_[512] = "";
     char whisperTargetBuffer_[256] = "";
     bool chatInputActive_ = false;

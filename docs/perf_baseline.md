@@ -5,8 +5,17 @@
 
 ## Tracy Profiler Integration
 
-Tracy v0.11.1 integrated under `WOWEE_ENABLE_TRACY` CMake option (default: OFF).
-When enabled, zero-cost zone markers instrument the following critical paths:
+Tracy is integrated under the `WOWEE_ENABLE_TRACY` CMake option (default: OFF).
+When enabled, zero-cost zone markers instrument the following critical paths.
+
+> **Setup**: Tracy is *not* vendored in this repo. `CMakeLists.txt` looks for
+> `extern/tracy/public/TracyClient.cpp` and `extern/tracy/public/` headers
+> (lines 1045-1050). Clone Tracy into that path before configuring with
+> `-DWOWEE_ENABLE_TRACY=ON`:
+>
+> ```bash
+> git clone --depth 1 --branch v0.11.1 https://github.com/wolfpld/tracy extern/tracy
+> ```
 
 ### Instrumented Zones
 
@@ -20,8 +29,8 @@ When enabled, zero-cost zone markers instrument the following critical paths:
 | `Renderer::renderWorld` | src/rendering/renderer.cpp | Main world draw call |
 | `Renderer::renderShadowPass` | src/rendering/renderer.cpp | Shadow depth pass |
 | `PostProcess::execute` | src/rendering/post_process_pipeline.cpp | FSR/FXAA post-process |
-| `M2::computeBoneMatrices` | src/rendering/m2_renderer.cpp | CPU skeletal animation |
-| `M2Renderer::update` | src/rendering/m2_renderer.cpp | M2 instance update + culling |
+| `M2::computeBoneMatrices` | src/rendering/m2_renderer_internal.h | CPU skeletal animation |
+| `M2Renderer::update` | src/rendering/m2_renderer_render.cpp | M2 instance update + culling |
 | `TerrainManager::update` | src/rendering/terrain_manager.cpp | Terrain streaming logic |
 | `TerrainManager::processReadyTiles` | src/rendering/terrain_manager.cpp | GPU tile uploads |
 | `ADTLoader::load` | src/pipeline/adt_loader.cpp | ADT binary parsing |

@@ -44,7 +44,6 @@ ENV VCPKG_DEFAULT_TRIPLET=x64-mingw-static
 RUN "${VCPKG_ROOT}/vcpkg" install \
         sdl2[vulkan] \
         openssl \
-        glew \
         glm \
         zlib \
         ffmpeg \

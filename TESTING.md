@@ -135,7 +135,7 @@ extern/catch2/
 
 ## Building the Tests
 
-Tests are _not_ built by default. Enable them with `-DWOWEE_BUILD_TESTS=ON`.
+Tests **are** built by default (`option(WOWEE_BUILD_TESTS "Build tests" ON)` in `CMakeLists.txt`). Pass `-DWOWEE_BUILD_TESTS=OFF` to skip them; the snippets below pass `-DWOWEE_BUILD_TESTS=ON` only to be explicit.
 
 ### Release Build (normal)
 

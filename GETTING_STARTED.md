@@ -155,10 +155,7 @@ WoWee auto-detects expansion from server:
 - **TBC 2.4.3** - Burning Crusade
 - **WotLK 3.3.5a** - Wrath of the Lich King
 
-You can override with environment variable:
-```bash
-WOWEE_EXPANSION=tbc ./wowee    # Force TBC
-```
+Pick the expansion from the realm/auth screen at launch — the selection is wired through `ExpansionRegistry::setActive()` (`src/ui/auth_screen.cpp`). There is no `WOWEE_EXPANSION` environment variable.
 
 ## Troubleshooting
 
@@ -188,7 +185,7 @@ WOWEE_EXPANSION=tbc ./wowee    # Force TBC
 - **AzerothCore** - Full support, recommended for learning
 - **TrinityCore** - Full support, extensive customization
 - **Mangos** - Full support, solid foundation
-- **Turtle WoW** - Full support, 1.17 custom content
+- **Turtle WoW** - Full support, 1.18 custom content
 
 ### Server Requirements
 - Must support Vanilla, TBC, or WotLK protocol

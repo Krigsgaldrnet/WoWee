@@ -30,7 +30,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 ```
 
-### 4. Provide WoW Data (Extract + Manifest)
+### 3. Provide WoW Data (Extract + Manifest)
 
 Wowee loads assets from an extracted loose-file tree indexed by `manifest.json`.
 
@@ -47,7 +47,7 @@ By default wowee uses `./Data/`. To override:
 export WOW_DATA_PATH=/path/to/extracted/Data
 ```
 
-### 5. Run
+### 4. Run
 
 ```bash
 ./build/bin/wowee

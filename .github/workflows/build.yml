@@ -51,7 +51,6 @@ jobs:
           build-essential \
           pkg-config \
           libsdl2-dev \
-          libglew-dev \
           libglm-dev \
           libssl-dev \
           zlib1g-dev \
@@ -144,7 +143,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        brew install cmake pkg-config sdl2 glew glm openssl@3 zlib ffmpeg unicorn \
+        brew install cmake pkg-config sdl2 glm openssl@3 zlib ffmpeg unicorn \
           stormlib vulkan-loader vulkan-headers shaderc dylibbundler || true
         # dylibbundler may not be in all brew mirrors; install separately to not block others
         brew install dylibbundler 2>/dev/null || true
@@ -362,7 +361,6 @@ jobs:
           mingw-w64-clang-aarch64-ninja
           mingw-w64-clang-aarch64-pkgconf
           mingw-w64-clang-aarch64-SDL2
-          mingw-w64-clang-aarch64-glew
           mingw-w64-clang-aarch64-glm
           mingw-w64-clang-aarch64-openssl
           mingw-w64-clang-aarch64-zlib
@@ -456,7 +454,6 @@ jobs:
           mingw-w64-x86_64-ninja
           mingw-w64-x86_64-pkgconf
           mingw-w64-x86_64-SDL2
-          mingw-w64-x86_64-glew
           mingw-w64-x86_64-glm
           mingw-w64-x86_64-openssl
           mingw-w64-x86_64-zlib

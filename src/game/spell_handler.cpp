@@ -1793,9 +1793,10 @@ void SpellHandler::resetCastState() {
     queuedSpellTarget_ = 0;
     owner_.pendingGameObjectInteractGuidRef() = 0;
     // lastInteractedGoGuid_ is intentionally NOT cleared here — it must survive
-    // until handleSpellGo sends CMSG_LOOT after the server-side cast completes.
-    // handleSpellGo clears it after use (line 958). Previously this was cleared
-    // here, which meant the client-side timer fallback destroyed the guid before
+    // until the server delivers SMSG_LOOT_RESPONSE after the cast completes.
+    // InventoryHandler::handleLootResponse() clears it once loot has opened
+    // (src/game/inventory_handler.cpp). Previously it was cleared here, which
+    // meant the client-side cast-timer fallback destroyed the guid before
     // SMSG_SPELL_GO arrived, preventing loot from opening on quest chests.
 }
 

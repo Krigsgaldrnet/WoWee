@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated**: 2026-04-14
+**Last updated**: 2026-05-14
 
 ## What This Repo Is
 
@@ -33,7 +33,7 @@ Implemented (working in normal use):
 - Audio: ambient, movement, combat, spell, and UI sound systems; NPC voice lines for all playable races (greeting/farewell/vendor/pissed/aggro/flee)
 - Bag UI: independent bag windows (any bag closable independently), open-bag indicator on bag bar, server-synced bag sort, off-screen position reset, optional collapse-empty mode in aggregate view
 - DBC auto-detection: CharSections.dbc field layout auto-detected at runtime (handles stock WotLK vs HD-textured clients)
-- Multi-expansion: Classic/Vanilla, TBC, WotLK, and Turtle WoW (1.17) protocol and asset variants
+- Multi-expansion: Classic/Vanilla, TBC, WotLK, and Turtle WoW (1.18) protocol and asset variants
 - CI: GitHub Actions for Linux (x86-64, ARM64), Windows (MSYS2 x86-64 + ARM64), macOS (ARM64); container builds via Podman
 
 Recent refactors (PRs #59-63, April 2026):
@@ -43,7 +43,7 @@ Recent refactors (PRs #59-63, April 2026):
 - TransportManager decomposed: spline math extracted to `src/math/`, path data to TransportPathRepository, 7 duplicated spline parsers consolidated into `spline_packet.cpp`
 - Spell visual effects system with bone-tracked ribbons and particles
 - Entity movement improvements: multi-segment path interpolation, terrain height clamping, walk/run animation fix
-- 27 unit tests (up from 8), covering chat, world map, spline math, transport, and animation systems
+- 31 unit-test suites (up from 8), covering chat, world map, spline math, transport, and animation systems
 - Code quality fix pass: 7 issues resolved across hover detection, null safety, buffer bounds, and coordinate validation
 
 In progress / known gaps:
@@ -53,6 +53,7 @@ In progress / known gaps:
 - Quest GO interaction: CMSG_GAMEOBJ_USE + CMSG_LOOT sent correctly, but some AzerothCore/ChromieCraft servers don't grant quest credit for chest-type GOs (server-side limitation)
 - Visual edge cases: some M2/WMO rendering gaps (some particle effects)
 - Water refraction: enabled by default; srcAccessMask barrier fix (2026-03-18) resolved prior VK_ERROR_DEVICE_LOST on AMD/Mali GPUs
+- Fixed 2026-05-15: classic/turtle update-field tables had multiple wrong indices (`UNIT_FIELD_BYTES_1`=133 colliding with `UNIT_FIELD_MOUNTDISPLAYID`=133; STAT0..4 at 138..142; RESISTANCES at 154; missing NATIVEDISPLAYID). Corrected against vmangos `UpdateFields_1_12_1.h`: BYTES_1=138, STAT0..4=150..154, RESISTANCES=155, added NATIVEDISPLAYID=132.
 
 ## Where To Look
 

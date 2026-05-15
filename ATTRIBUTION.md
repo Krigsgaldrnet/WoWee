@@ -40,13 +40,21 @@ This project uses the following open-source libraries:
 | Library | License | Purpose |
 |---------|---------|---------|
 | [SDL2](https://libsdl.org/) | zlib | Window management, input handling |
-| [GLEW](http://glew.sourceforge.net/) | BSD/MIT | OpenGL extension loading |
+| [Vulkan](https://www.vulkan.org/) (loader + headers) | Apache 2.0 | Graphics API |
+| [vk-bootstrap](https://github.com/charles-lunarg/vk-bootstrap) | MIT | Vulkan instance/device boilerplate |
 | [GLM](https://github.com/g-truc/glm) | MIT | Mathematics library |
-| [OpenSSL](https://www.openssl.org/) | Apache 2.0 | Cryptographic functions (SRP6, RC4, RSA) |
+| [OpenSSL](https://www.openssl.org/) | Apache 2.0 (OpenSSL 3.x) | Cryptographic functions (SRP6, RC4, RSA) |
+| [zlib](https://www.zlib.net/) | zlib | Decompression for DBC/M2/packet payloads |
+| [FFmpeg](https://ffmpeg.org/) (libav*) | LGPL 2.1 | Video playback (cinematics) |
 | [Unicorn Engine](https://www.unicorn-engine.org/) | LGPL 2 | x86 CPU emulation for Warden module execution |
 | [miniaudio](https://miniaud.io/) | MIT/Unlicense | Audio playback |
-| [StormLib](https://github.com/ladislav-zezula/StormLib) | MIT | MPQ archive extraction |
+| [StormLib](https://github.com/ladislav-zezula/StormLib) | MIT | MPQ archive extraction (asset_extract tool) |
 | [Dear ImGui](https://github.com/ocornut/imgui) | MIT | Immediate mode GUI |
+| [Lua 5.1.5](https://www.lua.org/) | MIT | Macro and addon script execution |
+| [Catch2](https://github.com/catchorg/Catch2) (amalgamated) | BSL-1.0 | Test framework (test build only) |
+| [nlohmann/json](https://github.com/nlohmann/json) | MIT | JSON parsing (opcode tables, manifests) |
+| [stb_image / stb_image_write](https://github.com/nothings/stb) | MIT/Public Domain | PNG/JPG decode and write |
+| [AMD FidelityFX FSR2](https://github.com/GPUOpen-Effects/FidelityFX-FSR2) | MIT | Optional temporal upscaling |
 
 ## Cryptographic Standards
 

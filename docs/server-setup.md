@@ -161,8 +161,11 @@ Or directly in database:
 ```sql
 mysql -u trinity -ptrinity auth
 
-INSERT INTO realmlist (name, address, port, icon, realmflags, timezone, allowedSecurityLevel)
-VALUES ('Local Test Realm', 'localhost', 8085, 1, 0, 1, 0);
+-- TrinityCore 3.3.5 realmlist columns: id, name, address, localAddress,
+-- localSubnetMask, port, icon, flag, timezone, allowedSecurityLevel,
+-- population, gamebuild. Unmentioned columns use defaults.
+INSERT INTO realmlist (name, address, port, icon, flag, timezone, allowedSecurityLevel, gamebuild)
+VALUES ('Local Test Realm', 'localhost', 8085, 1, 0, 1, 0, 12340);
 ```
 
 ## Running the Server
@@ -610,5 +613,5 @@ Once you have a working local server connection:
 
 **Status**: Ready for local server testing
 **Last Updated**: 2026-03-30
-**Client Version**: v1.8.9-preview
-**Server Compatibility**: Vanilla 1.12, TBC 2.4.3, WotLK 3.3.5a (12340), Turtle WoW 1.17
+**Client Version**: v1.9.1-preview
+**Server Compatibility**: Vanilla 1.12, TBC 2.4.3, WotLK 3.3.5a (12340), Turtle WoW 1.18

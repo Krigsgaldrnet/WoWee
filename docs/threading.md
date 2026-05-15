@@ -11,9 +11,9 @@ follow.
 | #  | Name / Role            | Created At                                      | Lifetime                      |
 |----|------------------------|-------------------------------------------------|-------------------------------|
 | 1  | **Main thread**        | `Application::run()` (`main.cpp`)               | Entire session                |
-| 2  | **Async network pump** | `WorldSocket::connectAsync()` (`world_socket.cpp`) | Connect → disconnect          |
-| 3  | **Terrain workers**    | `TerrainManager::startWorkers()` (`terrain_manager.cpp`) | Map load → map unload         |
-| 4  | **Watchdog**           | `Application::startWatchdog()` (`application.cpp`) | After first frame → shutdown  |
+| 2  | **Async network pump** | `WorldSocket::asyncPumpLoop()` started inside `WorldSocket::connect()` (`world_socket.cpp`) | Connect → disconnect          |
+| 3  | **Terrain workers**    | `TerrainManager::initialize()` spawns the worker pool that runs `workerLoop()` (`terrain_manager.cpp`) | Map load → `stopWorkers()` on shutdown |
+| 4  | **Watchdog**           | Inline lambda `std::thread` started in `Application::run()` (`application.cpp:642`) | After first frame → shutdown  |
 | 5  | **Fire-and-forget**    | `std::async` / `std::thread(...).detach()` (various) | Task-scoped (bone anim, normal-map gen, warden crypto, world preload, entity model loading) |
 
 ### Thread Responsibilities
@@ -69,7 +69,7 @@ follow.
 | `sockfd`, `connected`, `encryptionEnabled`, `receiveBuffer`, `receiveReadOffset_`, `headerBytesDecrypted`, cipher state, `recentPacketHistory_` | `ioMutex_` | Consistent `lock_guard` in `send()` and `pumpNetworkIO()` |
 | `pendingPacketCallbacks_` | `callbackMutex_` | Pump thread produces, main thread consumes in `dispatchQueuedPackets()` |
 | `asyncPumpStop_`, `asyncPumpRunning_` | `std::atomic<bool>` | Memory-order acquire/release |
-| `packetCallback`          | *implicit*       | Set once before `connectAsync()` starts the pump thread |
+| `packetCallback`          | *implicit*       | Set once before `connect()` starts the pump thread |
 
 ### Terrain Manager (`include/rendering/terrain_manager.hpp`)
 
@@ -147,9 +147,9 @@ follow.
   compile-time enforcement.  If a future change introduces direct entity
   modification from the network pump thread, a mutex must be added.
 
-* `packetCallback` in `WorldSocket` is set once before `connectAsync()` and
+* `packetCallback` in `WorldSocket` is set once before `connect()` and
   never modified afterwards.  This is safe in practice but not formally
-  synchronized — do not change the callback after `connectAsync()`.
+  synchronized — do not change the callback after `connect()`.
 
 * `fileCacheMisses` is declared as `std::atomic<size_t>` for consistency but is
   currently never incremented; the actual miss count must be inferred from

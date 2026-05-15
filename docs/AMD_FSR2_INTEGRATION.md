@@ -54,9 +54,6 @@ Runtime note:
 - UI displays active backend in settings (`AMD FidelityFX SDK` or `Internal fallback`).
 - Runtime settings include persisted FSR2 jitter tuning.
 - FidelityFX-SDK extern is fetched across platforms (default: `Kelsidavis/FidelityFX-SDK` on `main`).
-- Startup safety behavior remains enabled:
-  - persisted FSR2 is deferred until `IN_WORLD`
-  - startup falls back unless `WOWEE_ALLOW_STARTUP_FSR2=1`
 
 ## FSR Defaults
 

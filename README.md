@@ -22,12 +22,12 @@ Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 ## Status & Direction (2026-05-13)
 
 - **Compatibility**: **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a** are all supported via expansion profiles and per-expansion packet parsers. All three expansions are roughly on par.
-- **Tested against**: AzerothCore/ChromieCraft, TrinityCore, Mangos, and Turtle WoW (1.17).
+- **Tested against**: AzerothCore/ChromieCraft, TrinityCore, Mangos, and Turtle WoW (1.18).
 - **Current focus**: stability hardening after a large god-object decomposition pass — chasing down behavioral regressions that crept in during the refactor (NPC/UI hitboxes, packet handlers, periodic-spam guards, optimistic-state syncs).
 - **Warden**: Full module execution via Unicorn Engine CPU emulation. Decrypts (RC4→RSA→zlib), parses and relocates the PE module, executes via x86 emulation with Windows API interception. Module cache at `~/.local/share/wowee/warden_cache/`.
 - **CI**: GitHub Actions builds for Linux (x86-64, ARM64), Windows (MSYS2 x86-64 + ARM64), and macOS (ARM64). Security scans via CodeQL, Semgrep, and sanitizers. 31 unit-test suites covering protocol parsers, animation FSMs, world-map state, chat markup, macro evaluator, and editor units.
 - **Container builds**: Multi-platform Docker build system for Linux, macOS (arm64/x86_64 via osxcross), and Windows (LLVM-MinGW) cross-compilation.
-- **Release**: v1.9.1-preview — 530+ WoW API functions, 140+ events, 664 opcode handlers.
+- **Release**: v1.9.1-preview — 530+ WoW API functions, 140+ events, broad opcode coverage across Classic / TBC / WotLK / Turtle.
 
 ## World Editor
 
@@ -127,41 +127,43 @@ Press Escape to open **Video Settings** and select a preset, or adjust individua
 
 ```bash
 # Ubuntu/Debian
+# Optional packages (libunicorn-dev / libstorm-dev) enable the Warden
+# module executor and the asset_extract tool respectively.
 sudo apt install libsdl2-dev libglm-dev libssl-dev \
                  libvulkan-dev vulkan-tools glslc \
                  libavformat-dev libavcodec-dev libswscale-dev libavutil-dev \
                  zlib1g-dev cmake build-essential libx11-dev \
-                 libunicorn-dev \          # optional: Warden module execution
-                 libstorm-dev              # optional: asset_extract tool
+                 libunicorn-dev libstorm-dev
 
-# Fedora
+# Fedora — unicorn-devel and StormLib-devel are optional (see above)
 sudo dnf install SDL2-devel glm-devel openssl-devel \
                  vulkan-devel vulkan-tools glslc \
                  ffmpeg-devel zlib-devel cmake gcc-c++ libX11-devel \
-                 unicorn-devel \           # optional: Warden module execution
-                 StormLib-devel            # optional: asset_extract tool
+                 unicorn-devel StormLib-devel
 
-# Arch
+# Arch — vulkan-devel is not a real package on Arch; install the
+# headers + loader explicitly. unicorn is optional (Warden);
+# StormLib must be installed from AUR for asset_extract.
 sudo pacman -S sdl2 glm openssl \
-               vulkan-devel vulkan-tools shaderc \
+               vulkan-headers vulkan-icd-loader vulkan-tools shaderc \
                ffmpeg zlib cmake base-devel libx11 \
-               unicorn                    # optional: Warden module execution
-               # StormLib: install from AUR for asset_extract tool
+               unicorn
 
-# macOS (Homebrew)
-brew install cmake pkg-config sdl2 glew glm openssl@3 zlib ffmpeg \
+# macOS (Homebrew) — unicorn (Warden) and stormlib (asset_extract) are optional
+brew install cmake pkg-config sdl2 glm openssl@3 zlib ffmpeg \
              vulkan-loader vulkan-headers shaderc \
-             unicorn \
-             stormlib
-# unicorn is optional (Warden module execution)
-# stormlib is optional (asset_extract tool)
+             unicorn stormlib
 ```
 
 ### Container build
-You can use podman to build application in separate container.
-- Install podman 
-- Then run `container/build-in-container.sh`
-- Artifacts can be found in `/tmp/wowee.[random value].[commit hash]`
+Cross-compile inside Docker / Podman with no host toolchain — see
+[container/README.md](container/README.md) for full options.
+- Install Docker (or Podman)
+- From the repo root, run one of:
+  - `./container/run-linux.sh` → `build/linux/bin/wowee`
+  - `./container/run-macos.sh` (Intel: `MACOS_ARCH=x86_64 …`) → `build/macos/bin/wowee`
+  - `./container/run-windows.sh` → `build/windows/bin/wowee.exe`
+- PowerShell siblings (`.ps1`) are provided for each script.
 
 ### Game Data
 
@@ -195,7 +197,7 @@ Data/
 Notes:
 
 - `StormLib` is required to build/run the extractor (`asset_extract`), but the main client does not require StormLib at runtime.
-- `extract_assets.sh` / `extract_assets.ps1` support `classic`, `tbc`, `wotlk` targets.
+- `extract_assets.sh` / `extract_assets.ps1` support `classic`, `turtle`, `tbc`, `wotlk` targets.
 
 #### 2) Point wowee at the extracted data
 
@@ -331,7 +333,7 @@ make -j$(nproc)
 - FSR3 Path A runtime build auto-bootstraps missing VK permutation headers via `tools/generate_ffx_sdk_vk_permutations.sh`
 - CI builds `wowee_fsr3_framegen_amd_vk_probe` when that target is generated for the detected SDK layout
 - If FSR2 generated Vulkan permutation headers are absent upstream, WoWee bootstraps them from `third_party/fsr2_vk_permutations`
-- Container build via `container/build-in-container.sh` (Podman)
+- Container build via `container/run-{linux,macos,windows}.sh` (Docker/Podman)
 
 ## Security
 

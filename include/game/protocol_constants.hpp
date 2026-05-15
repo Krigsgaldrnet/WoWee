@@ -15,12 +15,14 @@ constexpr uint32_t COPPER_PER_GOLD   = 10000;
 constexpr uint32_t COPPER_PER_SILVER = 100;
 
 // ---------------------------------------------------------------------------
-// Unit flags (UNIT_FIELD_FLAGS — offset 46 in UnitFields)
+// Unit flags (UNIT_FIELD_FLAGS — index 59 in UnitFields for 3.3.5a;
+// 46 in Classic/TBC/Turtle. Bitmask values below are stable across expansions.)
 // ---------------------------------------------------------------------------
 constexpr uint32_t UNIT_FLAG_TAXI_FLIGHT = 0x00000100;
 
 // ---------------------------------------------------------------------------
-// NPC flags (UNIT_NPC_FLAGS — offset 147 in UnitFields, 3.3.5a)
+// NPC flags (UNIT_NPC_FLAGS — index 82 in UnitFields for 3.3.5a;
+// 147 in Classic/Turtle. Bitmask values below are stable across expansions.)
 // ---------------------------------------------------------------------------
 constexpr uint32_t NPC_FLAG_SPIRIT_GUIDE  = 0x00004000;
 constexpr uint32_t NPC_FLAG_SPIRIT_HEALER = 0x00008000;

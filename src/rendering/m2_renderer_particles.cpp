@@ -565,7 +565,7 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 cachedTotalTiles = static_cast<uint32_t>(cachedTilesX) *
                                    static_cast<uint32_t>(cachedTilesY);
                 cachedBlendType = cachedEm->blendingType;
-                ParticleGroupKey key{cachedTex, cachedBlendType, cachedTilesX, cachedTilesY};
+                ParticleGroupKey key{cachedTex, static_cast<uint8_t>(cachedBlendType), cachedTilesX, cachedTilesY};
                 cachedGroup = &groups[key];
                 cachedGroup->texture = cachedTex;
                 cachedGroup->blendType = cachedBlendType;
