@@ -1586,7 +1586,7 @@ void GameHandler::sendLootRoll(uint64_t objectGuid, uint32_t slot, uint8_t rollT
 }
 
 // ---------------------------------------------------------------------------
-// SMSG_ACHIEVEMENT_EARNED (WotLK 3.3.5a wire 0x4AB)
+// SMSG_ACHIEVEMENT_EARNED (WotLK 3.3.5a wire 0x468)
 //   uint64 guid          — player who earned it (may be another player)
 //   uint32 achievementId — Achievement.dbc ID
 //   PackedTime date      — uint32 bitfield (seconds since epoch)
