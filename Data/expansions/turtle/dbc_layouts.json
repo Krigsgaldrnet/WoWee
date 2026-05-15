@@ -89,7 +89,8 @@
     "ReputationRaceMask0": 2,
     "ReputationRaceMask1": 3,
     "ReputationRaceMask2": 4,
-    "ReputationRaceMask3": 5
+    "ReputationRaceMask3": 5,
+    "Name": 19
   },
   "FactionTemplate": {
     "Enemy0": 6,
