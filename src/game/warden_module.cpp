@@ -125,13 +125,10 @@ bool WardenModule::load(const std::vector<uint8_t>& moduleData,
     // Note: Steps 6-8 are stubs/platform-limited, but infrastructure is ready
     loaded_ = true; // Mark as loaded (infrastructure complete)
 
-    LOG_INFO("WardenModule: Module loading pipeline COMPLETE");
-    LOG_INFO("WardenModule:   Status: Infrastructure ready, execution stubs in place");
-    LOG_INFO("WardenModule:   Limitations:");
-    LOG_INFO("WardenModule:     - Relocations: needs real module data");
-    LOG_INFO("WardenModule:     - API Binding: Windows only (or Wine on Linux)");
-    LOG_INFO("WardenModule:     - Execution: disabled (unsafe without validation)");
-    LOG_INFO("WardenModule:   For strict servers: Would need to enable actual x86 execution");
+    LOG_INFO("WardenModule: pipeline complete (infrastructure ready, execution stubs in place)");
+    LOG_DEBUG("WardenModule: limitations — relocations need real module data; API binding is "
+              "Windows-only (or Wine on Linux); native x86 execution is disabled. "
+              "For strict servers, actual execution would need to be enabled.");
 
     return true;
 }
@@ -145,8 +142,7 @@ bool WardenModule::processCheckRequest([[maybe_unused]] const std::vector<uint8_
 
     #ifdef HAVE_UNICORN
         if (emulator_ && emulator_->isInitialized() && funcList_.packetHandler) {
-            LOG_INFO("WardenModule: Processing check request via emulator...");
-            LOG_INFO("WardenModule:   Check data: ", checkData.size(), " bytes");
+            LOG_DEBUG("WardenModule: processing check request via emulator (", checkData.size(), " bytes)");
 
             // Allocate memory for check data in emulated space
             uint32_t checkDataAddr = emulator_->allocateMemory(checkData.size(), 0x04);
@@ -190,7 +186,7 @@ bool WardenModule::processCheckRequest([[maybe_unused]] const std::vector<uint8_
 
                 // Call: void PacketHandler(uint8_t* data, uint32_t size,
                 //                          uint8_t* responseOut, uint32_t* responseSizeOut)
-                LOG_INFO("WardenModule: Calling emulated PacketHandler...");
+                LOG_DEBUG("WardenModule: calling emulated PacketHandler");
                 emulator_->callFunction(emulatedPacketHandlerAddr_, {
                     checkDataAddr,
                     static_cast<uint32_t>(checkData.size()),
@@ -209,7 +205,7 @@ bool WardenModule::processCheckRequest([[maybe_unused]] const std::vector<uint8_
                         LOG_ERROR("WardenModule: Failed to read response data");
                         responseOut.clear();
                     } else {
-                        LOG_INFO("WardenModule: PacketHandler wrote ", responseSize, " byte response");
+                        LOG_DEBUG("WardenModule: PacketHandler wrote ", responseSize, " byte response");
                     }
                 } else {
                     LOG_WARNING("WardenModule: PacketHandler returned invalid responseSize=", responseSize);
@@ -228,10 +224,17 @@ bool WardenModule::processCheckRequest([[maybe_unused]] const std::vector<uint8_
         }
     #endif
 
-    LOG_WARNING("WardenModule: processCheckRequest NOT IMPLEMENTED");
-    LOG_INFO("WardenModule:   Would call module->PacketHandler() here");
-
-    // For now, return false to fall back to fake responses in GameHandler
+    // Falls back to fake responses in GameHandler when emulator path is unavailable.
+    // Logged once-per-session via a sticky flag so we don't spam every Warden check
+    // (server typically issues a check every 10-30 seconds).
+    static bool warned = false;
+    if (!warned) {
+        LOG_WARNING("WardenModule: processCheckRequest emulator path unavailable — "
+                    "falling back to GameHandler fake responses for this session");
+        warned = true;
+    } else {
+        LOG_DEBUG("WardenModule: processCheckRequest fallback (emulator unavailable)");
+    }
     return false;
 }
 
