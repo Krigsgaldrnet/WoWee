@@ -200,7 +200,7 @@ Wowee follows a modular architecture with clear separation of concerns:
 - Delegates path data to `TransportPathRepository`
 - Delegates spline math to `math::CatmullRomSpline`
 - Clock-based motion with `TransportClockSync`
-- Reduced from ~1,200 to ~500 lines after decomposition
+- `transport_manager.cpp` reduced from ~1,200 to ~370 lines after decomposition (extracted modules: TransportPathRepository, TransportClockSync, TransportAnimator)
 
 **TransportPathRepository** - Transport path data
 - DBC loading (TransportAnimation.dbc, TaxiPathNode.dbc)
