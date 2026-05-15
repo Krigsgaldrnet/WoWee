@@ -144,11 +144,11 @@ private:
     void applyUpdateObjectBlock(const UpdateBlock& block, bool& newItemCreated);
     void finalizeUpdateObjectBatch(bool newItemCreated);
 
-    bool extractPlayerAppearance(const std::map<uint16_t, uint32_t>& fields,
+    bool extractPlayerAppearance(const FlatFieldMap& fields,
                                  uint8_t& outRace, uint8_t& outGender,
                                  uint32_t& outAppearanceBytes, uint8_t& outFacial) const;
-    void maybeDetectCoinageIndex(const std::map<uint16_t, uint32_t>& oldFields,
-                                 const std::map<uint16_t, uint32_t>& newFields);
+    void maybeDetectCoinageIndex(const FlatFieldMap& oldFields,
+                                 const FlatFieldMap& newFields);
 
     void handleCreateObject(const UpdateBlock& block, bool& newItemCreated);
     void handleValuesUpdate(const UpdateBlock& block);
@@ -165,7 +165,7 @@ private:
     // Detect mount/dismount from UNIT_FIELD_MOUNTDISPLAYID changes (self-player only).
     //     Consolidates identical logic from CREATE and VALUES handlers.
     void detectPlayerMountChange(uint32_t newMountDisplayId,
-                                 const std::map<uint16_t, uint32_t>& blockFields);
+                                 const FlatFieldMap& blockFields);
 
     // Shared player-death handler: caches corpse position, sets death state.
     void markPlayerDead(const char* source);
@@ -216,7 +216,7 @@ private:
                                                     std::shared_ptr<Unit>& unit,
                                                     const UnitFieldIndices& ufi);
     // Apply player stat fields (XP, inventory, skills, etc.). isCreate=true for CREATE path.
-    bool applyPlayerStatFields(const std::map<uint16_t, uint32_t>& fields,
+    bool applyPlayerStatFields(const FlatFieldMap& fields,
                                 const PlayerFieldIndices& pfi, bool isCreate);
     // Dispatch spawn callbacks (creature/player) — deduplicates CREATE and VALUES paths.
     void dispatchEntitySpawn(uint64_t guid, ObjectType objectType,

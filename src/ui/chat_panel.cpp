@@ -163,11 +163,18 @@ void ChatPanel::render(game::GameHandler& gameHandler,
     // Chat tabs (rendered via ChatTabManager)
     if (ImGui::BeginTabBar("ChatTabs")) {
         for (int i = 0; i < tabManager_.getTabCount(); ++i) {
-            // Build label with unread count suffix for non-General tabs
-            std::string tabLabel = tabManager_.getTabName(i);
             int unread = tabManager_.getUnreadCount(i);
+            // Format directly into a stack buffer when an unread count is present;
+            // otherwise pass the tab name reference straight through.
+            const std::string& baseName = tabManager_.getTabName(i);
+            char tabLabelBuf[96];
+            const char* tabLabel;
             if (i > 0 && unread > 0) {
-                tabLabel += " (" + std::to_string(unread) + ")";
+                std::snprintf(tabLabelBuf, sizeof(tabLabelBuf), "%s (%d)",
+                              baseName.c_str(), unread);
+                tabLabel = tabLabelBuf;
+            } else {
+                tabLabel = baseName.c_str();
             }
             // Flash tab text color when unread messages exist
             bool hasUnread = (i > 0 && unread > 0);
@@ -175,7 +182,7 @@ void ChatPanel::render(game::GameHandler& gameHandler,
                 float pulse = 0.6f + 0.4f * std::sin(static_cast<float>(ImGui::GetTime()) * 4.0f);
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f * pulse, 0.2f * pulse, 1.0f));
             }
-            if (ImGui::BeginTabItem(tabLabel.c_str())) {
+            if (ImGui::BeginTabItem(tabLabel)) {
                 if (activeChatTab != i) {
                     activeChatTab = i;
                     // Clear unread count when tab becomes active

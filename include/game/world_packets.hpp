@@ -6,6 +6,7 @@
 #include "game/entity.hpp"
 #include "game/spell_defines.hpp"
 #include "game/group_defines.hpp"
+#include "game/flat_field_map.hpp"
 #include <vector>
 #include <cstdint>
 #include <string>
@@ -492,8 +493,9 @@ struct UpdateBlock {
     uint64_t transportGuid = 0;
     float transportX = 0.0f, transportY = 0.0f, transportZ = 0.0f, transportO = 0.0f;
 
-    // Field data (for VALUES and CREATE updates)
-    std::map<uint16_t, uint32_t> fields;
+    // Field data (for VALUES and CREATE updates) — sorted flat vector instead of
+    // std::map to drop the per-field heap allocation on every UPDATE_OBJECT block.
+    FlatFieldMap fields;
 };
 
 /**

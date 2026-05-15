@@ -2458,13 +2458,13 @@ public:
     uint64_t resolveOnlineItemGuid(uint32_t itemId) const;
     void rebuildOnlineInventory();
     void maybeDetectVisibleItemLayout();
-    void updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields);
-    void detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields);
-    bool applyInventoryFields(const std::map<uint16_t, uint32_t>& fields);
-    void extractContainerFields(uint64_t containerGuid, const std::map<uint16_t, uint32_t>& fields);
-    void extractSkillFields(const std::map<uint16_t, uint32_t>& fields);
-    void extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields);
-    void applyQuestStateFromFields(const std::map<uint16_t, uint32_t>& fields);
+    void updateOtherPlayerVisibleItems(uint64_t guid, const FlatFieldMap& fields);
+    void detectInventorySlotBases(const FlatFieldMap& fields);
+    bool applyInventoryFields(const FlatFieldMap& fields);
+    void extractContainerFields(uint64_t containerGuid, const FlatFieldMap& fields);
+    void extractSkillFields(const FlatFieldMap& fields);
+    void extractExploredZoneFields(const FlatFieldMap& fields);
+    void applyQuestStateFromFields(const FlatFieldMap& fields);
     void sanitizeMovementForTaxi();
     void loadSpellNameCache() const;
     void loadFactionNameCache() const;
@@ -2860,7 +2860,7 @@ private:
     std::unordered_map<uint64_t, ContainerInfo> containerContents_;
     int invSlotBase_ = -1;
     int packSlotBase_ = -1;
-    std::map<uint16_t, uint32_t> lastPlayerFields_;
+    FlatFieldMap lastPlayerFields_;
     bool onlineEquipDirty_ = false;
     std::array<uint32_t, 19> lastEquipDisplayIds_{};
 

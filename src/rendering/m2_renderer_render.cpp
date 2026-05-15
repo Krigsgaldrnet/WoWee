@@ -453,14 +453,14 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
         }
 
         // Frustum + distance cull: skip expensive bone computation for off-screen instances.
-        float worldRadius = instance.cachedBoundRadius * instance.scale;
-        float cullRadius = worldRadius;
+        // Both effectiveMaxDistSq and paddedRadius are precomputed per instance in
+        // recomputeCachedCullFactors(); we only need the per-frame distance and frustum test.
         glm::vec3 toCam = instance.position - cachedCamPos_;
         float distSq = glm::dot(toCam, toCam);
-        float effectiveMaxDistSq = cachedMaxRenderDistSq_ * std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
+        float effectiveMaxDistSq = cachedMaxRenderDistSq_ * instance.cachedEffectiveMaxDistSqFactor;
         if (distSq > effectiveMaxDistSq) continue;
-        float paddedRadius = std::max(cullRadius * rendering::M2_PADDED_RADIUS_SCALE, cullRadius + rendering::M2_PADDED_RADIUS_MIN_MARGIN);
-        if (cullRadius > 0.0f && !updateFrustum.intersectsSphere(instance.position, paddedRadius)) continue;
+        float paddedRadius = instance.cachedPaddedRadius;
+        if (paddedRadius > 0.0f && !updateFrustum.intersectsSphere(instance.position, paddedRadius)) continue;
 
         // LOD 3 skip: models beyond 150 units use the lowest LOD mesh which has
         // no visible skeletal animation.  Keep their last-computed bone matrices
@@ -956,12 +956,18 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             while (groupEnd < sortedVisible_.size() && sortedVisible_[groupEnd].modelId == groupModelId)
                 groupEnd++;
 
-            auto mdlIt = models.find(groupModelId);
-            if (mdlIt == models.end() || !mdlIt->second.vertexBuffer || !mdlIt->second.indexBuffer) {
+            // Pull the model through the first entry's instance.cachedModel pointer
+            // (set at addInstance) instead of doing models.find(groupModelId) per group.
+            const auto& firstEntry = sortedVisible_[visStart];
+            if (firstEntry.index >= instances.size() || !instances[firstEntry.index].cachedModel) {
                 visStart = groupEnd;
                 continue;
             }
-            const M2ModelGPU& model = mdlIt->second;
+            const M2ModelGPU& model = *instances[firstEntry.index].cachedModel;
+            if (!model.vertexBuffer || !model.indexBuffer) {
+                visStart = groupEnd;
+                continue;
+            }
 
             bool modelNeedsAnimation = model.hasAnimation && !model.disableAnimation;
             const bool foliageLikeModel = model.isFoliageLike;
@@ -1118,21 +1124,27 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     uint32_t drawOffset = groupSSBOOffset;
                     if (hasBatchTexAnim && instanceDataCount_ + groupSize <= MAX_INSTANCE_DATA) {
                         drawOffset = instanceDataCount_;
+                        // Hoist per-batch lookups: the transform pointer is fixed for
+                        // every instance in this group; only the interpVec3 result
+                        // varies (per-instance animTime).
+                        const pipeline::M2TextureTransform* tt = nullptr;
+                        if (batch.textureAnimIndex != 0xFFFF && model.hasTextureAnimation) {
+                            uint16_t lookupIdx = batch.textureAnimIndex;
+                            if (lookupIdx < model.textureTransformLookup.size()) {
+                                uint16_t transformIdx = model.textureTransformLookup[lookupIdx];
+                                if (transformIdx < model.textureTransforms.size()) {
+                                    tt = &model.textureTransforms[transformIdx];
+                                }
+                            }
+                        }
                         for (size_t j = lodIdx; j < lodEnd; j++) {
                             auto& inst = instances[pending[j].instanceIdx];
                             glm::vec2 uvOffset(0.0f);
-                            if (batch.textureAnimIndex != 0xFFFF && model.hasTextureAnimation) {
-                                uint16_t lookupIdx = batch.textureAnimIndex;
-                                if (lookupIdx < model.textureTransformLookup.size()) {
-                                    uint16_t transformIdx = model.textureTransformLookup[lookupIdx];
-                                    if (transformIdx < model.textureTransforms.size()) {
-                                        const auto& tt = model.textureTransforms[transformIdx];
-                                        glm::vec3 trans = interpVec3(tt.translation,
-                                            inst.currentSequenceIndex, inst.animTime,
-                                            glm::vec3(0.0f), model.globalSequenceDurations);
-                                        uvOffset = glm::vec2(trans.x, trans.y);
-                                    }
-                                }
+                            if (tt) {
+                                glm::vec3 trans = interpVec3(tt->translation,
+                                    inst.currentSequenceIndex, inst.animTime,
+                                    glm::vec3(0.0f), model.globalSequenceDurations);
+                                uvOffset = glm::vec2(trans.x, trans.y);
                             }
                             if (model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
                                 float t = std::chrono::duration<float>(
@@ -1237,14 +1249,15 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         if (entry.index >= instances.size()) continue;
         auto& instance = instances[entry.index];
 
-        // Model boundary: do the lookup once, skip if no transparent batches.
+        // Model boundary: read cachedModel off the instance — was doing a
+        // per-boundary models.find() even though every instance already has
+        // the pointer cached at addInstance time.
         if (entry.modelId != currentModelId) {
             currentModelId = entry.modelId;
             currentModelValid = false;
-            auto mdlIt = models.find(entry.modelId);
-            if (mdlIt == models.end()) continue;
-            if (!mdlIt->second.hasTransparentBatches && !mdlIt->second.isSpellEffect) continue;
-            currentModel = &mdlIt->second;
+            currentModel = instance.cachedModel;
+            if (!currentModel) continue;
+            if (!currentModel->hasTransparentBatches && !currentModel->isSpellEffect) continue;
             if (!currentModel->vertexBuffer || !currentModel->indexBuffer) continue;
             currentModelValid = true;
             VkDeviceSize vbOff = 0;

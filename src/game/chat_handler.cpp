@@ -9,6 +9,8 @@
 #include "rendering/animation_controller.hpp"
 #include "core/logger.hpp"
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 
 namespace wowee {
 namespace game {
@@ -230,13 +232,56 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
         }
     }
 
-    // Filter BG queue announcer spam (server-side module on ChromieCraft/AzerothCore).
-    // Arrives as SAY (type=0) with color codes: |cffff0000[BG Queue Announcer]:|r ...
+    // Filter BG/Arena queue announcer spam (server-side modules on
+    // ChromieCraft/AzerothCore). Common formats:
+    //   |cffff0000[BG Queue Announcer]:|r ...
+    //   |cffff0000[Arena Queue Announcer]:|r ...
+    //   |cFFFFA500<player> joined : |cFF00FFFF2x2|r
+    //   |cFFFFA500<player> exited |cFF00FFFF3x3|r
+    // The third/fourth forms drop the "Queue Announcer" prefix entirely, so
+    // we also detect the announcer-shaped pattern: a colored message that
+    // names an arena/BG bracket suffix like "2x2|r" / "3v3|r".
     {
         const auto& msg = data.message;
-        if (msg.find("BG Queue Announcer") != std::string::npos ||
-            msg.find("Queue status") != std::string::npos) {
+        auto containsCI = [&](const char* needle) {
+            const size_t nlen = std::strlen(needle);
+            if (msg.size() < nlen) return false;
+            const size_t last = msg.size() - nlen;
+            for (size_t i = 0; i <= last; ++i) {
+                bool match = true;
+                for (size_t j = 0; j < nlen; ++j) {
+                    unsigned char a = static_cast<unsigned char>(msg[i + j]);
+                    unsigned char b = static_cast<unsigned char>(needle[j]);
+                    if (std::tolower(a) != std::tolower(b)) { match = false; break; }
+                }
+                if (match) return true;
+            }
+            return false;
+        };
+        if (containsCI("queue announcer") || containsCI("queue status")) {
             return;
+        }
+        // Pattern-based catch for prefix-less variants. Require the message to
+        // contain a color code (server-formatted) AND an arena/BG bracket token
+        // immediately followed by |r AND a verb word ("joined", "exited",
+        // "left", "entered"). Plain player chat won't hit all three.
+        const bool hasColor = msg.find("|c") != std::string::npos;
+        if (hasColor) {
+            static const char* kBracketTokens[] = {
+                "2x2|r", "3x3|r", "5x5|r",
+                "2v2|r", "3v3|r", "5v5|r",
+                "2X2|r", "3X3|r", "5X5|r",
+                "2V2|r", "3V3|r", "5V5|r",
+            };
+            bool hasBracket = false;
+            for (const char* t : kBracketTokens) {
+                if (msg.find(t) != std::string::npos) { hasBracket = true; break; }
+            }
+            if (hasBracket && (containsCI("joined") || containsCI("exited") ||
+                               containsCI(" left ") || containsCI("entered") ||
+                               containsCI("queue"))) {
+                return;
+            }
         }
     }
 

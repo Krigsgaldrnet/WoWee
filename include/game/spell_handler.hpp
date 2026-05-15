@@ -217,8 +217,8 @@ public:
 
     // Skill DBC
     void loadSkillLineDbc();
-    void extractSkillFields(const std::map<uint16_t, uint32_t>& fields);
-    void extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields);
+    void extractSkillFields(const FlatFieldMap& fields);
+    void extractExploredZoneFields(const FlatFieldMap& fields);
 
     // Update per-frame timers (call from GameHandler::update)
     void updateTimers(float dt);

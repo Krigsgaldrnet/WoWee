@@ -558,9 +558,12 @@ for (auto& [guid, entity] : entityController_->getEntityManager().getEntities())
         continue;
     }
 
-    // Distance cull other entities (use latest position to avoid culling by stale origin)
+    // Distance cull other entities (use latest position to avoid culling by stale origin).
+    // glm::dot takes its args by value, so passing (entityPos - playerPos) twice
+    // would build the diff vector twice — compute it once.
     glm::vec3 entityPos(entity->getLatestX(), entity->getLatestY(), entity->getLatestZ());
-    float distSq = glm::dot(entityPos - playerPos, entityPos - playerPos);
+    glm::vec3 diff = entityPos - playerPos;
+    float distSq = glm::dot(diff, diff);
     if (distSq < updateRadiusSq) {
         entity->updateMovement(deltaTime);
     }
@@ -1087,11 +1090,11 @@ void GameHandler::loadSkillLineDbc() {
     if (spellHandler_) spellHandler_->loadSkillLineDbc();
 }
 
-void GameHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields) {
+void GameHandler::extractSkillFields(const FlatFieldMap& fields) {
     if (spellHandler_) spellHandler_->extractSkillFields(fields);
 }
 
-void GameHandler::extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields) {
+void GameHandler::extractExploredZoneFields(const FlatFieldMap& fields) {
     if (spellHandler_) spellHandler_->extractExploredZoneFields(fields);
 }
 

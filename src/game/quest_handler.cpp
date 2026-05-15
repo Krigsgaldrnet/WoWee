@@ -1401,7 +1401,7 @@ bool QuestHandler::resyncQuestLogFromServerSlots(bool forceQueryMetadata) {
     return true;
 }
 
-void QuestHandler::applyQuestStateFromFields(const std::map<uint16_t, uint32_t>& fields) {
+void QuestHandler::applyQuestStateFromFields(const FlatFieldMap& fields) {
     const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
     if (ufQuestStart == 0xFFFF) return;
 

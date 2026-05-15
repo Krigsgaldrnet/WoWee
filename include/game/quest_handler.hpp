@@ -125,7 +125,7 @@ public:
     int findQuestLogSlotIndexFromServer(uint32_t questId) const;
     void addQuestToLocalLogIfMissing(uint32_t questId, const std::string& title, const std::string& objectives);
     bool resyncQuestLogFromServerSlots(bool forceQueryMetadata);
-    void applyQuestStateFromFields(const std::map<uint16_t, uint32_t>& fields);
+    void applyQuestStateFromFields(const FlatFieldMap& fields);
     void applyPackedKillCountsFromFields(QuestLogEntry& quest);
     void clearPendingQuestAccept(uint32_t questId);
     void triggerQuestAcceptResync(uint32_t questId, uint64_t npcGuid, const char* reason);

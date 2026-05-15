@@ -45,10 +45,11 @@ void M2Renderer::setInstancePosition(uint32_t instanceId, const glm::vec3& posit
 
     inst.position = position;
     inst.updateModelMatrix();
-    auto modelIt = models.find(inst.modelId);
-    if (modelIt != models.end()) {
+    // Use cachedModel instead of a fresh models.find() — the pointer was set
+    // at addInstance and stays valid as long as the instance exists.
+    if (inst.cachedModel) {
         glm::vec3 localMin, localMax;
-        getTightCollisionBounds(modelIt->second, localMin, localMax);
+        getTightCollisionBounds(*inst.cachedModel, localMin, localMax);
         transformAABB(inst.modelMatrix, localMin, localMax, inst.worldBoundsMin, inst.worldBoundsMax);
     }
 
@@ -153,11 +154,10 @@ void M2Renderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& tran
     // Extract position from transform for bounds
     inst.position = glm::vec3(transform[3]);
 
-    // Update bounds
-    auto modelIt = models.find(inst.modelId);
-    if (modelIt != models.end()) {
+    // Update bounds via the cached model pointer
+    if (inst.cachedModel) {
         glm::vec3 localMin, localMax;
-        getTightCollisionBounds(modelIt->second, localMin, localMax);
+        getTightCollisionBounds(*inst.cachedModel, localMin, localMax);
         transformAABB(inst.modelMatrix, localMin, localMax, inst.worldBoundsMin, inst.worldBoundsMax);
     }
 

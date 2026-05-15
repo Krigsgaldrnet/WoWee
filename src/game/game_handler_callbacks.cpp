@@ -1504,15 +1504,15 @@ uint64_t GameHandler::resolveOnlineItemGuid(uint32_t itemId) const {
     return inventoryHandler_ ? inventoryHandler_->resolveOnlineItemGuid(itemId) : 0;
 }
 
-void GameHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields) {
+void GameHandler::detectInventorySlotBases(const FlatFieldMap& fields) {
     if (inventoryHandler_) inventoryHandler_->detectInventorySlotBases(fields);
 }
 
-bool GameHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& fields) {
+bool GameHandler::applyInventoryFields(const FlatFieldMap& fields) {
     return inventoryHandler_ ? inventoryHandler_->applyInventoryFields(fields) : false;
 }
 
-void GameHandler::extractContainerFields(uint64_t containerGuid, const std::map<uint16_t, uint32_t>& fields) {
+void GameHandler::extractContainerFields(uint64_t containerGuid, const FlatFieldMap& fields) {
     if (inventoryHandler_) inventoryHandler_->extractContainerFields(containerGuid, fields);
 }
 
@@ -1524,7 +1524,7 @@ void GameHandler::maybeDetectVisibleItemLayout() {
     if (inventoryHandler_) inventoryHandler_->maybeDetectVisibleItemLayout();
 }
 
-void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields) {
+void GameHandler::updateOtherPlayerVisibleItems(uint64_t guid, const FlatFieldMap& fields) {
     if (inventoryHandler_) inventoryHandler_->updateOtherPlayerVisibleItems(guid, fields);
 }
 
@@ -2158,7 +2158,7 @@ bool GameHandler::resyncQuestLogFromServerSlots(bool forceQueryMetadata) {
 // Apply quest completion state from player update fields to already-tracked local quests.
 // Called from VALUES update handler so quests that complete mid-session (or that were
 // complete on login) get quest.complete=true without waiting for SMSG_QUESTUPDATE_COMPLETE.
-void GameHandler::applyQuestStateFromFields(const std::map<uint16_t, uint32_t>& fields) {
+void GameHandler::applyQuestStateFromFields(const FlatFieldMap& fields) {
     if (questHandler_) questHandler_->applyQuestStateFromFields(fields);
 }
 

@@ -1111,6 +1111,19 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
     uint16_t highestSetBit = 0;
     uint32_t valuesReadCount = 0;
 
+    // Pre-reserve the field vector based on popcount of the mask so the
+    // monotonic append loop below doesn't reallocate as it grows.
+    uint32_t totalSetBits = 0;
+    for (int blockIdx = 0; blockIdx < blockCount; ++blockIdx) {
+#if defined(__GNUC__) || defined(__clang__)
+        totalSetBits += static_cast<uint32_t>(__builtin_popcount(updateMask[blockIdx]));
+#else
+        uint32_t v = updateMask[blockIdx];
+        while (v) { totalSetBits += (v & 1u); v >>= 1u; }
+#endif
+    }
+    if (totalSetBits > 0) block.fields.reserve(totalSetBits);
+
     // Read only set bits in each mask block (faster than scanning all 32 bits).
     for (int blockIdx = 0; blockIdx < blockCount; ++blockIdx) {
         uint32_t mask = updateMask[blockIdx];
@@ -1141,8 +1154,9 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
                 return false;
             }
             uint32_t value = packet.readUInt32();
-            // fieldIndex is monotonically increasing here, so end() is a good insertion hint.
-            block.fields.emplace_hint(block.fields.end(), fieldIndex, value);
+            // fieldIndex is monotonically increasing here — append directly to the
+            // sorted flat vector (no tree-node allocation per field anymore).
+            block.fields.append_sorted(fieldIndex, value);
             valuesReadCount++;
 
             LOG_DEBUG("    Field[", fieldIndex, "] = 0x", std::hex, value, std::dec);
@@ -1270,6 +1284,7 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
                 return false;
             }
 
+            data.outOfRangeGuids.reserve(count);
             for (uint32_t i = 0; i < count; ++i) {
                 uint64_t guid = packet.readPackedGuid();
                 data.outOfRangeGuids.push_back(guid);

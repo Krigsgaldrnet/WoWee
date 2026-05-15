@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include "math/spline.hpp"
+#include "game/flat_field_map.hpp"
 
 namespace wowee {
 namespace game {
@@ -92,7 +93,9 @@ public:
             startMoveTo(path.back()[0], path.back()[1], path.back()[2], destO, totalDuration);
             return;
         }
-        // Build cumulative distances for proportional time assignment
+        // Build cumulative distances for proportional time assignment.
+        // (Stored in a tiny stack/heap vector — typical N is <=15 waypoints,
+        // and keeping float precision matters for the timeMs rescale below.)
         std::vector<float> cumDist(path.size(), 0.0f);
         float totalDist = 0.0f;
         for (size_t i = 1; i < path.size(); i++) {
@@ -108,10 +111,10 @@ public:
         }
         // Build SplineKeys with distance-proportional time
         uint32_t durationMs = static_cast<uint32_t>(totalDuration * 1000.0f);
+        const float invTotalDist = static_cast<float>(durationMs) / totalDist;
         std::vector<math::SplineKey> keys(path.size());
         for (size_t i = 0; i < path.size(); i++) {
-            float fraction = cumDist[i] / totalDist;
-            keys[i].timeMs = static_cast<uint32_t>(fraction * durationMs);
+            keys[i].timeMs = static_cast<uint32_t>(cumDist[i] * invTotalDist);
             keys[i].position = {path[i][0], path[i][1], path[i][2]};
         }
         activeSpline_.emplace(std::move(keys), /*timeClosed=*/false);
@@ -255,7 +258,7 @@ public:
         return fields.find(index) != fields.end();
     }
 
-    const std::map<uint16_t, uint32_t>& getFields() const {
+    const FlatFieldMap& getFields() const {
         return fields;
     }
 
@@ -269,8 +272,8 @@ protected:
     float z = 0.0f;
     float orientation = 0.0f;
 
-    // Update fields (dynamic values)
-    std::map<uint16_t, uint32_t> fields;
+    // Update fields (dynamic values) — flat sorted vector. See FlatFieldMap docs.
+    FlatFieldMap fields;
 
     // Movement interpolation state
     bool isMoving_ = false;

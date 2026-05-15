@@ -268,7 +268,7 @@ void EntityController::processOutOfRangeObjects(const std::vector<uint64_t>& gui
 // Extracted helper methods
 // ============================================================
 
-bool EntityController::extractPlayerAppearance(const std::map<uint16_t, uint32_t>& fields,
+bool EntityController::extractPlayerAppearance(const FlatFieldMap& fields,
                                                uint8_t& outRace,
                                                uint8_t& outGender,
                                                uint32_t& outAppearanceBytes,
@@ -349,8 +349,8 @@ bool EntityController::extractPlayerAppearance(const std::map<uint16_t, uint32_t
     return true;
 }
 
-void EntityController::maybeDetectCoinageIndex(const std::map<uint16_t, uint32_t>& oldFields,
-                                               const std::map<uint16_t, uint32_t>& newFields) {
+void EntityController::maybeDetectCoinageIndex(const FlatFieldMap& oldFields,
+                                               const FlatFieldMap& newFields) {
     if (owner_.pendingMoneyDeltaRef() == 0 || owner_.pendingMoneyDeltaTimerRef() <= 0.0f) return;
     if (oldFields.empty() || newFields.empty()) return;
 
@@ -489,7 +489,7 @@ void EntityController::syncClassicAurasFromFields(const std::shared_ptr<Entity>&
 
 // Detect player mount/dismount from UNIT_FIELD_MOUNTDISPLAYID changes
 void EntityController::detectPlayerMountChange(uint32_t newMountDisplayId,
-                                                const std::map<uint16_t, uint32_t>& blockFields) {
+                                                const FlatFieldMap& blockFields) {
     uint32_t old = owner_.currentMountDisplayIdRef();
     owner_.currentMountDisplayIdRef() = newMountDisplayId;
     if (newMountDisplayId != old && owner_.mountCallbackRef()) owner_.mountCallbackRef()(newMountDisplayId);
@@ -954,7 +954,7 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
 
 //     Apply player stat fields (XP, coinage, combat stats, etc.).
 //     Shared between CREATE and VALUES — isCreate controls event firing differences.
-bool EntityController::applyPlayerStatFields(const std::map<uint16_t, uint32_t>& fields,
+bool EntityController::applyPlayerStatFields(const FlatFieldMap& fields,
                                                const PlayerFieldIndices& pfi,
                                                bool isCreate) {
     bool slotsChanged = false;
@@ -1640,7 +1640,7 @@ void EntityController::onValuesUpdatePlayer(const UpdateBlock& block, std::share
     if (block.guid == owner_.getPlayerGuid()) {
         const bool needCoinageDetectSnapshot =
             (owner_.pendingMoneyDeltaRef() != 0 && owner_.pendingMoneyDeltaTimerRef() > 0.0f);
-        std::map<uint16_t, uint32_t> oldFieldsSnapshot;
+        FlatFieldMap oldFieldsSnapshot;
         if (needCoinageDetectSnapshot) {
             oldFieldsSnapshot = owner_.lastPlayerFieldsRef();
         }
@@ -1657,9 +1657,10 @@ void EntityController::onValuesUpdatePlayer(const UpdateBlock& block, std::share
                 }
             }
         }
-        auto mergeHint = owner_.lastPlayerFieldsRef().end();
+        // Merge block fields into the persistent snapshot. Both are sorted, so
+        // a simple insert_or_assign per key keeps the invariant intact.
         for (const auto& [key, val] : block.fields) {
-            mergeHint = owner_.lastPlayerFieldsRef().insert_or_assign(mergeHint, key, val);
+            owner_.lastPlayerFieldsRef().insert_or_assign(key, val);
         }
         if (needCoinageDetectSnapshot) {
             maybeDetectCoinageIndex(oldFieldsSnapshot, owner_.lastPlayerFieldsRef());

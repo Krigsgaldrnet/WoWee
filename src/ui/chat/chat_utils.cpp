@@ -10,6 +10,14 @@ namespace wowee { namespace ui { namespace chat_utils {
 
 std::string replaceGenderPlaceholders(const std::string& text,
                                        game::GameHandler& gameHandler) {
+    // Fast path: the vast majority of chat messages contain no $ tokens, so
+    // skip the gender/character lookup, the vector allocations below, and the
+    // unconditional string copy. Returning `text` still constructs the result,
+    // but the caller's by-value receiver was going to do that either way.
+    if (text.find('$') == std::string::npos) {
+        return text;
+    }
+
     // Get player gender, pronouns, and name
     game::Gender gender = game::Gender::NONBINARY;
     std::string playerName = "Adventurer";

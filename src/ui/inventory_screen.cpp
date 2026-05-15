@@ -162,12 +162,14 @@ VkDescriptorSet InventoryScreen::getItemIcon(uint32_t displayInfoId) {
     // Load ItemDisplayInfo.dbc
     auto displayInfoDbc = assetManager_->loadDBC("ItemDisplayInfo.dbc");
     if (!displayInfoDbc) {
+        LOG_WARNING("getItemIcon: ItemDisplayInfo.dbc not loadable for displayInfoId=", displayInfoId);
         iconCache_[displayInfoId] = VK_NULL_HANDLE;
         return VK_NULL_HANDLE;
     }
 
     int32_t recIdx = displayInfoDbc->findRecordById(displayInfoId);
     if (recIdx < 0) {
+        LOG_WARNING("getItemIcon: displayInfoId=", displayInfoId, " not found in ItemDisplayInfo.dbc");
         iconCache_[displayInfoId] = VK_NULL_HANDLE;
         return VK_NULL_HANDLE;
     }
@@ -176,6 +178,8 @@ VkDescriptorSet InventoryScreen::getItemIcon(uint32_t displayInfoId) {
     const auto* dispL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
     std::string iconName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), dispL ? (*dispL)["InventoryIcon"] : 5);
     if (iconName.empty()) {
+        LOG_WARNING("getItemIcon: displayInfoId=", displayInfoId,
+                    " recIdx=", recIdx, " has empty iconName field");
         iconCache_[displayInfoId] = VK_NULL_HANDLE;
         return VK_NULL_HANDLE;
     }
@@ -183,12 +187,16 @@ VkDescriptorSet InventoryScreen::getItemIcon(uint32_t displayInfoId) {
     std::string iconPath = "Interface\\Icons\\" + iconName + ".blp";
     auto blpData = assetManager_->readFile(iconPath);
     if (blpData.empty()) {
+        LOG_WARNING("getItemIcon: BLP not found at '", iconPath,
+                    "' (displayInfoId=", displayInfoId, ")");
         iconCache_[displayInfoId] = VK_NULL_HANDLE;
         return VK_NULL_HANDLE;
     }
 
     auto image = pipeline::BLPLoader::load(blpData);
     if (!image.isValid()) {
+        LOG_WARNING("getItemIcon: BLP decode failed for '", iconPath,
+                    "' (size=", blpData.size(), ")");
         iconCache_[displayInfoId] = VK_NULL_HANDLE;
         return VK_NULL_HANDLE;
     }
@@ -1086,9 +1094,24 @@ void InventoryScreen::renderBagWindow(const char* title, bool& isOpen,
     int rows = (numSlots + columns - 1) / columns;
     float contentH = rows * (slotSize + 4.0f) + 10.0f;
     if (bagIndex < 0) {
-        int keyringRows = (inventory.getKeyringSize() + columns - 1) / columns;
+        // Keyring renders at 24px in 8 columns and ONLY shows rows that have
+        // occupied slots (rounded up to a full row of 8) — must match the
+        // render logic below or we reserve huge empty space.
+        constexpr float keySlotSize = 24.0f;
+        constexpr int   keyCols     = 8;
+        int lastOccupied = -1;
+        if (showKeyring_) {
+            for (int i = inventory.getKeyringSize() - 1; i >= 0; --i) {
+                if (!inventory.getKeyringSlot(i).empty()) { lastOccupied = i; break; }
+            }
+        }
+        int visibleKeySlots = (lastOccupied < 0) ? 0
+                            : ((lastOccupied / keyCols) + 1) * keyCols;
+        int keyringRows = (visibleKeySlots + keyCols - 1) / keyCols;
         contentH += 36.0f; // separator + sort button + money display
-        contentH += 30.0f + keyringRows * (slotSize + 4.0f); // keyring header + slots
+        if (visibleKeySlots > 0) {
+            contentH += 30.0f + keyringRows * (keySlotSize + 4.0f); // header + slots
+        }
     }
     float gridW = columns * (slotSize + 4.0f) + 30.0f;
     // Ensure window is wide enough for the title + close button
