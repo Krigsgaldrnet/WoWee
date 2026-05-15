@@ -43,7 +43,7 @@ Recent refactors (PRs #59-63, April 2026):
 - TransportManager decomposed: spline math extracted to `src/math/`, path data to TransportPathRepository, 7 duplicated spline parsers consolidated into `spline_packet.cpp`
 - Spell visual effects system with bone-tracked ribbons and particles
 - Entity movement improvements: multi-segment path interpolation, terrain height clamping, walk/run animation fix
-- 27 unit tests (up from 8), covering chat, world map, spline math, transport, and animation systems
+- 31 unit-test suites (up from 8), covering chat, world map, spline math, transport, and animation systems
 - Code quality fix pass: 7 issues resolved across hover detection, null safety, buffer bounds, and coordinate validation
 
 In progress / known gaps:

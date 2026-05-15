@@ -59,7 +59,7 @@ Helper variants: `registerWorldHandler` (requires `isInWorld()`), `registerSkipH
 
 ## Testing
 
-27 unit tests cover core systems, animation, transport/spline, world map, and chat.
+31 unit-test suites cover core systems, animation, transport/spline, world map, and chat.
 See [TESTING.md](TESTING.md) for the full guide. Run with `./test.sh --test`.
 Manual testing against WoW 3.3.5a private servers (primarily ChromieCraft/AzerothCore)
 is expected for gameplay-affecting changes.
