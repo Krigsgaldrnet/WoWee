@@ -22,7 +22,7 @@ Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 ## Status & Direction (2026-05-13)
 
 - **Compatibility**: **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a** are all supported via expansion profiles and per-expansion packet parsers. All three expansions are roughly on par.
-- **Tested against**: AzerothCore/ChromieCraft, TrinityCore, Mangos, and Turtle WoW (1.17).
+- **Tested against**: AzerothCore/ChromieCraft, TrinityCore, Mangos, and Turtle WoW (1.18).
 - **Current focus**: stability hardening after a large god-object decomposition pass — chasing down behavioral regressions that crept in during the refactor (NPC/UI hitboxes, packet handlers, periodic-spam guards, optimistic-state syncs).
 - **Warden**: Full module execution via Unicorn Engine CPU emulation. Decrypts (RC4→RSA→zlib), parses and relocates the PE module, executes via x86 emulation with Windows API interception. Module cache at `~/.local/share/wowee/warden_cache/`.
 - **CI**: GitHub Actions builds for Linux (x86-64, ARM64), Windows (MSYS2 x86-64 + ARM64), and macOS (ARM64). Security scans via CodeQL, Semgrep, and sanitizers. 31 unit-test suites covering protocol parsers, animation FSMs, world-map state, chat markup, macro evaluator, and editor units.

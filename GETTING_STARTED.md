@@ -185,7 +185,7 @@ Pick the expansion from the realm/auth screen at launch — the selection is wir
 - **AzerothCore** - Full support, recommended for learning
 - **TrinityCore** - Full support, extensive customization
 - **Mangos** - Full support, solid foundation
-- **Turtle WoW** - Full support, 1.17 custom content
+- **Turtle WoW** - Full support, 1.18 custom content
 
 ### Server Requirements
 - Must support Vanilla, TBC, or WotLK protocol
