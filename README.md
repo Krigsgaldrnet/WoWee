@@ -150,16 +150,20 @@ sudo pacman -S sdl2 glm openssl \
                unicorn
 
 # macOS (Homebrew) — unicorn (Warden) and stormlib (asset_extract) are optional
-brew install cmake pkg-config sdl2 glew glm openssl@3 zlib ffmpeg \
+brew install cmake pkg-config sdl2 glm openssl@3 zlib ffmpeg \
              vulkan-loader vulkan-headers shaderc \
              unicorn stormlib
 ```
 
 ### Container build
-You can use podman to build application in separate container.
-- Install podman 
-- Then run `container/build-in-container.sh`
-- Artifacts can be found in `/tmp/wowee.[random value].[commit hash]`
+Cross-compile inside Docker / Podman with no host toolchain — see
+[container/README.md](container/README.md) for full options.
+- Install Docker (or Podman)
+- From the repo root, run one of:
+  - `./container/run-linux.sh` → `build/linux/bin/wowee`
+  - `./container/run-macos.sh` (Intel: `MACOS_ARCH=x86_64 …`) → `build/macos/bin/wowee`
+  - `./container/run-windows.sh` → `build/windows/bin/wowee.exe`
+- PowerShell siblings (`.ps1`) are provided for each script.
 
 ### Game Data
 
@@ -193,7 +197,7 @@ Data/
 Notes:
 
 - `StormLib` is required to build/run the extractor (`asset_extract`), but the main client does not require StormLib at runtime.
-- `extract_assets.sh` / `extract_assets.ps1` support `classic`, `tbc`, `wotlk` targets.
+- `extract_assets.sh` / `extract_assets.ps1` support `classic`, `turtle`, `tbc`, `wotlk` targets.
 
 #### 2) Point wowee at the extracted data
 
@@ -329,7 +333,7 @@ make -j$(nproc)
 - FSR3 Path A runtime build auto-bootstraps missing VK permutation headers via `tools/generate_ffx_sdk_vk_permutations.sh`
 - CI builds `wowee_fsr3_framegen_amd_vk_probe` when that target is generated for the detected SDK layout
 - If FSR2 generated Vulkan permutation headers are absent upstream, WoWee bootstraps them from `third_party/fsr2_vk_permutations`
-- Container build via `container/build-in-container.sh` (Podman)
+- Container build via `container/run-{linux,macos,windows}.sh` (Docker/Podman)
 
 ## Security
 
