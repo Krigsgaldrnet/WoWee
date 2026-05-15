@@ -44,7 +44,6 @@ jobs:
           build-essential \
           pkg-config \
           libsdl2-dev \
-          libglew-dev \
           libglm-dev \
           libssl-dev \
           zlib1g-dev \
@@ -117,7 +116,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        brew install cmake pkg-config sdl2 glew glm openssl@3 zlib ffmpeg unicorn \
+        brew install cmake pkg-config sdl2 glm openssl@3 zlib ffmpeg unicorn \
           stormlib vulkan-loader vulkan-headers shaderc dylibbundler || true
         brew install dylibbundler 2>/dev/null || true
 
@@ -315,7 +314,7 @@ jobs:
         msystem: ${{ matrix.msystem }}
         update: ${{ matrix.arch == 'arm64' }}
         install: >-
-          ${{ matrix.prefix }}-cmake ${{ matrix.arch == 'x86-64' && format('{0}-gcc', matrix.prefix) || format('{0}-clang', matrix.prefix) }} ${{ matrix.prefix }}-ninja ${{ matrix.prefix }}-pkgconf ${{ matrix.prefix }}-SDL2 ${{ matrix.prefix }}-glew ${{ matrix.prefix }}-glm ${{ matrix.prefix }}-openssl ${{ matrix.prefix }}-zlib ${{ matrix.prefix }}-ffmpeg ${{ matrix.prefix }}-unicorn ${{ matrix.prefix }}-vulkan-loader ${{ matrix.prefix }}-vulkan-headers ${{ matrix.prefix }}-shaderc git
+          ${{ matrix.prefix }}-cmake ${{ matrix.arch == 'x86-64' && format('{0}-gcc', matrix.prefix) || format('{0}-clang', matrix.prefix) }} ${{ matrix.prefix }}-ninja ${{ matrix.prefix }}-pkgconf ${{ matrix.prefix }}-SDL2 ${{ matrix.prefix }}-glm ${{ matrix.prefix }}-openssl ${{ matrix.prefix }}-zlib ${{ matrix.prefix }}-ffmpeg ${{ matrix.prefix }}-unicorn ${{ matrix.prefix }}-vulkan-loader ${{ matrix.prefix }}-vulkan-headers ${{ matrix.prefix }}-shaderc git
 
     - name: Install optional packages
       shell: msys2 {0}
