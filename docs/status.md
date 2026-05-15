@@ -53,6 +53,7 @@ In progress / known gaps:
 - Quest GO interaction: CMSG_GAMEOBJ_USE + CMSG_LOOT sent correctly, but some AzerothCore/ChromieCraft servers don't grant quest credit for chest-type GOs (server-side limitation)
 - Visual edge cases: some M2/WMO rendering gaps (some particle effects)
 - Water refraction: enabled by default; srcAccessMask barrier fix (2026-03-18) resolved prior VK_ERROR_DEVICE_LOST on AMD/Mali GPUs
+- Update-field table collision on classic/turtle: `Data/expansions/classic/update_fields.json` and `Data/expansions/turtle/update_fields.json` both map `UNIT_FIELD_BYTES_1` and `UNIT_FIELD_MOUNTDISPLAYID` to index 133. `entity_controller.cpp:548-553` reads both for distinct purposes (display change detection, mount/dismount, shapeshift), so they alias on Classic/Turtle and one of the two events will be misattributed. Needs canonical Mangos-Zero vanilla 1.12 value for one of the fields before patching.
 
 ## Where To Look
 
