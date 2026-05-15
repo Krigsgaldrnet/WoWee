@@ -1094,9 +1094,24 @@ void InventoryScreen::renderBagWindow(const char* title, bool& isOpen,
     int rows = (numSlots + columns - 1) / columns;
     float contentH = rows * (slotSize + 4.0f) + 10.0f;
     if (bagIndex < 0) {
-        int keyringRows = (inventory.getKeyringSize() + columns - 1) / columns;
+        // Keyring renders at 24px in 8 columns and ONLY shows rows that have
+        // occupied slots (rounded up to a full row of 8) — must match the
+        // render logic below or we reserve huge empty space.
+        constexpr float keySlotSize = 24.0f;
+        constexpr int   keyCols     = 8;
+        int lastOccupied = -1;
+        if (showKeyring_) {
+            for (int i = inventory.getKeyringSize() - 1; i >= 0; --i) {
+                if (!inventory.getKeyringSlot(i).empty()) { lastOccupied = i; break; }
+            }
+        }
+        int visibleKeySlots = (lastOccupied < 0) ? 0
+                            : ((lastOccupied / keyCols) + 1) * keyCols;
+        int keyringRows = (visibleKeySlots + keyCols - 1) / keyCols;
         contentH += 36.0f; // separator + sort button + money display
-        contentH += 30.0f + keyringRows * (slotSize + 4.0f); // keyring header + slots
+        if (visibleKeySlots > 0) {
+            contentH += 30.0f + keyringRows * (keySlotSize + 4.0f); // header + slots
+        }
     }
     float gridW = columns * (slotSize + 4.0f) + 30.0f;
     // Ensure window is wide enough for the title + close button
