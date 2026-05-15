@@ -107,7 +107,8 @@
     "ReputationRaceMask0": 2,
     "ReputationRaceMask1": 3,
     "ReputationRaceMask2": 4,
-    "ReputationRaceMask3": 5
+    "ReputationRaceMask3": 5,
+    "Name": 23
   },
   "FactionTemplate": {
     "Enemy0": 6,
@@ -130,7 +131,9 @@
     "ID": 0,
     "InventoryIcon": 5,
     "LeftModel": 1,
+    "RightModel": 2,
     "LeftModelTexture": 3,
+    "RightModelTexture": 4,
     "TextureArmLower": 15,
     "TextureArmUpper": 14,
     "TextureFoot": 21,
@@ -247,6 +250,7 @@
     "Name": 8
   },
   "SpellRange": {
+    "MinRange": 2,
     "MaxRange": 4
   },
   "SpellVisual": {

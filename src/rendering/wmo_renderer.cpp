@@ -2779,8 +2779,9 @@ void WMORenderer::GroupResources::buildCollisionGrid() {
         triNormals[i / 3] = normal;
 
         // Classify floor vs wall by normal.
-        // Wall threshold matches MAX_WALK_SLOPE (cos 50° ≈ 0.6428): surfaces steeper
-        // than 50° from horizontal are walls. Must match checkWallCollision runtime skip.
+        // Wall threshold is absNz < 0.65 (≈ cos 49.46° — the wall/walkable cutoff).
+        // A separate slope-slide threshold of 0.6428 (cos 50°) lives elsewhere; this
+        // 0.65 value must match the checkWallCollision runtime skip below.
         float absNz = std::abs(normal.z);
         bool isFloor = (absNz >= 0.65f);
         bool isWall = (absNz < 0.65f);
@@ -3390,8 +3391,9 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
 
                 if (horizDistSq <= PLAYER_RADIUS * PLAYER_RADIUS) {
                     // Skip floor-like surfaces — grounding handles them, not wall collision.
-                    // Threshold matches MAX_WALK_SLOPE (cos 50° ≈ 0.6428): surfaces steeper
-                    // than 50° from horizontal must be tested as walls to prevent clip-through.
+                    // Threshold is absNz < 0.65 (≈ cos 49.46°). Slope-sliding uses a
+                    // distinct cos 50° (≈ 0.6428) threshold; do not conflate.
+                    // Must match the wall-classification cutoff in the static collision pass above.
                     float absNz = std::abs(normal.z);
                     if (absNz >= 0.65f) continue;
 
