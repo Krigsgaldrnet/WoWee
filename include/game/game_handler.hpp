@@ -1044,7 +1044,11 @@ public:
     void setWorldEntryCallback(WorldEntryCallback cb) { worldEntryCallback_ = std::move(cb); }
 
     // Knockback callback: called when server sends SMSG_MOVE_KNOCK_BACK for the player.
-    // Parameters: vcos, vsin (render-space direction), hspeed, vspeed (raw from packet).
+    // Parameters: vcos, vsin (2D direction vector in server/wire coord space — the
+    //   server→canonical→render swaps cancel, so the consumer can use them directly
+    //   in render space, see CameraController::applyKnockBack),
+    //   hspeed, vspeed (raw from packet; vspeed is negative when the server intends
+    //   an upward launch — negate before applying as initial Y velocity).
     using KnockBackCallback = std::function<void(float vcos, float vsin, float hspeed, float vspeed)>;
     void setKnockBackCallback(KnockBackCallback cb) { knockBackCallback_ = std::move(cb); }
 
