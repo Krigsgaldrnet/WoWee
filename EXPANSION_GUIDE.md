@@ -37,11 +37,10 @@ WoWee auto-detects the expansion based on:
 
 ### Manual Selection
 
-Set environment variable:
-```bash
-WOWEE_EXPANSION=tbc ./wowee    # Force TBC
-WOWEE_EXPANSION=classic ./wowee # Force Classic
-```
+Choose the expansion in the auth/realm screen at launch. The selection
+calls `ExpansionRegistry::setActive(id)` (see `src/ui/auth_screen.cpp`)
+which loads the matching opcode table, update-field layout, and DBC
+layout for that expansion.
 
 ## Key Differences Between Expansions
 

@@ -127,34 +127,32 @@ Press Escape to open **Video Settings** and select a preset, or adjust individua
 
 ```bash
 # Ubuntu/Debian
+# Optional packages (libunicorn-dev / libstorm-dev) enable the Warden
+# module executor and the asset_extract tool respectively.
 sudo apt install libsdl2-dev libglm-dev libssl-dev \
                  libvulkan-dev vulkan-tools glslc \
                  libavformat-dev libavcodec-dev libswscale-dev libavutil-dev \
                  zlib1g-dev cmake build-essential libx11-dev \
-                 libunicorn-dev \          # optional: Warden module execution
-                 libstorm-dev              # optional: asset_extract tool
+                 libunicorn-dev libstorm-dev
 
-# Fedora
+# Fedora — unicorn-devel and StormLib-devel are optional (see above)
 sudo dnf install SDL2-devel glm-devel openssl-devel \
                  vulkan-devel vulkan-tools glslc \
                  ffmpeg-devel zlib-devel cmake gcc-c++ libX11-devel \
-                 unicorn-devel \           # optional: Warden module execution
-                 StormLib-devel            # optional: asset_extract tool
+                 unicorn-devel StormLib-devel
 
-# Arch
+# Arch — vulkan-devel is not a real package on Arch; install the
+# headers + loader explicitly. unicorn is optional (Warden);
+# StormLib must be installed from AUR for asset_extract.
 sudo pacman -S sdl2 glm openssl \
-               vulkan-devel vulkan-tools shaderc \
+               vulkan-headers vulkan-icd-loader vulkan-tools shaderc \
                ffmpeg zlib cmake base-devel libx11 \
-               unicorn                    # optional: Warden module execution
-               # StormLib: install from AUR for asset_extract tool
+               unicorn
 
-# macOS (Homebrew)
+# macOS (Homebrew) — unicorn (Warden) and stormlib (asset_extract) are optional
 brew install cmake pkg-config sdl2 glew glm openssl@3 zlib ffmpeg \
              vulkan-loader vulkan-headers shaderc \
-             unicorn \
-             stormlib
-# unicorn is optional (Warden module execution)
-# stormlib is optional (asset_extract tool)
+             unicorn stormlib
 ```
 
 ### Container build
