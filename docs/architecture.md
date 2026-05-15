@@ -172,7 +172,7 @@ Wowee follows a modular architecture with clear separation of concerns:
 ### 5. Game Logic (`src/game/`)
 
 **GameHandler** (`game_handler.hpp/cpp`) - Central game state
-- Dispatch table routing 664+ opcodes to domain handlers
+- Dispatch table routing server opcodes to domain handlers (registrations live in `game_handler_packets.cpp`)
 - Owns all domain handlers via composition
 - Receives dependencies via `GameServices` struct (no singleton access)
 
