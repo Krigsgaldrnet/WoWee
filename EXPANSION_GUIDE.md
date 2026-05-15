@@ -1,13 +1,13 @@
 # Multi-Expansion Architecture Guide
 
-WoWee supports three World of Warcraft expansions in a unified codebase using an expansion profile system. This guide explains how the multi-expansion support works.
+WoWee supports four World of Warcraft expansion profiles in a unified codebase using an expansion profile system. This guide explains how the multi-expansion support works.
 
 ## Supported Expansions
 
 - **Vanilla (Classic) 1.12** - Original World of Warcraft
 - **The Burning Crusade (TBC) 2.4.3** - First expansion
 - **Wrath of the Lich King (WotLK) 3.3.5a** - Second expansion
-- **Turtle WoW 1.17** - Custom Vanilla-based server with extended content
+- **Turtle WoW 1.18** - Custom Vanilla-based server with extended content
 
 ## Architecture Overview
 
