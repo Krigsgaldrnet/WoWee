@@ -114,7 +114,6 @@ RUN git clone --depth 1 https://github.com/microsoft/vcpkg.git "${VCPKG_ROOT}" &
 RUN "${VCPKG_ROOT}/vcpkg" install \
         sdl2[vulkan] \
         openssl \
-        glew \
         glm \
         zlib \
         ffmpeg \
@@ -124,7 +123,6 @@ RUN "${VCPKG_ROOT}/vcpkg" install \
 RUN "${VCPKG_ROOT}/vcpkg" install \
         sdl2[vulkan] \
         openssl \
-        glew \
         glm \
         zlib \
         ffmpeg \

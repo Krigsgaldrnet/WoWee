@@ -13,7 +13,6 @@ RUN apt-get update && \
         glslang-tools \
         spirv-tools \
         libsdl2-dev \
-        libglew-dev \
         libglm-dev \
         libssl-dev \
         zlib1g-dev \
