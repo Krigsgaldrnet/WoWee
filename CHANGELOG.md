@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — changes since v1.8.9-preview
+## [v1.9.1-preview] — released, captures changes since v1.8.9-preview
 
 ### Architecture
 - Break Application::getInstance() singleton from GameHandler via GameServices struct
