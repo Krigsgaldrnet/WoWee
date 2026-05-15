@@ -3,7 +3,7 @@
 **Source**: TurtleHD Texture Pack (Turtle WoW)
 **Imported**: 2026-01-27
 **Total Files**: 298 BLP textures
-**Total Size**: 10MB
+**Total Size**: 11MB
 
 ## Directory Structure
 

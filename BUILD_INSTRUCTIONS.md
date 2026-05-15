@@ -71,7 +71,7 @@ After building, extract assets from your WoW client:
 ./extract_assets.sh /path/to/WoW/Data wotlk
 ```
 
-Supports `classic`, `tbc`, `wotlk` targets (auto-detected if omitted).
+Supports `classic`, `turtle`, `tbc`, `wotlk` targets (auto-detected if omitted).
 
 ---
 
@@ -116,7 +116,7 @@ It automatically detects Homebrew and passes the correct paths to CMake.
 ./extract_assets.sh /path/to/WoW/Data wotlk
 ```
 
-Supports `classic`, `tbc`, `wotlk` targets (auto-detected if omitted).
+Supports `classic`, `turtle`, `tbc`, `wotlk` targets (auto-detected if omitted).
 
 ---
 
