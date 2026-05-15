@@ -231,6 +231,7 @@
     "Name": 8
   },
   "SpellRange": {
+    "MinRange": 2,
     "MaxRange": 4
   },
   "SpellVisual": {

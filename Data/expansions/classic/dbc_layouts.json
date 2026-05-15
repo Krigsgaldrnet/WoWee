@@ -188,6 +188,7 @@
     "Path": 1
   },
   "SpellRange": {
+    "MinRange": 1,
     "MaxRange": 2
   },
   "SpellVisual": {
