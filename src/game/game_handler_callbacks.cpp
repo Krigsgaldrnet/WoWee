@@ -38,6 +38,7 @@
 #include <cmath>
 #include <cctype>
 #include <ctime>
+#include <vector>
 #include <random>
 #include <zlib.h>
 #include <chrono>
@@ -220,6 +221,18 @@ void GameHandler::handleCharEnum(network::Packet& packet) {
     characters = response.characters;
 
     setState(WorldState::CHAR_LIST_RECEIVED);
+
+    std::vector<uint32_t> queriedGuildIds;
+    for (const auto& character : characters) {
+        if (!character.hasGuild()) continue;
+        if (std::find(queriedGuildIds.begin(), queriedGuildIds.end(), character.guildId) != queriedGuildIds.end())
+            continue;
+        queriedGuildIds.push_back(character.guildId);
+        queryGuildInfo(character.guildId);
+    }
+    if (!queriedGuildIds.empty()) {
+        LOG_INFO("Queued guild name queries for ", queriedGuildIds.size(), " guild(s) from character list");
+    }
 
     LOG_INFO("========================================");
     LOG_INFO("   CHARACTER LIST RECEIVED");
@@ -2311,6 +2324,14 @@ void GameHandler::openItemBySlot(int backpackIndex) {
 
 void GameHandler::openItemInBag(int bagIndex, int slotIndex) {
     if (inventoryHandler_) inventoryHandler_->openItemInBag(bagIndex, slotIndex);
+}
+
+void GameHandler::readItemBySlot(int backpackIndex) {
+    if (inventoryHandler_) inventoryHandler_->readItemBySlot(backpackIndex);
+}
+
+void GameHandler::readItemInBag(int bagIndex, int slotIndex) {
+    if (inventoryHandler_) inventoryHandler_->readItemInBag(bagIndex, slotIndex);
 }
 
 void GameHandler::useItemById(uint32_t itemId) {
