@@ -742,6 +742,19 @@ network::Packet TbcPacketParsers::buildCastSpell(uint32_t spellId, uint64_t targ
     return packet;
 }
 
+network::Packet TbcPacketParsers::buildCastGameObjectSpell(uint32_t spellId, uint64_t targetGuid, uint8_t castCount) {
+    network::Packet packet(wireOpcode(LogicalOpcode::CMSG_CAST_SPELL));
+    packet.writeUInt32(spellId);
+    packet.writeUInt8(castCount);
+    // No castFlags byte in TBC 2.4.3
+    packet.writeUInt32(0x0800); // TARGET_FLAG_GAMEOBJECT
+    packet.writePackedGuid(targetGuid);
+    LOG_DEBUG("[TBC] Built CMSG_CAST_SPELL: spell=", spellId, " gameObject=0x",
+              std::hex, targetGuid, std::dec, " castCount=", static_cast<int>(castCount),
+              " size=", packet.getSize());
+    return packet;
+}
+
 // ============================================================================
 // TBC 2.4.3 CMSG_USE_ITEM
 // Format: bag(u8) + slot(u8) + spellIndex(u8) + castCount(u8) + itemGuid(u64)
@@ -1457,6 +1470,17 @@ static uint8_t translateTbcCastFailure(uint8_t tbcResult) {
     // TBC has no SUCCESS entry, while WoWee's shared string table is WotLK-based.
     // Most early values line up with +1.  Later enum sections diverge; map observed
     // high-value TBC failures explicitly so user-facing errors stay sane.
+    switch (tbcResult) {
+        case 0x17: return 25;  // SPELL_FAILED_CHEST_IN_USE
+        case 0x24: return 38;  // SPELL_FAILED_IMMUNE
+        case 0x25: return 40;  // SPELL_FAILED_INTERRUPTED
+        case 0x26: return 41;  // SPELL_FAILED_INTERRUPTED_COMBAT
+        case 0x2E: return 49;  // SPELL_FAILED_LOW_CASTLEVEL
+        case 0x7F: return 132; // SPELL_FAILED_TRY_AGAIN
+        case 0x91: return 146; // SPELL_FAILED_DAMAGE_IMMUNE
+        case 0x95: return 150; // SPELL_FAILED_MIN_SKILL
+        default: break;
+    }
     if (tbcResult == 63) return 67; // SPELL_FAILED_NOT_READY
     return static_cast<uint8_t>(tbcResult + 1);
 }
@@ -1640,102 +1664,13 @@ bool TbcPacketParsers::parseSpellHealLog(network::Packet& packet, SpellHealLogDa
 
 // ============================================================================
 // TBC 2.4.3 SMSG_MESSAGECHAT
-// TBC format: type(u8) + language(u32) + [type-specific data] + msgLen(u32) + msg + tag(u8)
-// WotLK adds senderGuid(u64) + unknown(u32) before type-specific data.
+// CMaNGOS TBC uses the same senderGuid + unknown + type-specific body shape
+// as WotLK here. In particular, system and whisper packets carry an extra
+// receiverGuid before messageLen.
 // ============================================================================
 
 bool TbcPacketParsers::parseMessageChat(network::Packet& packet, MessageChatData& data) {
-    if (packet.getSize() < 10) {
-        LOG_ERROR("[TBC] SMSG_MESSAGECHAT packet too small: ", packet.getSize(), " bytes");
-        return false;
-    }
-
-    uint8_t typeVal = packet.readUInt8();
-    data.type = static_cast<ChatType>(typeVal);
-
-    uint32_t langVal = packet.readUInt32();
-    data.language = static_cast<ChatLanguage>(langVal);
-
-    // TBC: NO senderGuid or unknown field here (WotLK has senderGuid(u64) + unk(u32))
-
-    switch (data.type) {
-        case ChatType::MONSTER_SAY:
-        case ChatType::MONSTER_YELL:
-        case ChatType::MONSTER_EMOTE:
-        case ChatType::MONSTER_WHISPER:
-        case ChatType::MONSTER_PARTY:
-        case ChatType::RAID_BOSS_EMOTE: {
-            // senderGuid(u64) + nameLen(u32) + name + targetGuid(u64)
-            data.senderGuid = packet.readUInt64();
-            uint32_t nameLen = packet.readUInt32();
-            if (nameLen > 0 && nameLen < 256) {
-                data.senderName.resize(nameLen);
-                for (uint32_t i = 0; i < nameLen; ++i) {
-                    data.senderName[i] = static_cast<char>(packet.readUInt8());
-                }
-                if (!data.senderName.empty() && data.senderName.back() == '\0') {
-                    data.senderName.pop_back();
-                }
-            }
-            data.receiverGuid = packet.readUInt64();
-            break;
-        }
-
-        case ChatType::SAY:
-        case ChatType::PARTY:
-        case ChatType::YELL:
-        case ChatType::WHISPER:
-        case ChatType::WHISPER_INFORM:
-        case ChatType::GUILD:
-        case ChatType::OFFICER:
-        case ChatType::RAID:
-        case ChatType::RAID_LEADER:
-        case ChatType::RAID_WARNING:
-        case ChatType::EMOTE:
-        case ChatType::TEXT_EMOTE: {
-            // senderGuid(u64) + senderGuid(u64) — written twice by server
-            data.senderGuid = packet.readUInt64();
-            /*duplicateGuid*/ packet.readUInt64();
-            break;
-        }
-
-        case ChatType::CHANNEL: {
-            // channelName(string) + rank(u32) + senderGuid(u64)
-            data.channelName = packet.readString();
-            /*uint32_t rank =*/ packet.readUInt32();
-            data.senderGuid = packet.readUInt64();
-            break;
-        }
-
-        default: {
-            // All other types: senderGuid(u64) + senderGuid(u64) — written twice
-            data.senderGuid = packet.readUInt64();
-            /*duplicateGuid*/ packet.readUInt64();
-            break;
-        }
-    }
-
-    // Read message length + message
-    uint32_t messageLen = packet.readUInt32();
-    if (messageLen > 0 && messageLen < 8192) {
-        data.message.resize(messageLen);
-        for (uint32_t i = 0; i < messageLen; ++i) {
-            data.message[i] = static_cast<char>(packet.readUInt8());
-        }
-        if (!data.message.empty() && data.message.back() == '\0') {
-            data.message.pop_back();
-        }
-    }
-
-    // Read chat tag
-    if (packet.getReadPos() < packet.getSize()) {
-        data.chatTag = packet.readUInt8();
-    }
-
-    LOG_DEBUG("[TBC] SMSG_MESSAGECHAT: type=", getChatTypeString(data.type),
-             " sender=", data.senderName.empty() ? std::to_string(data.senderGuid) : data.senderName);
-
-    return true;
+    return MessageChatParser::parse(packet, data);
 }
 
 // ============================================================================
@@ -1763,11 +1698,16 @@ uint8_t TbcPacketParsers::readQuestGiverStatus(network::Packet& packet) {
 
 // ============================================================================
 // TBC 2.4.3 channel join/leave
-// Classic/TBC: just name+password (no channelId/hasVoice/joinedByZone prefix)
+// CMaNGOS TBC expects the same channelId/flags prefix shape as WotLK.
+// Without this, the server consumes the first bytes of the channel name as
+// metadata and joins channels named e.g. "l" instead of "General".
 // ============================================================================
 
 network::Packet TbcPacketParsers::buildJoinChannel(const std::string& channelName, const std::string& password) {
     network::Packet packet(wireOpcode(Opcode::CMSG_JOIN_CHANNEL));
+    packet.writeUInt32(0);  // channelId (unused)
+    packet.writeUInt8(0);   // hasVoice
+    packet.writeUInt8(0);   // joinedByZone
     packet.writeString(channelName);
     packet.writeString(password);
     LOG_DEBUG("[TBC] Built CMSG_JOIN_CHANNEL: channel=", channelName);
@@ -1776,6 +1716,7 @@ network::Packet TbcPacketParsers::buildJoinChannel(const std::string& channelNam
 
 network::Packet TbcPacketParsers::buildLeaveChannel(const std::string& channelName) {
     network::Packet packet(wireOpcode(Opcode::CMSG_LEAVE_CHANNEL));
+    packet.writeUInt32(0);  // channelId (unused)
     packet.writeString(channelName);
     LOG_DEBUG("[TBC] Built CMSG_LEAVE_CHANNEL: channel=", channelName);
     return packet;
