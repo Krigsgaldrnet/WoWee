@@ -82,6 +82,7 @@ public:
     void startFadeIn(uint32_t instanceId, float durationSeconds);
     void setInstanceOpacity(uint32_t instanceId, float opacity);
     const pipeline::M2Model* getModelData(uint32_t modelId) const;
+    const pipeline::M2Model* getInstanceModelData(uint32_t instanceId) const;
     void setActiveGeosets(uint32_t instanceId, const std::unordered_set<uint16_t>& geosets);
     void setGroupTextureOverride(uint32_t instanceId, uint16_t geosetGroup, VkTexture* texture);
     void setTextureSlotOverride(uint32_t instanceId, uint16_t textureSlot, VkTexture* texture);
@@ -288,6 +289,8 @@ private:
     // Descriptor pool
     VkDescriptorPool materialDescPools_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     VkDescriptorPool boneDescPool_ = VK_NULL_HANDLE;
+    std::shared_ptr<std::atomic<uint64_t>> boneDescPoolGeneration_ =
+        std::make_shared<std::atomic<uint64_t>>(0);
     uint32_t lastMaterialPoolResetFrame_ = 0xFFFFFFFFu;
 
     // Material UBO ring buffer — pre-allocated per frame slot, sub-allocated each draw

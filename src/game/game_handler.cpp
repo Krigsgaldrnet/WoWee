@@ -1400,6 +1400,243 @@ glm::vec3 GameHandler::getComposedWorldPosition() {
     return glm::vec3(movementInfo.x, movementInfo.y, movementInfo.z);
 }
 
+// Client-side transport boarding/disembark detection for M2 transports (trams, lifts)
+// where the server doesn't send transport attachment data - unlike WMO transports
+// (ships), which get onTransport straight from the server's movement block (see
+// EntityController::applyPlayerTransportState). Shared between the GUI Application's
+// per-frame update loop and any other driver (e.g. a headless harness) that knows the
+// player's current canonical world position but has no renderer/camera of its own.
+void GameHandler::updateM2TransportBoarding(const glm::vec3& playerCanonical) {
+    auto* tm = getTransportManager();
+    if (!tm) return;
+
+    if (!isOnTransport()) {
+        // Thunder Bluff elevators use model origins that can be far from the deck
+        // the player stands on, so they need wider attachment bounds.
+        constexpr float kM2BoardHorizDistSq = 12.0f * 12.0f;
+        constexpr float kM2BoardVertDist = 15.0f;
+        constexpr float kTbLiftBoardHorizDistSq = 22.0f * 22.0f;
+        constexpr float kTbLiftBoardVertDist = 14.0f;
+        // Deeprun's capture radius has swung twice on the horizontal axis already:
+        // 18/18 (too wide - boarding triggered far enough away that the rider ended up
+        // floating off to the side) down to 7/6 (too tight - stopped attaching at all).
+        // 9.5 horizontal turned out fine - live diagnostic data (logged every second
+        // while no candidate is in range) showed horizDist getting down to ~1-2 units
+        // repeatedly, well inside the box. But boarding *still* never fired, because the
+        // vertical threshold was the real problem all along: vertDist sat consistently
+        // around 10.4-11.9 units at every one of those close-horizontal-approach samples,
+        // across all three different cars tested, far outside the old 8.0 vertical
+        // window. That's not noise - it's SubwayCar.m2's model origin sitting well below
+        // the deck the player actually stands on (same root cause already called out for
+        // Thunder Bluff lifts above: kTbLiftBoardVertDist=14 exists for exactly this
+        // reason). Widen vertical to comfortably clear the observed ~11.9 max.
+        constexpr float kDeeprunTramBoardVertDist = 13.0f;
+        // An isotropic horizontal radius from the car's center can't tell "on this car"
+        // from "on the neighboring car" (adjacent cars are only ~20 units apart along the
+        // track - a 9.5 radius from each center overlaps its neighbor) or from "still
+        // standing on the platform, several units to the side" (the platform-to-deck
+        // vertical gap is nearly identical on the platform as on the actual car, so vert
+        // distance alone can't disambiguate either). Live logs caught both: walking along
+        // the platform re-boarded the adjacent car in the same train, and walking across
+        // one car's width boarded on one side then rode with a lateral offset of ~9.5 -
+        // effectively standing on empty platform on the *other* side of the car body
+        // (SubwayCar.m2's real half-width from its own mesh is only 5.68). Test against
+        // the car's actual oriented footprint instead: transform the player into the
+        // car's local model space (same invTransform already computed every frame for
+        // collision) and bound against the real mesh extents (X ~9.18 half-length along
+        // the direction of travel, Y ~5.68 half-width across it), not a radius from a
+        // point. Small margin added on top for the "about to step across from the
+        // platform" approach.
+        constexpr float kDeeprunTramBoardHalfLength = 9.18f + 1.5f;  // along direction of travel
+        constexpr float kDeeprunTramBoardHalfWidth = 5.68f + 1.5f;   // across the car's width
+
+        uint64_t bestGuid = 0;
+        float bestScore = 1e30f;
+        // Tracks the closest Deeprun tram car even when it's outside the capture
+        // radius, purely so a rejection can be logged with real distance numbers -
+        // the capture radius has been re-tuned blind twice already (18/18, then 7/6)
+        // from user reports alone with no actual miss-distance data to tune against.
+        uint64_t nearestDeeprunGuid = 0;
+        float nearestDeeprunLocalX = 0.0f;
+        float nearestDeeprunLocalY = 0.0f;
+        float nearestDeeprunLocalDistSq = 1e30f;
+        float nearestDeeprunVertDist = 0.0f;
+        const glm::vec3 playerRenderPos = core::coords::canonicalToRender(playerCanonical);
+        for (auto& [guid, transport] : tm->getTransports()) {
+            if (!transport.isM2) continue;
+            const bool isThunderBluffLift =
+                (transport.entry >= 20649u && transport.entry <= 20657u);
+            const bool isDeeprunTram =
+                transport.displayId == 3831u ||
+                (transport.entry >= 176080u && transport.entry <= 176085u) ||
+                (transport.pathId >= 176080u && transport.pathId <= 176085u);
+            glm::vec3 diff = playerCanonical - transport.position;
+            float vertDist = std::abs(diff.z);
+
+            if (isDeeprunTram) {
+                const glm::vec4 local4 = transport.invTransform * glm::vec4(playerRenderPos, 1.0f);
+                const glm::vec3 local(local4);
+                const float localDistSq = local.x * local.x + local.y * local.y;
+                if (localDistSq < nearestDeeprunLocalDistSq) {
+                    nearestDeeprunLocalDistSq = localDistSq;
+                    nearestDeeprunLocalX = local.x;
+                    nearestDeeprunLocalY = local.y;
+                    nearestDeeprunVertDist = vertDist;
+                    nearestDeeprunGuid = guid;
+                }
+                if (std::abs(local.x) < kDeeprunTramBoardHalfLength &&
+                    std::abs(local.y) < kDeeprunTramBoardHalfWidth &&
+                    vertDist < kDeeprunTramBoardVertDist) {
+                    const float score = localDistSq + vertDist * vertDist;
+                    if (score < bestScore) {
+                        bestScore = score;
+                        bestGuid = guid;
+                    }
+                }
+                continue;
+            }
+
+            const float maxHorizDistSq = isThunderBluffLift
+                ? kTbLiftBoardHorizDistSq
+                : kM2BoardHorizDistSq;
+            const float maxVertDist = isThunderBluffLift
+                ? kTbLiftBoardVertDist
+                : kM2BoardVertDist;
+            float horizDistSq = diff.x * diff.x + diff.y * diff.y;
+            if (horizDistSq < maxHorizDistSq && vertDist < maxVertDist) {
+                float score = horizDistSq + vertDist * vertDist;
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestGuid = guid;
+                }
+            }
+        }
+        if (bestGuid == 0 && nearestDeeprunGuid != 0) {
+            // Boarding/disembark are now on a well-tested oriented-footprint check
+            // (verified live) rather than the blind-tuned isotropic radius this was
+            // originally added to debug. Routine while just walking around Deeprun not
+            // boarded - demoted to DEBUG. Still throttled to ~1/sec since this runs
+            // every frame while not boarded.
+            static double lastLogTime = -1000.0;
+            const double now = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count()) / 1000.0;
+            if (now - lastLogTime >= 1.0) {
+                lastLogTime = now;
+                LOG_DEBUG("Deeprun tram boarding: no candidate in range, nearest car guid=0x",
+                            std::hex, nearestDeeprunGuid, std::dec,
+                            " localX=", nearestDeeprunLocalX,
+                            " localY=", nearestDeeprunLocalY,
+                            " vertDist=", nearestDeeprunVertDist);
+            }
+        }
+        if (bestGuid != 0) {
+            auto* tr = tm->getTransport(bestGuid);
+            if (tr) {
+                const bool isDeeprunTram =
+                    tr->displayId == 3831u ||
+                    (tr->entry >= 176080u && tr->entry <= 176085u) ||
+                    (tr->pathId >= 176080u && tr->pathId <= 176085u);
+                const glm::vec3 offset = playerCanonical - tr->position;
+                setPlayerOnTransport(bestGuid, offset);
+                if (isDeeprunTram) {
+                    const bool attached = getPlayerTransportGuid() == bestGuid;
+                    LOG_INFO("Deeprun tram boarding candidate ", (attached ? "accepted" : "rejected"),
+                                ": guid=0x", std::hex, bestGuid, std::dec,
+                                " entry=", tr->entry,
+                                " pathId=", tr->pathId,
+                                " player=(", playerCanonical.x, ",", playerCanonical.y, ",", playerCanonical.z, ")",
+                                " tram=(", tr->position.x, ",", tr->position.y, ",", tr->position.z, ")",
+                                " offset=(", offset.x, ",", offset.y, ",", offset.z, ")");
+                } else {
+                    LOG_DEBUG("M2 transport boarding: guid=0x", std::hex, bestGuid, std::dec);
+                }
+            }
+        }
+        return;
+    }
+
+    // M2 transport disembark: player walked far enough from transport center.
+    auto* tr = tm->getTransport(getPlayerTransportGuid());
+    if (!tr) return;
+    glm::vec3 diff = playerCanonical - tr->position;
+    float horizDistSq = diff.x * diff.x + diff.y * diff.y;
+
+    // Sanity guard against a transient bad position sample rather than a real disembark.
+    // Live data caught one: player=(-44.9,2309.03,..) vs tram=(2309.83,-45.4,..) - the
+    // player's X and Y are each within ~1 unit of the tram's Y and X respectively (an
+    // axis swap, not a real position), giving horizDist~3330 in a single frame despite
+    // riding smoothly for the prior ~70 seconds. Nothing can legitimately move that far
+    // between frames; whatever produced that sample (suspected: a raw server-coordinate
+    // movement update landing without the usual serverToCanonical swap, since that
+    // conversion has the exact same X/Y-swap shape as the corruption seen - possibly
+    // tied to a packet glitch, a "MSG_MOVE_TELEPORT_ACK: not enough data for movement
+    // info" was logged moments later in the same session) shouldn't be trusted enough to
+    // eject the player over open track - "kicked me off when I almost got to the other
+    // station" reported live. Skip disembark entirely this frame on an implausible jump;
+    // it'll re-evaluate next frame against (presumably) good data instead.
+    constexpr float kImplausibleDisembarkDistSq = 200.0f * 200.0f;
+    if (horizDistSq > kImplausibleDisembarkDistSq) {
+        LOG_WARNING("Deeprun tram disembark check skipped - implausible jump: guid=0x",
+                    std::hex, getPlayerTransportGuid(), std::dec,
+                    " horizDist=", std::sqrt(horizDistSq),
+                    " player=(", playerCanonical.x, ",", playerCanonical.y, ",", playerCanonical.z, ")",
+                    " tram=(", tr->position.x, ",", tr->position.y, ",", tr->position.z, ")");
+        return;
+    }
+
+    const bool isThunderBluffLift =
+        (tr->entry >= 20649u && tr->entry <= 20657u);
+    const bool isDeeprunTram =
+        tr->displayId == 3831u ||
+        (tr->entry >= 176080u && tr->entry <= 176085u) ||
+        (tr->pathId >= 176080u && tr->pathId <= 176085u);
+
+    if (isDeeprunTram) {
+        // Same oriented-footprint reasoning as the boarding scan above: an isotropic
+        // radius from the car's center can't tell "still on the car" from "walked off
+        // the far side onto open platform." Live data caught exactly that - a rider's
+        // lateral offset swung from +9.5 to -9.5 (fully across and off SubwayCar.m2's
+        // real 5.68-unit half-width) while still reading as "on board" the whole way,
+        // because the old 18-unit isotropic radius didn't clear until well past the
+        // real car body in every direction. Test the player's position in the car's own
+        // local space instead, with a modest margin over the real mesh extents (X 9.18,
+        // Y 5.68) so ordinary standing/shifting on the deck doesn't hair-trigger an
+        // eject, without allowing a full walk-through before releasing.
+        constexpr float kDeeprunTramDisembarkHalfLength = 9.18f + 3.0f;
+        constexpr float kDeeprunTramDisembarkHalfWidth = 5.68f + 3.0f;
+        constexpr float kDeeprunTramDisembarkVertDist = 22.0f;
+        const glm::vec3 playerRenderPos = core::coords::canonicalToRender(playerCanonical);
+        const glm::vec4 local4 = tr->invTransform * glm::vec4(playerRenderPos, 1.0f);
+        const glm::vec3 local(local4);
+        if (std::abs(local.x) > kDeeprunTramDisembarkHalfLength ||
+            std::abs(local.y) > kDeeprunTramDisembarkHalfWidth ||
+            std::abs(diff.z) > kDeeprunTramDisembarkVertDist) {
+            LOG_INFO("Deeprun tram disembark: guid=0x", std::hex, getPlayerTransportGuid(), std::dec,
+                        " localX=", local.x, " localY=", local.y, " vertDist=", std::abs(diff.z),
+                        " player=(", playerCanonical.x, ",", playerCanonical.y, ",", playerCanonical.z, ")",
+                        " tram=(", tr->position.x, ",", tr->position.y, ",", tr->position.z, ")");
+            clearPlayerTransport();
+            LOG_DEBUG("M2 transport disembark");
+        }
+        return;
+    }
+
+    constexpr float kM2DisembarkHorizDistSq = 15.0f * 15.0f;
+    constexpr float kTbLiftDisembarkHorizDistSq = 28.0f * 28.0f;
+    constexpr float kM2DisembarkVertDist = 18.0f;
+    constexpr float kTbLiftDisembarkVertDist = 16.0f;
+    const float disembarkHorizDistSq = isThunderBluffLift
+        ? kTbLiftDisembarkHorizDistSq
+        : kM2DisembarkHorizDistSq;
+    const float disembarkVertDist = isThunderBluffLift
+        ? kTbLiftDisembarkVertDist
+        : kM2DisembarkVertDist;
+    if (horizDistSq > disembarkHorizDistSq || std::abs(diff.z) > disembarkVertDist) {
+        clearPlayerTransport();
+        LOG_DEBUG("M2 transport disembark");
+    }
+}
+
 // ============================================================
 // Bank System
 // ============================================================

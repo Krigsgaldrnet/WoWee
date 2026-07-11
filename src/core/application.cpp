@@ -1598,16 +1598,90 @@ void Application::update(float deltaTime) {
                         auto* tr = gameHandler->getTransportManager()->getTransport(
                             gameHandler->getPlayerTransportGuid());
                         if (tr) {
-                            // Keep passenger locked to elevator vertical motion while grounded.
-                            // Without this, floor clamping can hold world-Z static unless the
-                            // player is jumping, which makes lifts appear to not move vertically.
-                            glm::vec3 tentativeCanonical = core::coords::renderToCanonical(renderPos);
+                            // Ride along at a fixed offset from the transport's current position
+                            // (set once at boarding - see GameHandler::updateM2TransportBoarding),
+                            // plus whatever the player has walked on the deck since then. WASD
+                            // input runs earlier in the frame and moves renderer's character
+                            // position directly; comparing that (tentativeCanonical) against
+                            // where *we* locked it last frame isolates just that walked delta,
+                            // so standing still holds a fixed deck position while active input
+                            // still moves the player, instead of either (a) fully locking
+                            // movement or (b) recomputing offset from the absolute position,
+                            // which is a no-op identity once fed back into
+                            // lockedCanonical = tr->position + offset: the character's render
+                            // position could never actually change due to the tram moving, so
+                            // riding appeared to "float" in place no matter how far the tram
+                            // traveled underneath.
+                            const bool isDeeprunTram =
+                                tr->displayId == 3831u ||
+                                (tr->entry >= 176080u && tr->entry <= 176085u) ||
+                                (tr->pathId >= 176080u && tr->pathId <= 176085u);
                             glm::vec3 localOffset = gameHandler->getPlayerTransportOffset();
-                            localOffset.x = tentativeCanonical.x - tr->position.x;
-                            localOffset.y = tentativeCanonical.y - tr->position.y;
-                            if (renderer->getCameraController() &&
+                            glm::vec3 tentativeCanonical = core::coords::renderToCanonical(renderPos);
+                            if (hasM2RideLock_) {
+                                glm::vec3 walkDelta = tentativeCanonical - lastM2RideLockedCanonical_;
+                                // Root cause found: the 60-unit clamp added last round was a backstop
+                                // that treated the symptom, not the cause - live data showed it
+                                // getting maxed out exactly (horizDist=60.0 at the eventual disembark),
+                                // meaning the runaway drift reaches whatever ceiling is set as long as
+                                // that ceiling is above the 18-unit disembark threshold, so it still
+                                // ended the ride ("I still got kicked off... but at least I didn't die
+                                // this time" reported live). The actual bug: there's no real floor
+                                // under a moving M2 car, so gravity keeps trying to pull the character
+                                // down every frame even while standing still; since Z is locked, that
+                                // shows up as horizontal render-position drift, and this code
+                                // previously couldn't tell that apart from real WASD input - it baked
+                                // ANY frame-to-frame position change into localOffset, compounding
+                                // forever. Gate on genuine movement input (the same signal driving the
+                                // walking animation) so gravity noise while stationary is ignored
+                                // instead of accumulated; only apply the delta when the player is
+                                // actually pressing a movement key.
+                                const bool hasMovementInput = renderer->getCameraController() &&
+                                    renderer->getCameraController()->isMoving();
+                                if (hasMovementInput) {
+                                    localOffset.x += walkDelta.x;
+                                    localOffset.y += walkDelta.y;
+                                }
+                                // Keep a generous distance clamp as a secondary backstop for any
+                                // other source of drift (e.g. knockback, server-forced movement)
+                                // this input gate doesn't cover.
+                                if (isDeeprunTram) {
+                                    constexpr float kMaxRideOffsetDist = 60.0f;
+                                    const float offsetLen = std::sqrt(localOffset.x * localOffset.x + localOffset.y * localOffset.y);
+                                    if (offsetLen > kMaxRideOffsetDist) {
+                                        const float scale = kMaxRideOffsetDist / offsetLen;
+                                        localOffset.x *= scale;
+                                        localOffset.y *= scale;
+                                    }
+                                }
+                            }
+                            // Z is fully locked for the Deeprun tram (see below), so
+                            // CameraController's own gravity integration never sees a
+                            // grounded frame and silently accumulates fall velocity the
+                            // entire ride - reported live as clipping through the world
+                            // "at a weird angle" right after disembarking, and as being
+                            // unable to jump while riding (coyote time never has a
+                            // grounded frame to key off). Suppress it every frame the
+                            // lock is active so nothing is queued up to unleash later.
+                            if (isDeeprunTram && renderer->getCameraController()) {
+                                renderer->getCameraController()->suppressVerticalPhysics();
+                            }
+                            // Thunder Bluff lifts have real floor at both ends of their travel,
+                            // so letting Z track physics while airborne (jumping) is recoverable -
+                            // the player lands back on the platform. The Deeprun Tram tunnel has
+                            // no floor at all except at the two station platforms; if this ran for
+                            // it, isGrounded() ever reporting false mid-tunnel (e.g. because M2
+                            // collision for a moving instance isn't recognized as ground the same
+                            // way static terrain is) would let gravity pull the player away from
+                            // the tram with nothing to land on - reported live as falling through
+                            // the tram/tunnel and dying. Keep Z fully locked for the tram; only
+                            // lifts get the airborne exception.
+                            if (!isDeeprunTram && renderer->getCameraController() &&
                                 !renderer->getCameraController()->isGrounded()) {
-                                // While airborne (jump/fall), allow local Z offset to change.
+                                // While airborne (jump/fall), let vertical offset track normal
+                                // physics instead of staying pinned to the boarding-time value.
+                                // Without this, floor clamping can hold world-Z static unless the
+                                // player is jumping, which makes lifts appear to not move vertically.
                                 localOffset.z = tentativeCanonical.z - tr->position.z;
                             }
                             gameHandler->setPlayerTransportOffset(localOffset);
@@ -1615,7 +1689,14 @@ void Application::update(float deltaTime) {
                             glm::vec3 lockedCanonical = tr->position + localOffset;
                             renderPos = core::coords::canonicalToRender(lockedCanonical);
                             renderer->getCharacterPosition() = renderPos;
+                            lastM2RideLockedCanonical_ = lockedCanonical;
+                            hasM2RideLock_ = true;
                         }
+                    } else {
+                        hasM2RideLock_ = false;
+                    }
+                    if (auto* ac = renderer->getAnimationController()) {
+                        ac->setM2TransportRiding(hasM2RideLock_);
                     }
 
                     glm::vec3 canonical = core::coords::renderToCanonical(renderPos);
@@ -1650,75 +1731,12 @@ void Application::update(float deltaTime) {
                         }
                     }
 
-                    // Client-side transport boarding detection (for M2 transports like trams
-                    // and lifts where the server doesn't send transport attachment data).
-                    // Thunder Bluff elevators use model origins that can be far from the deck
-                    // the player stands on, so they need wider attachment bounds.
-                    if (gameHandler->getTransportManager() && !gameHandler->isOnTransport()) {
-                        auto* tm = gameHandler->getTransportManager();
+                    // Client-side M2 transport (trams, lifts) board/disembark check - shared
+                    // with any other driver that knows the player's canonical position (see
+                    // GameHandler::updateM2TransportBoarding).
+                    if (gameHandler->getTransportManager()) {
                         glm::vec3 playerCanonical = core::coords::renderToCanonical(renderPos);
-                        constexpr float kM2BoardHorizDistSq = 12.0f * 12.0f;
-                        constexpr float kM2BoardVertDist = 15.0f;
-                        constexpr float kTbLiftBoardHorizDistSq = 22.0f * 22.0f;
-                        constexpr float kTbLiftBoardVertDist = 14.0f;
-
-                        uint64_t bestGuid = 0;
-                        float bestScore = 1e30f;
-                        for (auto& [guid, transport] : tm->getTransports()) {
-                            if (!transport.isM2) continue;
-                            const bool isThunderBluffLift =
-                                (transport.entry >= 20649u && transport.entry <= 20657u);
-                            const float maxHorizDistSq = isThunderBluffLift
-                                ? kTbLiftBoardHorizDistSq
-                                : kM2BoardHorizDistSq;
-                            const float maxVertDist = isThunderBluffLift
-                                ? kTbLiftBoardVertDist
-                                : kM2BoardVertDist;
-                            glm::vec3 diff = playerCanonical - transport.position;
-                            float horizDistSq = diff.x * diff.x + diff.y * diff.y;
-                            float vertDist = std::abs(diff.z);
-                            if (horizDistSq < maxHorizDistSq && vertDist < maxVertDist) {
-                                float score = horizDistSq + vertDist * vertDist;
-                                if (score < bestScore) {
-                                    bestScore = score;
-                                    bestGuid = guid;
-                                }
-                            }
-                        }
-                        if (bestGuid != 0) {
-                            auto* tr = tm->getTransport(bestGuid);
-                            if (tr) {
-                                gameHandler->setPlayerOnTransport(bestGuid, playerCanonical - tr->position);
-                                LOG_DEBUG("M2 transport boarding: guid=0x", std::hex, bestGuid, std::dec);
-                            }
-                        }
-                    }
-
-                    // M2 transport disembark: player walked far enough from transport center
-                    if (isM2Transport && gameHandler->getTransportManager()) {
-                        auto* tm = gameHandler->getTransportManager();
-                        auto* tr = tm->getTransport(gameHandler->getPlayerTransportGuid());
-                        if (tr) {
-                            glm::vec3 playerCanonical = core::coords::renderToCanonical(renderPos);
-                            glm::vec3 diff = playerCanonical - tr->position;
-                            float horizDistSq = diff.x * diff.x + diff.y * diff.y;
-                            const bool isThunderBluffLift =
-                                (tr->entry >= 20649u && tr->entry <= 20657u);
-                            constexpr float kM2DisembarkHorizDistSq = 15.0f * 15.0f;
-                            constexpr float kTbLiftDisembarkHorizDistSq = 28.0f * 28.0f;
-                            constexpr float kM2DisembarkVertDist = 18.0f;
-                            constexpr float kTbLiftDisembarkVertDist = 16.0f;
-                            const float disembarkHorizDistSq = isThunderBluffLift
-                                ? kTbLiftDisembarkHorizDistSq
-                                : kM2DisembarkHorizDistSq;
-                            const float disembarkVertDist = isThunderBluffLift
-                                ? kTbLiftDisembarkVertDist
-                                : kM2DisembarkVertDist;
-                            if (horizDistSq > disembarkHorizDistSq || std::abs(diff.z) > disembarkVertDist) {
-                                gameHandler->clearPlayerTransport();
-                                LOG_DEBUG("M2 transport disembark");
-                            }
-                        }
+                        gameHandler->updateM2TransportBoarding(playerCanonical);
                     }
                 }
                 }
@@ -1916,10 +1934,12 @@ void Application::update(float deltaTime) {
                         if (deadOrCorpse || largeCorrection) {
                             charRenderer->setInstancePosition(instanceId, renderPos);
                         } else if (planarDistSq > kMoveThreshSq || dz > 0.08f) {
-                            // Position changed in entity coords → drive renderer toward it.
-                            float planarDist = std::sqrt(planarDistSq);
-                            float duration = std::clamp(planarDist / 5.5f, 0.05f, 0.22f);
-                            charRenderer->moveInstanceTo(instanceId, renderPos, duration);
+                            // Entity::updateMovement already evaluates the server spline for
+                            // this frame. Starting another renderer interpolation here resets
+                            // that interpolation every frame and leaves the model trailing its
+                            // authoritative entity position. Copy the evaluated position
+                            // directly; animation transitions remain driven below.
+                            charRenderer->setInstancePosition(instanceId, renderPos);
                         }
                         // When entity is moving but getX/Y/Z is stale (distance-culled),
                         // don't call moveInstanceTo — creatureMoveCallback_ already drove
@@ -2284,6 +2304,7 @@ void Application::spawnPlayerCharacter() {
         auto m2Data = assetManager->readFile(m2Path);
         if (!m2Data.empty()) {
             auto model = pipeline::M2Loader::load(m2Data);
+            if (model.name.empty()) model.name = m2Path;
 
             // Load skin file for submesh/batch data
             std::string skinPath = modelDir + baseName + "00.skin";

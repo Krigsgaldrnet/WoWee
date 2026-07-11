@@ -188,7 +188,8 @@ struct CharMaterialUBO {
     int32_t pomMaxSamples;
     float heightMapVariance;
     float normalMapStrength;
-    float _pad[2]; // pad to 64 bytes
+    int32_t hairMaterial;
+    float _pad[1];
 };
 
 // GPU vertex struct with tangent (expanded from M2Vertex for normal mapping)
@@ -481,7 +482,11 @@ void CharacterRenderer::shutdown() {
             materialDescPools_[i] = VK_NULL_HANDLE;
         }
     }
-    if (boneDescPool_) { vkDestroyDescriptorPool(device, boneDescPool_, nullptr); boneDescPool_ = VK_NULL_HANDLE; }
+    if (boneDescPool_) {
+        if (boneDescPoolGeneration_) boneDescPoolGeneration_->fetch_add(1, std::memory_order_relaxed);
+        vkDestroyDescriptorPool(device, boneDescPool_, nullptr);
+        boneDescPool_ = VK_NULL_HANDLE;
+    }
     if (materialSetLayout_) { vkDestroyDescriptorSetLayout(device, materialSetLayout_, nullptr); materialSetLayout_ = VK_NULL_HANDLE; }
     if (boneSetLayout_) { vkDestroyDescriptorSetLayout(device, boneSetLayout_, nullptr); boneSetLayout_ = VK_NULL_HANDLE; }
 
@@ -562,6 +567,7 @@ void CharacterRenderer::clear() {
         }
     }
     if (boneDescPool_) {
+        if (boneDescPoolGeneration_) boneDescPoolGeneration_->fetch_add(1, std::memory_order_relaxed);
         vkResetDescriptorPool(device, boneDescPool_, 0);
     }
 }
@@ -641,8 +647,12 @@ void CharacterRenderer::destroyInstanceBones(CharacterInstance& inst, bool defer
             // Loop destroys bone sets for ALL frame slots — the other slot's
             // command buffer may still be in flight. Wait for all fences.
             VkDescriptorPool pool = boneDescPool_;
-            vkCtx_->deferAfterAllFrameFences([device, alloc, pool, boneSet, boneBuf, boneAlloc]() {
-                if (boneSet != VK_NULL_HANDLE && pool != VK_NULL_HANDLE) {
+            auto poolGeneration = boneDescPoolGeneration_;
+            uint64_t generation = poolGeneration ? poolGeneration->load(std::memory_order_relaxed) : 0;
+            vkCtx_->deferAfterAllFrameFences([device, alloc, pool, poolGeneration, generation, boneSet, boneBuf, boneAlloc]() {
+                const bool poolStillValid =
+                    poolGeneration && poolGeneration->load(std::memory_order_relaxed) == generation;
+                if (boneSet != VK_NULL_HANDLE && pool != VK_NULL_HANDLE && poolStillValid) {
                     VkDescriptorSet s = boneSet;
                     vkFreeDescriptorSets(device, pool, 1, &s);
                 }
@@ -2235,6 +2245,7 @@ glm::mat4 CharacterRenderer::getBoneTransform(const pipeline::M2Bone& bone, floa
 
 void CharacterRenderer::prepareRender(uint32_t frameIndex) {
     if (instances.empty() || !opaquePipeline_) return;
+    if (frameIndex >= 2 || boneDescPool_ == VK_NULL_HANDLE || boneSetLayout_ == VK_NULL_HANDLE) return;
 
     // Pre-allocate bone SSBOs + descriptor sets on main thread (pool ops not thread-safe)
     for (auto& [id, instance] : instances) {
@@ -2249,8 +2260,13 @@ void CharacterRenderer::prepareRender(uint32_t frameIndex) {
             aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
             aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
             VmaAllocationInfo allocInfo{};
-            vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
-                            &instance.boneBuffer[frameIndex], &instance.boneAlloc[frameIndex], &allocInfo);
+            if (vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
+                            &instance.boneBuffer[frameIndex], &instance.boneAlloc[frameIndex], &allocInfo) != VK_SUCCESS) {
+                instance.boneBuffer[frameIndex] = VK_NULL_HANDLE;
+                instance.boneAlloc[frameIndex] = VK_NULL_HANDLE;
+                instance.boneMapped[frameIndex] = nullptr;
+                continue;
+            }
             instance.boneMapped[frameIndex] = allocInfo.pMappedData;
 
             // Initialize all bone slots to identity so out-of-range indices
@@ -2537,6 +2553,21 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 return whiteTexture_.get();
             };
 
+            auto batchUsesTextureType = [](const M2ModelGPU& gm, const pipeline::M2Batch& b, uint32_t wantedType) {
+                if (b.textureIndex == 0xFFFF || gm.data.textureLookup.empty()) return false;
+
+                uint32_t comboCount = b.textureCount ? static_cast<uint32_t>(b.textureCount) : 1u;
+                comboCount = std::min<uint32_t>(comboCount, 8u);
+                for (uint32_t i = 0; i < comboCount; ++i) {
+                    uint32_t lookupPos = static_cast<uint32_t>(b.textureIndex) + i;
+                    if (lookupPos >= gm.data.textureLookup.size()) break;
+                    uint16_t texSlot = gm.data.textureLookup[lookupPos];
+                    if (texSlot < gm.data.textures.size() && gm.data.textures[texSlot].type == wantedType)
+                        return true;
+                }
+                return false;
+            };
+
             const bool previewMainModel = renderPassOverride_ != VK_NULL_HANDLE &&
                                           !instance.hasOverrideModelMatrix;
 
@@ -2586,26 +2617,18 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                     materialFlags = gpuModel.data.materials[batch.materialIndex].flags;
                 }
 
+                const uint16_t submeshGroup = static_cast<uint16_t>(batch.submeshId / 100);
+                const bool hairTexture = batchUsesTextureType(gpuModel, batch, 6);
+                const bool hairGeoset = (submeshGroup == 1) ||
+                                        (submeshGroup == 0 && batch.submeshId > 0 && batch.submeshId <= 99);
+                const bool hairMaterial = hairTexture ||
+                                          (hairGeoset && (blendMode != 0 || batch.textureCount > 1));
+
                 // Attached weapon models can include additive FX/card batches that
                 // appear as detached flat quads for some swords. Keep core geometry
                 // and drop FX-style passes for weapon attachments.
                 if (instance.hasOverrideModelMatrix && blendMode >= 3) {
                     continue;
-                }
-
-                // Select pipeline based on blend mode
-                VkPipeline desiredPipeline;
-                switch (blendMode) {
-                    case 0: desiredPipeline = opaquePipeline_; break;
-                    case 1: desiredPipeline = alphaTestPipeline_; break;
-                    case 2: desiredPipeline = alphaPipeline_; break;
-                    case 3:
-                    case 6: desiredPipeline = additivePipeline_; break;
-                    default: desiredPipeline = alphaPipeline_; break;
-                }
-                if (desiredPipeline != currentPipeline) {
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
-                    currentPipeline = desiredPipeline;
                 }
 
                 // For body/equipment parts with white/fallback texture, use skin (type 1) texture.
@@ -2653,8 +2676,29 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 }
                 const bool blendNeedsCutout = (blendMode == 1) ||
                                               (blendMode == 0 && alphaCutout) ||
-                                              (blendMode >= 2 && !alphaCutout);
+                                              (blendMode >= 2 && !alphaCutout) ||
+                                              hairMaterial;
                 const bool unlit = ((materialFlags & 0x01) != 0) || (blendMode >= 3);
+
+                // Hair textures are authored as alpha-cut cards. If they use the
+                // translucent pipeline they form a soft shell around the head.
+                VkPipeline desiredPipeline;
+                if (hairMaterial) {
+                    desiredPipeline = alphaTestPipeline_;
+                } else {
+                    switch (blendMode) {
+                        case 0: desiredPipeline = opaquePipeline_; break;
+                        case 1: desiredPipeline = alphaTestPipeline_; break;
+                        case 2: desiredPipeline = alphaPipeline_; break;
+                        case 3:
+                        case 6: desiredPipeline = additivePipeline_; break;
+                        default: desiredPipeline = alphaPipeline_; break;
+                    }
+                }
+                if (desiredPipeline != currentPipeline) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
+                    currentPipeline = desiredPipeline;
+                }
 
                 float emissiveBoost = 1.0f;
                 glm::vec3 emissiveTint(1.0f, 1.0f, 1.0f);
@@ -2706,7 +2750,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 CharMaterialUBO matData{};
                 matData.opacity = instance.opacity;
                 matData.alphaTest = blendNeedsCutout ? 1 : 0;
-                matData.colorKeyBlack = (blendNeedsCutout || colorKeyBlack) ? 1 : 0;
+                matData.colorKeyBlack = colorKeyBlack ? 1 : 0;
                 matData.unlit = unlit ? 1 : 0;
                 matData.emissiveBoost = emissiveBoost;
                 matData.emissiveTintR = emissiveTint.r;
@@ -2719,6 +2763,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 matData.pomMaxSamples = pomSamples;
                 matData.heightMapVariance = useAdvancedMaterials ? batchHeightVariance : 0.0f;
                 matData.normalMapStrength = normalMapStrength_;
+                matData.hairMaterial = hairMaterial ? 1 : 0;
                 if (usePreviewSimpleShader) {
                     matData.enableNormalMap = 0;
                     matData.enablePOM = kPreviewSimpleTextureMode;
@@ -2817,6 +2862,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
             matData.pomMaxSamples = pomSamples2;
             matData.heightMapVariance = 0.0f;
             matData.normalMapStrength = normalMapStrength_;
+            matData.hairMaterial = 0;
             if (usePreviewSimpleShader) {
                 matData.enableNormalMap = 0;
                 matData.enablePOM = kPreviewSimpleTextureMode;
@@ -3034,8 +3080,10 @@ void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& light
                                      const glm::vec3& shadowCenter, float shadowRadius) {
     if (!shadowPipeline_ || !shadowParamsSet_) return;
     if (instances.empty() || models.empty()) return;
+    if (boneDescPool_ == VK_NULL_HANDLE || boneSetLayout_ == VK_NULL_HANDLE) return;
 
     uint32_t frameIndex = vkCtx_->getCurrentFrame();
+    if (frameIndex >= 2) return;
     VkDevice device = vkCtx_->getDevice();
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_);
@@ -3071,8 +3119,13 @@ void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& light
                 aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
                 aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
                 VmaAllocationInfo ai{};
-                vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
-                    &inst.boneBuffer[frameIndex], &inst.boneAlloc[frameIndex], &ai);
+                if (vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
+                    &inst.boneBuffer[frameIndex], &inst.boneAlloc[frameIndex], &ai) != VK_SUCCESS) {
+                    inst.boneBuffer[frameIndex] = VK_NULL_HANDLE;
+                    inst.boneAlloc[frameIndex] = VK_NULL_HANDLE;
+                    inst.boneMapped[frameIndex] = nullptr;
+                    continue;
+                }
                 inst.boneMapped[frameIndex] = ai.pMappedData;
 
                 // Initialize all bone slots to identity so out-of-range indices
@@ -3171,6 +3224,11 @@ void CharacterRenderer::setInstancePosition(uint32_t instanceId, const glm::vec3
     auto it = instances.find(instanceId);
     if (it != instances.end()) {
         it->second.position = position;
+        it->second.moveStart = position;
+        it->second.moveEnd = position;
+        it->second.moveElapsed = 0.0f;
+        it->second.moveDuration = 0.0f;
+        it->second.isMoving = false;
     }
 }
 
@@ -3256,6 +3314,12 @@ const pipeline::M2Model* CharacterRenderer::getModelData(uint32_t modelId) const
     auto it = models.find(modelId);
     if (it == models.end()) return nullptr;
     return &it->second.data;
+}
+
+const pipeline::M2Model* CharacterRenderer::getInstanceModelData(uint32_t instanceId) const {
+    auto instIt = instances.find(instanceId);
+    if (instIt == instances.end()) return nullptr;
+    return getModelData(instIt->second.modelId);
 }
 
 void CharacterRenderer::startFadeIn(uint32_t instanceId, float durationSeconds) {

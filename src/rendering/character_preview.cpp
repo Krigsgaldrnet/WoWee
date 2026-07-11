@@ -506,6 +506,7 @@ bool CharacterPreview::loadCharacter(game::Race race, game::Gender gender,
     }
 
     auto model = pipeline::M2Loader::load(m2Data);
+    if (model.name.empty()) model.name = m2Path;
 
     // M2 version 264+ (WotLK) stores submesh/bone data in external .skin files.
     // Earlier versions (Classic ≤256, TBC ≤263) have skin data embedded in the M2.
@@ -830,8 +831,16 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
         return 0;
     };
 
+    auto lowestInGroup = [&](uint16_t group) -> uint16_t {
+        uint16_t best = 0;
+        for (uint16_t g : modelGeosets) {
+            if (g / 100 == group && (best == 0 || g < best)) best = g;
+        }
+        return best;
+    };
+
     uint16_t geosetGloves = pickGeoset(core::kGeosetBareForearms, core::kGeosetBareForearms);
-    uint16_t geosetBoots = pickGeoset(core::kGeosetBareShins, core::kGeosetBareShins);
+    uint16_t geosetBoots = pickGeoset(core::kGeosetBareShins, lowestInGroup(5));
     uint16_t geosetSleeves = pickGeoset(core::kGeosetBareSleeves, core::kGeosetBareSleeves);
     uint16_t geosetPants = pickGeoset(core::kGeosetBarePants, core::kGeosetBarePants);
 
@@ -854,7 +863,7 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
     {
         uint32_t did = findDisplayId({8});
         uint32_t gg = getGeosetGroup(did, geosetGroup1Field);
-        if (gg > 0) geosetBoots = pickGeoset(static_cast<uint16_t>(501 + gg), core::kGeosetBareShins);
+        if (gg > 0) geosetBoots = pickGeoset(static_cast<uint16_t>(501 + gg), lowestInGroup(5));
     }
     // Gloves → group 4 (forearms)
     {

@@ -92,6 +92,16 @@ bool containsAnyTerm(const std::string& haystack, const char* const* terms, size
     return false;
 }
 
+bool isLootContainerName(const std::string& name) {
+    const std::string lower = lowerCopy(name);
+    static constexpr const char* kContainerTerms[] = {
+        "chest", "lockbox", "strongbox", "coffer", "cache", "bundle",
+        "sack", "bag", "crate", "barrel", "basket", "oats"
+    };
+    return containsAnyTerm(lower, kContainerTerms,
+                           sizeof(kContainerTerms) / sizeof(kContainerTerms[0]));
+}
+
 uint32_t gatherSpellForGameObject(const GameObjectQueryResponseData* info, const std::string& name) {
     if (info && info->type != 3) return 0; // GAMEOBJECT_TYPE_CHEST
 
@@ -558,6 +568,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     playerDead_ = false;
     releasedSpirit_ = false;
     corpseGuid_ = 0;
+    corpsePositionValid_ = false;
     corpseReclaimAvailableMs_ = 0;
     targetGuid = 0;
     focusGuid = 0;
@@ -688,11 +699,13 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     if (socialHandler_) socialHandler_->resetTransferState();
 
     // Suppress area triggers on initial login — prevents exit portals from
-    // immediately firing when spawning inside a dungeon/instance.
+    // immediately firing when spawning inside a dungeon/instance. Deeprun Tram
+    // (map 369) needs a shorter window because exits are close to the spawn.
+    const bool deeprunTram = data.mapId == 369;
     activeAreaTriggers_.clear();
-    areaTriggerCheckTimer_ = -5.0f;
+    areaTriggerCheckTimer_ = deeprunTram ? -1.0f : -5.0f;
     areaTriggerSuppressFirst_ = true;
-    areaTriggerCooldown_ = 10.0f;
+    areaTriggerCooldown_ = deeprunTram ? 1.5f : 10.0f;
 
     // Notify application to load terrain for this map/position (online mode)
     if (worldEntryCallback_) {
@@ -2184,9 +2197,11 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
     // Determine GO type for interaction strategy
     bool isMailbox = false;
     bool chestLike = false;
+    bool metadataPending = false;
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);
         if (!goInfo) goInfo = getCachedGameObjectInfo(go->getEntry());
+        metadataPending = (goInfo == nullptr);
         if (goInfo && goInfo->type == 19) {
             isMailbox = true;
         } else if (goInfo && goInfo->type == 3) {
@@ -2194,18 +2209,16 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         }
     }
     if (!chestLike && !goName.empty()) {
-        std::string lower = lowerCopy(goName);
-        chestLike = (lower.find("chest") != std::string::npos ||
-                     lower.find("lockbox") != std::string::npos ||
-                     lower.find("strongbox") != std::string::npos ||
-                     lower.find("coffer") != std::string::npos ||
-                     lower.find("cache") != std::string::npos ||
-                     lower.find("bundle") != std::string::npos);
+        // Query metadata can arrive after the player clicks. Recognize common
+        // quest-loot containers by name so objects such as Sack of Oats still
+        // receive the delayed CMSG_LOOT sequence used by type-3 chests.
+        chestLike = isLootContainerName(goName);
     }
 
     LOG_INFO("GO interaction: guid=0x", std::hex, guid, std::dec,
              " entry=", goEntry, " type=", goType,
-             " name='", goName, "' chestLike=", chestLike, " isMailbox=", isMailbox);
+             " name='", goName, "' chestLike=", chestLike,
+             " metadataPending=", metadataPending, " isMailbox=", isMailbox);
 
     const uint32_t gatherBaseSpellId = gatherSpellForGameObject(goInfo, goName);
     if (gatherBaseSpellId != 0) {
@@ -2233,7 +2246,7 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
     socket->send(usePacket);
     lastInteractedGoGuid_ = guid;
 
-    if (chestLike) {
+    if (chestLike || metadataPending) {
         // Don't send CMSG_LOOT immediately — the server may start a timed cast
         // (e.g., "Opening") and the GO isn't lootable until the cast finishes.
         // Sending LOOT prematurely gets an empty response or is silently dropped,
@@ -2241,6 +2254,9 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         // Queue a delayed open: if a server-side gather cast starts, update()
         // defers this until the cast is over; if no cast packet arrives, retry
         // a few times so resource nodes do not fail after one early CMSG_LOOT.
+        // Unknown metadata is common immediately after a GO spawn. A delayed
+        // loot probe is harmless for non-loot objects and prevents the first
+        // click on quest containers from being lost while their query is pending.
         scheduleGameObjectLootOpen(guid, 0.35f, 8);
     } else if (isMailbox) {
         openMailbox(guid);

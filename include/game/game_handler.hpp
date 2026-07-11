@@ -1178,6 +1178,10 @@ public:
     bool hasServerTransportUpdate(uint64_t guid) const { return entityController_->hasServerTransportUpdate(guid); }
     glm::vec3 getComposedWorldPosition();  // Compose transport transform * local offset
     TransportManager* getTransportManager() { return transportManager_.get(); }
+    // Client-side M2 transport (trams, lifts) board/disembark check by proximity to the
+    // transport's live position. Call once per tick with the player's current canonical
+    // world position; safe to call whether or not any M2 transports are registered.
+    void updateM2TransportBoarding(const glm::vec3& playerCanonical);
     void setPlayerOnTransport(uint64_t transportGuid, const glm::vec3& localOffset) {
         // Validate transport is registered before attaching player
         // (defer if transport not yet registered to prevent desyncs)
@@ -1273,7 +1277,7 @@ public:
     float getCorpseReclaimDelaySec() const;
     /** Distance (yards) from ghost to corpse, or -1 if no corpse data. */
     float getCorpseDistance() const {
-        if (corpseMapId_ == 0 || currentMapId_ != corpseMapId_) return -1.0f;
+        if (!corpsePositionValid_ || currentMapId_ != corpseMapId_) return -1.0f;
         // movementInfo is canonical (x=north=server_y, y=west=server_x);
         // corpse coords are raw server (x=west, y=north) — swap to compare.
         float dx = movementInfo.x - corpseY_;
@@ -1284,7 +1288,7 @@ public:
     /** Corpse position in canonical WoW coords (X=north, Y=west).
      *  Returns false if no corpse data or on a different map. */
     bool getCorpseCanonicalPos(float& outX, float& outY) const {
-        if (corpseMapId_ == 0 || currentMapId_ != corpseMapId_) return false;
+        if (!corpsePositionValid_ || currentMapId_ != corpseMapId_) return false;
         outX = corpseY_;  // server Y = canonical X (north)
         outY = corpseX_;  // server X = canonical Y (west)
         return true;
@@ -2332,6 +2336,7 @@ public:
     // ── Corpse & Home Bind ───────────────────────────────────────────
     auto& corpseGuidRef() { return corpseGuid_; }
     auto& corpseMapIdRef() { return corpseMapId_; }
+    auto& corpsePositionValidRef() { return corpsePositionValid_; }
     auto& corpseReclaimAvailableMsRef() { return corpseReclaimAvailableMs_; }
     auto& corpseXRef() { return corpseX_; }
     auto& corpseYRef() { return corpseY_; }
@@ -3511,6 +3516,7 @@ private:
     bool playerDead_ = false;
     bool releasedSpirit_ = false;
     uint32_t corpseMapId_ = 0;
+    bool corpsePositionValid_ = false;
     float corpseX_ = 0.0f, corpseY_ = 0.0f, corpseZ_ = 0.0f;
     uint64_t corpseGuid_ = 0;
     // Absolute time (ms since epoch) when PvP corpse-reclaim delay expires.
