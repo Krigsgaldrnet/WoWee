@@ -1717,7 +1717,7 @@ void QuestHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
         }
 
         for (uint32_t pi = 0; pi < poiCount; ++pi) {
-            if (!packet.hasRemaining(28)) return;
+            if (!packet.hasRemaining(32)) return;
             packet.readUInt32();  // poiId
             packet.readUInt32();  // objIndex (int32)
             const uint32_t mapId    = packet.readUInt32();
@@ -1738,8 +1738,12 @@ void QuestHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
             // Skip POIs for maps other than the player's current map.
             if (mapId != owner_.currentMapIdRef()) continue;
             GossipPoi poi;
-            poi.x    = sumX / static_cast<float>(pointCount);
-            poi.y    = sumY / static_cast<float>(pointCount);
+            // QuestPOIPoint uses the opposite axis order from the canonical
+            // world coordinates used by movement and the map renderer. Store
+            // it canonically here so canonicalToRender() does not place every
+            // objective far outside its zone bounds.
+            poi.x    = sumY / static_cast<float>(pointCount);
+            poi.y    = sumX / static_cast<float>(pointCount);
             poi.icon = 6;  // generic quest POI icon
             poi.data = questId;
             poi.name = questTitle.empty() ? "Quest objective" : questTitle;
