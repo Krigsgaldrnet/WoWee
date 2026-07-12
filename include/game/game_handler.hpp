@@ -1950,11 +1950,7 @@ public:
     using TaxiPathEdge = MovementHandler::TaxiPathEdge;
     using TaxiPathNode = MovementHandler::TaxiPathNode;
     const std::unordered_map<uint32_t, TaxiNode>& getTaxiNodes() const;
-    bool isKnownTaxiNode(uint32_t nodeId) const {
-        if (nodeId == 0 || nodeId > 384) return false;
-        uint32_t idx = nodeId - 1;
-        return (knownTaxiMask_[idx / 32] & (1u << (idx % 32))) != 0;
-    }
+    bool isKnownTaxiNode(uint32_t nodeId) const;
     uint32_t getTaxiCostTo(uint32_t destNodeId) const;
     bool taxiNpcHasRoutes(uint64_t guid) const {
         auto it = taxiNpcHasRoutes_.find(guid);
@@ -1987,6 +1983,14 @@ public:
     void autoEquipItemInBag(int bagIndex, int slotIndex);
     void useItemBySlot(int backpackIndex);
     void useItemInBag(int bagIndex, int slotIndex);
+
+    // Item-targeted item use: sharpening stones, weightstones and weapon oils enchant
+    // another item, so using one arms a targeting cursor instead of casting immediately.
+    bool isAwaitingItemTarget() const;
+    uint32_t getPendingItemTargetSourceItemId() const;
+    void cancelItemTargeting();
+    void completeItemUseOnItem(uint64_t targetItemGuid);
+
     // CMSG_OPEN_ITEM — for locked containers (lockboxes); server checks keyring automatically
     void openItemBySlot(int backpackIndex);
     void openItemInBag(int bagIndex, int slotIndex);
@@ -2106,6 +2110,9 @@ public:
     /// (0x01=Physical, 0x02=Holy, 0x04=Fire, 0x08=Nature, 0x10=Frost, 0x20=Shadow, 0x40=Arcane).
     /// Returns 0 if unknown.
     uint32_t getSpellSchoolMask(uint32_t spellId) const;
+    /// Returns the Spell.dbc Targets bitmask (SpellCastTargetFlags) for the spell.
+    /// 0x10 = TARGET_FLAG_ITEM, meaning the spell must be cast onto another item.
+    uint32_t getSpellTargetFlags(uint32_t spellId) const;
 
     struct TrainerTab {
         std::string name;
@@ -2523,6 +2530,8 @@ public:
     struct SpellNameEntry {
         std::string name; std::string rank; std::string description;
         uint32_t schoolMask = 0; uint8_t dispelType = 0; uint32_t attrEx = 0;
+        // Spell.dbc Targets bitmask (SpellCastTargetFlags) — 0x10 = TARGET_FLAG_ITEM
+        uint32_t targetFlags = 0;
         int32_t effectBasePoints[3] = {0, 0, 0};
         float durationSec = 0.0f;
         uint32_t spellVisualId = 0;
@@ -3258,8 +3267,6 @@ private:
     bool taxiRecoverPending_ = false;
     uint32_t taxiRecoverMapId_ = 0;
     glm::vec3 taxiRecoverPos_{0.0f};
-    uint32_t knownTaxiMask_[12] = {};  // Track previously known nodes for discovery alerts
-    bool taxiMaskInitialized_ = false; // First SMSG_SHOWTAXINODES seeds mask without alerts
     std::unordered_map<uint32_t, uint32_t> taxiCostMap_; // destNodeId -> total cost in copper
     uint32_t nextMovementTimestampMs();
     void updateClientTaxi(float deltaTime);
