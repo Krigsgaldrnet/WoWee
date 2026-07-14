@@ -15,8 +15,14 @@ target_compile_features(catch2_main PUBLIC cxx_std_17)
 set(ALL_TEST_TARGETS "")
 
 # Helper: register a test target for ASAN/UBSan if enabled.
+# Also links Winsock on Windows: several tests pull in networking sources
+# (auth, socket code) whose symbols live in ws2_32 there rather than libc.
+# Linking it for every test keeps a new test from breaking the Windows build.
 macro(register_test_target _target)
     list(APPEND ALL_TEST_TARGETS ${_target})
+    if(WIN32)
+        target_link_libraries(${_target} PRIVATE ws2_32)
+    endif()
 endmacro()
 
 # Shared source files used across multiple tests
