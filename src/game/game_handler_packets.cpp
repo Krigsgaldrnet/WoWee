@@ -1,4 +1,5 @@
 #include "game/game_handler.hpp"
+#include "game/protocol_constants.hpp"
 #include "game/game_utils.hpp"
 #include "game/chat_handler.hpp"
 #include "game/movement_handler.hpp"
@@ -598,6 +599,46 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Mount/dismount
     dispatchTable_[Opcode::SMSG_DISMOUNT] = [this](network::Packet& /*packet*/) {
+        // Live-confirmed: CMaNGOS sends this partway through a taxi flight (its
+        // own server-side flight-completion estimate firing early, well before
+        // the client-simulated path actually finishes) - obeying it unconditionally
+        // cancelled the taxi mount animation while updateClientTaxi() kept flying
+        // the real path for several more seconds, seen as "walking in the air".
+        // But other cores (e.g. AzerothCore) finalize taxi flights server-side -
+        // dismounting/stopping the player is the *authoritative* completion
+        // signal there, not a premature estimate - so a blanket "ignore while
+        // flying" guard could let the client fly past a real landing if local
+        // spline timing ever drifts from the server's. Distinguish the two using
+        // the server's own UNIT_FLAG_TAXI_FLIGHT: still set means this is the
+        // premature-estimate quirk (ignore, let updateClientTaxi() finish
+        // naturally); already cleared means the server considers the flight
+        // genuinely over (honor it now instead of waiting on our own spline).
+        const bool onTaxiFlight = movementHandler_ && movementHandler_->isOnTaxiFlight();
+        bool serverStillTaxiing = false;
+        if (onTaxiFlight) {
+            auto playerEntity = entityController_->getEntityManager().getEntity(playerGuid);
+            auto playerUnit = std::dynamic_pointer_cast<Unit>(playerEntity);
+            if (playerUnit) {
+                serverStillTaxiing = (playerUnit->getUnitFlags() & UNIT_FLAG_TAXI_FLIGHT) != 0;
+            }
+        }
+        const bool nearDestination = onTaxiFlight && movementHandler_ &&
+                                     movementHandler_->isNearTaxiDestination();
+        LOG_INFO("SMSG_DISMOUNT received: onTaxiFlight=", onTaxiFlight,
+                 " serverStillTaxiing=", serverStillTaxiing,
+                 " nearDestination=", nearDestination);
+        if (onTaxiFlight && (serverStillTaxiing || !nearDestination)) {
+            movementHandler_->deferServerTaxiCompletion();
+            LOG_WARNING("Deferring premature SMSG_DISMOUNT until taxi landing zone");
+            return;
+        }
+        if (onTaxiFlight && movementHandler_) {
+            // Authoritative server completion ahead of our own spline - stop the
+            // client flight now rather than snapping to a final waypoint that may
+            // not match where the server actually stopped us.
+            movementHandler_->finishClientTaxiFlight(/*snapToFinalWaypoint=*/false);
+            return;
+        }
         currentMountDisplayId_ = 0;
         if (mountCallback_) mountCallback_(0);
     };
@@ -845,7 +886,11 @@ void GameHandler::registerOpcodeHandlers() {
     // Taxi
     dispatchTable_[Opcode::SMSG_STANDSTATE_UPDATE] = [this](network::Packet& packet) {
         if (packet.hasRemaining(1)) {
-            standState_ = packet.readUInt8();
+            const uint8_t newStandState = packet.readUInt8();
+            if (newStandState == standState_) {
+                return;
+            }
+            standState_ = newStandState;
             // 0=stand, 1=sit, 2-6=sit variants, 7=dead, 8=kneel. Logged because a
             // wrong state here is indistinguishable, in-game, from a wrong animation.
             // At warning level: the file log filters info out by default.
