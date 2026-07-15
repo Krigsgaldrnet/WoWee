@@ -2244,7 +2244,7 @@ void CharacterRenderer::calculateBoneMatrices(CharacterInstance& instance) {
             float ty = std::abs(instance.boneMatrices[i][3][1]);
             float tz = std::abs(instance.boneMatrices[i][3][2]);
             if (tx > 50.0f || ty > 50.0f || tz > 50.0f) {
-                LOG_WARNING("BONE DIAG: bone[", i, "] keyBone=", bone.keyBoneId,
+                LOG_DEBUG("BONE DIAG: bone[", i, "] keyBone=", bone.keyBoneId,
                             " flags=0x", std::hex, bone.flags, std::dec,
                             " parent=", bone.parentBone,
                             " pivot=(", bone.pivot.x, ",", bone.pivot.y, ",", bone.pivot.z, ")",
@@ -3349,9 +3349,28 @@ void CharacterRenderer::startFadeIn(uint32_t instanceId, float durationSeconds) 
 void CharacterRenderer::setInstanceOpacity(uint32_t instanceId, float opacity) {
     auto it = instances.find(instanceId);
     if (it != instances.end()) {
-        it->second.opacity = std::clamp(opacity, 0.0f, 1.0f);
+        const float clampedOpacity = std::clamp(opacity, 0.0f, 1.0f);
+        it->second.opacity = clampedOpacity;
         // Cancel any fade-in in progress to avoid overwriting the new opacity
         it->second.fadeInDuration = 0.0f;
+
+        // Equipment is rendered as independent character instances. Keep the
+        // whole visual together instead of leaving opaque weapons floating on
+        // a translucent stealthed creature.
+        for (const auto& attachment : it->second.weaponAttachments) {
+            auto weaponIt = instances.find(attachment.weaponInstanceId);
+            if (weaponIt != instances.end()) {
+                weaponIt->second.opacity = clampedOpacity;
+                weaponIt->second.fadeInDuration = 0.0f;
+            }
+            for (const auto& effect : attachment.effects) {
+                auto effectIt = instances.find(effect.effectInstanceId);
+                if (effectIt != instances.end()) {
+                    effectIt->second.opacity = clampedOpacity;
+                    effectIt->second.fadeInDuration = 0.0f;
+                }
+            }
+        }
     }
 }
 
@@ -3604,6 +3623,7 @@ bool CharacterRenderer::attachWeapon(uint32_t charInstanceId, uint32_t attachmen
     auto weapIt = instances.find(weaponInstanceId);
     if (weapIt != instances.end()) {
         weapIt->second.hasOverrideModelMatrix = true;
+        weapIt->second.opacity = charInstance.opacity;
     }
 
     // Store attachment on parent character instance
@@ -3718,6 +3738,7 @@ bool CharacterRenderer::attachWeaponEffect(uint32_t charInstanceId, uint32_t att
     fxIt->second.hasOverrideModelMatrix = true;
     fxIt->second.isEffectModel = true;
     fxIt->second.animationLoop = true;
+    fxIt->second.opacity = charIt->second.opacity;
 
     WeaponEffectAttachment fx;
     fx.effectModelId = effectModelId;

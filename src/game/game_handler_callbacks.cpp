@@ -2038,8 +2038,6 @@ void GameHandler::queryGuildInfo(uint32_t guildId) {
     if (socialHandler_) socialHandler_->queryGuildInfo(guildId);
 }
 
-static const std::string kEmptyString;
-
 const std::string& GameHandler::lookupGuildName(uint32_t guildId) {
     static const std::string kEmpty;
     if (socialHandler_) return socialHandler_->lookupGuildName(guildId);
@@ -2130,6 +2128,23 @@ bool GameHandler::isGatherGameObject(uint64_t guid) const {
     auto go = std::static_pointer_cast<GameObject>(entity);
     const GameObjectQueryResponseData* goInfo = getCachedGameObjectInfo(go->getEntry());
     return gatherSpellForGameObject(goInfo, go->getName()) != 0;
+}
+
+void GameHandler::despawnCreatureLocally(uint64_t guid) {
+    if (guid == 0 || !entityController_) return;
+
+    auto& entityManager = entityController_->getEntityManager();
+    auto entity = entityManager.getEntity(guid);
+    if (!entity || entity->getType() != ObjectType::UNIT) return;
+
+    if (creatureDespawnCallback_) creatureDespawnCallback_(guid);
+    entityManager.removeEntity(guid);
+
+    if (combatHandler_ && guid == combatHandler_->getAutoAttackTargetGuid()) stopAutoAttack();
+    if (getTargetGuid() == guid) setTargetGuidRaw(0);
+    tabCycleStale = true;
+
+    LOG_INFO("Locally despawned looted corpse: 0x", std::hex, guid, std::dec);
 }
 
 void GameHandler::despawnGameObjectLocally(uint64_t guid) {

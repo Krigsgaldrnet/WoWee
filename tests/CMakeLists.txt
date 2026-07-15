@@ -543,6 +543,44 @@ target_link_libraries(test_expansion_profile PRIVATE catch2_main)
 add_test(NAME expansion_profile COMMAND test_expansion_profile)
 register_test_target(test_expansion_profile)
 
+# ── test_buff_bar_layout ────────────────────────────────────
+# Header-only layout arithmetic — no ImGui needed.
+add_executable(test_buff_bar_layout
+    test_buff_bar_layout.cpp
+)
+target_include_directories(test_buff_bar_layout PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_buff_bar_layout SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_buff_bar_layout PRIVATE catch2_main)
+add_test(NAME buff_bar_layout COMMAND test_buff_bar_layout)
+register_test_target(test_buff_bar_layout)
+
+# ── test_dbc_layouts ────────────────────────────────────────
+# Reads the layout files shipped in Data/expansions, so it needs the source dir.
+add_executable(test_dbc_layouts
+    test_dbc_layouts.cpp
+    ${TEST_COMMON_SOURCES}
+    ${CMAKE_SOURCE_DIR}/src/pipeline/dbc_layout.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/dbc_loader.cpp
+)
+target_include_directories(test_dbc_layouts PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_dbc_layouts SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_compile_definitions(test_dbc_layouts PRIVATE
+    WOWEE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(test_dbc_layouts PRIVATE catch2_main)
+add_test(NAME dbc_layouts COMMAND test_dbc_layouts)
+register_test_target(test_dbc_layouts)
+
+# ── test_spell_classification ───────────────────────────────
+add_executable(test_spell_classification
+    test_spell_classification.cpp
+    ${TEST_COMMON_SOURCES}
+)
+target_include_directories(test_spell_classification PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_spell_classification SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_spell_classification PRIVATE catch2_main)
+add_test(NAME spell_classification COMMAND test_spell_classification)
+register_test_target(test_spell_classification)
+
 # ── test_realm_list ─────────────────────────────────────────
 add_executable(test_realm_list
     test_realm_list.cpp

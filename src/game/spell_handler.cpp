@@ -1,4 +1,5 @@
 #include "game/spell_handler.hpp"
+#include "game/spell_classification.hpp"
 #include "game/game_handler.hpp"
 #include "game/game_utils.hpp"
 #include "game/packet_parsers.hpp"
@@ -98,6 +99,8 @@ bool isGatherSpellId(uint32_t spellId) {
     return false;
 }
 
+// The three ranged weapon auto-attacks. Used only to pick the shot animation —
+// melee classification comes from the spell's range, not from this list.
 bool isRangedWeaponAttackSpell(uint32_t spellId) {
     // Client spell IDs shared by the supported legacy expansions.
     return spellId == 75 ||    // Auto Shot
@@ -403,6 +406,11 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
 
     if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
 
+    // Action bars restored from the server can still hold a rank that a higher rank
+    // has since superseded. The server drops casts of superseded ranks without
+    // sending any error, so swap in the highest rank we actually know.
+    spellId = resolveHighestKnownRank(spellId);
+
     // Casting any spell while mounted → dismount instead
     if (owner_.isMounted()) {
         owner_.dismount();
@@ -430,8 +438,10 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     }
 
     uint64_t target = targetGuid != 0 ? targetGuid : owner_.getTargetGuid();
-    // Self-targeted spells like hearthstone should not send a target
-    if (spellId == 8690) target = 0;
+    // Self-targeted spells (hearthstone, shouts, self-buffs) always land on the
+    // caster, so they must not carry the current target along.
+    const bool selfCast = (spellId == 8690) || isSelfCastSpell(spellId);
+    if (selfCast) target = 0;
 
     // Track whether a spell-specific block already handled facing so the generic
     // facing block below doesn't send redundant SET_FACING packets.
@@ -439,6 +449,11 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
 
     // Warrior Charge (ranks 1-3): client-side range check + charge callback
     if (spellId == 100 || spellId == 6178 || spellId == 11578) {
+        // Charge is an opener: it cannot be used once the fight has started.
+        if (owner_.isInCombat()) {
+            owner_.addSystemChatMessage("You can't do that while in combat.");
+            return;
+        }
         if (target == 0) {
             owner_.addSystemChatMessage("You have no target.");
             return;
@@ -447,6 +462,21 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
         if (!entity) {
             owner_.addSystemChatMessage("You have no target.");
             return;
+        }
+        if (auto unit = std::dynamic_pointer_cast<Unit>(entity)) {
+            // Corpses cannot be charged.
+            if (unit->getHealth() == 0) {
+                owner_.addSystemChatMessage("You cannot attack that target.");
+                return;
+            }
+            // Friendly creatures cannot be charged. Only creatures are filtered:
+            // players stay chargeable so duels and PvP still work, since a duel
+            // opponent shares the player's faction and so is not flagged hostile.
+            if (entity->getType() == ObjectType::UNIT &&
+                !unit->isHostile() && !owner_.isAggressiveTowardPlayer(target)) {
+                owner_.addSystemChatMessage("You cannot attack that target.");
+                return;
+            }
         }
         float tx = entity->getX(), ty = entity->getY(), tz = entity->getZ();
         float dx = tx - owner_.movementInfoRef().x;
@@ -470,13 +500,15 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
         facingHandled = true;
     }
 
-    // Instant melee abilities: client-side range + facing check
+    // Instant melee abilities: client-side range + facing check.
+    // Melee is decided by the spell's own range, not by its school. SpellRange calls
+    // melee "Combat Range" (5 yards), while physical-school abilities that are cast at
+    // range — Steady Shot, Multi-Shot, Taunt, Deadly Throw — carry a 30-35 yard range.
+    // Testing the school instead would range-check those at 8 yards and swallow the cast.
+    // An unknown range (SpellRange.dbc unavailable) is not treated as melee, so the
+    // server arbitrates rather than the client blocking a legitimate cast.
     if (!facingHandled) {
-        owner_.loadSpellNameCache();
-        auto cacheIt = owner_.spellNameCacheRef().find(spellId);
-        bool isMeleeAbility = (cacheIt != owner_.spellNameCacheRef().end() &&
-                               cacheIt->second.schoolMask == 1 &&
-                               !isRangedWeaponAttackSpell(spellId));
+        const bool isMeleeAbility = spellclass::isMeleeRange(getSpellMaxRange(spellId));
         if (isMeleeAbility && target != 0) {
             auto entity = owner_.getEntityManager().getEntity(target);
             if (entity) {
@@ -1260,14 +1292,12 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
             owner_.suppressNextMeleeSwingAnim();
         }
 
-        // Instant melee abilities → trigger attack animation
+        // Instant melee abilities → trigger attack animation. Range decides this, not
+        // school: physical abilities cast at range (Steady Shot, Taunt) would otherwise
+        // play a melee swing.
         bool isMeleeAbility = false;
-        if (!owner_.isProfessionSpell(sid)) {
-            owner_.loadSpellNameCache();
-            auto cacheIt = owner_.spellNameCacheRef().find(sid);
-            if (cacheIt != owner_.spellNameCacheRef().end() &&
-                cacheIt->second.schoolMask == 1 &&
-                !isRangedWeaponAttackSpell(sid)) {
+        if (!owner_.isProfessionSpell(sid) && !isRangedWeaponAttackSpell(sid)) {
+            if (spellclass::isMeleeRange(getSpellMaxRange(sid))) {
                 isMeleeAbility = (currentCastSpellId_ != sid);
             }
         }
@@ -2158,6 +2188,7 @@ void SpellHandler::loadSpellNameCache() const {
     const uint32_t ebp1Field = spellL ? spellL->field("EffectBasePoints1") : 0xFFFFFFFF;
     const uint32_t ebp2Field = spellL ? spellL->field("EffectBasePoints2") : 0xFFFFFFFF;
     const uint32_t durIdxField = spellL ? spellL->field("DurationIndex") : 0xFFFFFFFF;
+    const uint32_t rangeIdxField = spellL ? spellL->field("RangeIndex") : 0xFFFFFFFF;
     const uint32_t spellVisualIdField = spellL ? spellL->field("SpellVisualID") : 0xFFFFFFFF;
     const uint32_t recoveryField = spellL ? spellL->field("RecoveryTime") : 0xFFFFFFFF;
     const uint32_t categoryRecoveryField = spellL ? spellL->field("CategoryRecoveryTime") : 0xFFFFFFFF;
@@ -2198,6 +2229,9 @@ void SpellHandler::loadSpellNameCache() const {
             // Duration: read DurationIndex and resolve via SpellDuration.dbc later
             if (durIdxField != 0xFFFFFFFF)
                 entry.durationSec = static_cast<float>(dbc->getUInt32(i, durIdxField)); // store index temporarily
+            // Range: read RangeIndex and resolve via SpellRange.dbc later
+            if (rangeIdxField != 0xFFFFFFFF)
+                entry.maxRange = static_cast<float>(dbc->getUInt32(i, rangeIdxField)); // store index temporarily
             // SpellVisualID: references SpellVisual.dbc for cast/impact M2 effects
             if (spellVisualIdField != 0xFFFFFFFF && spellVisualIdField < dbc->getFieldCount())
                 entry.spellVisualId = dbc->getUInt32(i, spellVisualIdField);
@@ -2238,6 +2272,26 @@ void SpellHandler::loadSpellNameCache() const {
                 entry.durationSec = (it != durMap.end()) ? it->second : 0.0f;
             }
         }
+    }
+    // Resolve the stored RangeIndex into an actual max range. Entries that cannot
+    // be resolved fall back to -1 (unknown) so callers keep their old behaviour
+    // rather than mistaking a raw index for a distance in yards.
+    const auto* rangeL = pipeline::getActiveDBCLayout()
+        ? pipeline::getActiveDBCLayout()->getLayout("SpellRange") : nullptr;
+    auto rangeDbc = am->loadDBC("SpellRange.dbc");
+    std::unordered_map<uint32_t, float> rangeMap;
+    if (rangeDbc && rangeDbc->isLoaded() && rangeL) {
+        const uint32_t maxRangeField = rangeL->field("MaxRange");
+        if (maxRangeField != 0xFFFFFFFF && maxRangeField < rangeDbc->getFieldCount()) {
+            for (uint32_t ri = 0; ri < rangeDbc->getRecordCount(); ++ri) {
+                rangeMap[rangeDbc->getUInt32(ri, 0)] = rangeDbc->getFloat(ri, maxRangeField);
+            }
+        }
+    }
+    for (auto& [sid, entry] : owner_.spellNameCacheRef()) {
+        if (entry.maxRange < 0.0f) continue; // no RangeIndex field in this layout
+        auto it = rangeMap.find(static_cast<uint32_t>(entry.maxRange));
+        entry.maxRange = (it != rangeMap.end()) ? it->second : -1.0f;
     }
     LOG_INFO("Trainer: Loaded ", owner_.spellNameCacheRef().size(), " spell names from Spell.dbc");
 }
@@ -2403,6 +2457,47 @@ uint32_t SpellHandler::getSpellTargetFlags(uint32_t spellId) const {
     loadSpellNameCache();
     auto it = owner_.spellNameCacheRef().find(spellId);
     return (it != owner_.spellNameCacheRef().end()) ? it->second.targetFlags : 0;
+}
+
+uint32_t SpellHandler::resolveHighestKnownRank(uint32_t spellId) const {
+    if (spellId == 0 || knownSpells_.count(spellId) > 0) return spellId;
+
+    loadSpellNameCache();
+    const auto& cache = owner_.spellNameCacheRef();
+
+    // Adapt the spell name cache to the pure resolver in spell_classification.hpp.
+    thread_local spellclass::SpellRankInfo scratch;
+    auto lookup = [&cache](uint32_t id) -> const spellclass::SpellRankInfo* {
+        auto it = cache.find(id);
+        if (it == cache.end()) return nullptr;
+        scratch.name = it->second.name;
+        scratch.rank = it->second.rank;
+        return &scratch;
+    };
+
+    const uint32_t best = spellclass::resolveHighestKnownRank(spellId, knownSpells_, lookup);
+    if (best != spellId) {
+        LOG_INFO("Superseded rank: casting ", best, " instead of ", spellId);
+    }
+    return best;
+}
+
+float SpellHandler::getSpellMaxRange(uint32_t spellId) const {
+    if (spellId == 0) return -1.0f;
+    loadSpellNameCache();
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.maxRange : -1.0f;
+}
+
+bool SpellHandler::isSelfCastSpell(uint32_t spellId) const {
+    if (spellId == 0) return false;
+    loadSpellNameCache();
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    if (it == owner_.spellNameCacheRef().end()) return false;
+    // SpellRange "Self Only" has a max range of 0 — the spell cannot reach any
+    // other unit, so it is cast on the caster no matter what is targeted.
+    // A negative range means SpellRange.dbc was unavailable; assume not self-cast.
+    return spellclass::isSelfCastRange(it->second.maxRange);
 }
 
 const std::string& SpellHandler::getSkillLineName(uint32_t spellId) const {
