@@ -158,6 +158,7 @@ void GameScreen::applyCameraControlSettings() {
         cam->setCameraSmoothSpeed(settingsPanel_.pendingCameraStiffness);
         cam->setPivotHeight(settingsPanel_.pendingPivotHeight);
         cam->setIdleOrbitEnabled(settingsPanel_.pendingIdleCameraOrbit);
+        cam->setSmoothCameraFollow(settingsPanel_.pendingSmoothCameraFollow);
     }
 }
 
@@ -245,6 +246,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         if (auto* renderer = services_.renderer) {
             renderer->setShadowsEnabled(settingsPanel_.pendingShadows);
             renderer->setShadowDistance(settingsPanel_.pendingShadowDistance);
+            renderer->setViewDistance(settingsPanel_.pendingViewDistance);
             if (auto* post = renderer->getPostProcessPipeline()) {
                 post->setBrightness(static_cast<float>(settingsPanel_.pendingBrightness) / 50.0f);
             }
@@ -461,6 +463,9 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     windowManager_.renderQuestOfferRewardWindow(gameHandler, chatPanel_, inventoryScreen);
     windowManager_.renderVendorWindow(gameHandler, inventoryScreen, chatPanel_);
     windowManager_.renderTrainerWindow(gameHandler,
+        [this](uint32_t id, pipeline::AssetManager* am) { return getSpellIcon(id, am); },
+        inventoryScreen);
+    windowManager_.renderCraftingWindow(gameHandler,
         [this](uint32_t id, pipeline::AssetManager* am) { return getSpellIcon(id, am); },
         inventoryScreen);
     windowManager_.renderBarberShopWindow(gameHandler);

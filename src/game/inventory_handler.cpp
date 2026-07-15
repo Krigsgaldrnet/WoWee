@@ -932,20 +932,10 @@ void InventoryHandler::handleLootRemoved(network::Packet& packet) {
     uint8_t slotIndex = packet.readUInt8();
     for (auto it = currentLoot_.items.begin(); it != currentLoot_.items.end(); ++it) {
         if (it->slotIndex == slotIndex) {
-            std::string itemName = "item #" + std::to_string(it->itemId);
-            uint32_t quality = 1;
-            if (const ItemQueryResponseData* info = owner_.getItemInfo(it->itemId)) {
-                if (!info->name.empty()) itemName = info->name;
-                quality = info->quality;
-            }
-            std::string link = buildItemLink(it->itemId, quality, itemName);
-            std::string msgStr = "Looted: " + link;
-            if (it->count > 1) msgStr += " x" + std::to_string(it->count);
-            owner_.addSystemChatMessage(msgStr);
-            if (auto* ac = owner_.services().audioCoordinator) {
-                if (auto* sfx = ac->getUiSoundManager())
-                    sfx->playLootItem();
-            }
+            // SMSG_ITEM_PUSH_RESULT is the authoritative inventory receipt and
+            // emits the single "Received item" notification. Slot removal only
+            // updates the open loot window; announcing here duplicated chat and
+            // the loot sound for the same item.
             currentLoot_.items.erase(it);
             if (owner_.addonEventCallbackRef())
                 owner_.addonEventCallbackRef()("LOOT_SLOT_CLEARED", {std::to_string(slotIndex + 1)});
@@ -2033,8 +2023,18 @@ void InventoryHandler::handleSendMailResult(network::Packet& packet) {
     uint32_t mailId = packet.readUInt32();
     uint32_t action = packet.readUInt32();
     uint32_t error  = packet.readUInt32();
-    (void)mailId;
-    if (action == 0) { // SEND
+    // WotLK MailResponseType values from SharedDefines.h.
+    constexpr uint32_t MAIL_SEND = 0;
+    constexpr uint32_t MAIL_MONEY_TAKEN = 1;
+    constexpr uint32_t MAIL_ITEM_TAKEN = 2;
+    constexpr uint32_t MAIL_RETURNED_TO_SENDER = 3;
+    constexpr uint32_t MAIL_DELETED = 4;
+    constexpr uint32_t MAIL_MADE_PERMANENT = 5;
+
+    auto mailIt = std::find_if(mailInbox_.begin(), mailInbox_.end(),
+        [mailId](const MailMessage& mail) { return mail.messageId == mailId; });
+
+    if (action == MAIL_SEND) {
         if (error == 0) {
             owner_.addSystemChatMessage("Mail sent.");
             clearMailAttachments();
@@ -2042,22 +2042,37 @@ void InventoryHandler::handleSendMailResult(network::Packet& packet) {
         } else {
             owner_.addSystemChatMessage("Failed to send mail (error " + std::to_string(error) + ").");
         }
-    } else if (action == 4) { // TAKE_ITEM
+    } else if (action == MAIL_ITEM_TAKEN) {
         if (error == 0) {
             owner_.addSystemChatMessage("Item taken from mail.");
             if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("BAG_UPDATE", {});
         } else {
             owner_.addSystemChatMessage("Failed to take item (error " + std::to_string(error) + ").");
         }
-    } else if (action == 5) { // TAKE_MONEY
+    } else if (action == MAIL_MONEY_TAKEN) {
         if (error == 0) {
+            if (mailIt != mailInbox_.end()) mailIt->money = 0;
             owner_.addSystemChatMessage("Money taken from mail.");
-            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("PLAYER_MONEY", {});
+            if (owner_.addonEventCallbackRef()) {
+                owner_.addonEventCallbackRef()("PLAYER_MONEY", {});
+                owner_.addonEventCallbackRef()("MAIL_INBOX_UPDATE", {});
+            }
+        } else {
+            owner_.addSystemChatMessage("Failed to take money (error " + std::to_string(error) + ").");
         }
-    } else if (action == 2) { // DELETE
+    } else if (action == MAIL_DELETED || action == MAIL_RETURNED_TO_SENDER) {
         if (error == 0) {
-            owner_.addSystemChatMessage("Mail deleted.");
+            owner_.addSystemChatMessage(action == MAIL_DELETED ? "Mail deleted." : "Mail returned.");
+            if (mailIt != mailInbox_.end()) {
+                const int erasedIndex = static_cast<int>(std::distance(mailInbox_.begin(), mailIt));
+                mailInbox_.erase(mailIt);
+                if (selectedMailIndex_ == erasedIndex) selectedMailIndex_ = -1;
+                else if (selectedMailIndex_ > erasedIndex) --selectedMailIndex_;
+            }
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("MAIL_INBOX_UPDATE", {});
         }
+    } else if (action == MAIL_MADE_PERMANENT && error == 0) {
+        owner_.addSystemChatMessage("Mail text copied.");
     }
     refreshMailList();
 }
@@ -2796,7 +2811,7 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
             if (it->itemId == data.entry) {
                 std::string itemName = data.name.empty() ? ("item #" + std::to_string(data.entry)) : data.name;
                 std::string link = buildItemLink(data.entry, data.quality, itemName);
-                std::string msg = "Received: " + link;
+                std::string msg = "Received item: " + link;
                 if (it->count > 1) msg += " x" + std::to_string(it->count);
                 owner_.addSystemChatMessage(msg);
                 if (auto* ac = owner_.services().audioCoordinator) {
@@ -3862,15 +3877,18 @@ void InventoryHandler::handleTrainerBuyFailed(network::Packet& packet) {
     std::string msg = "Cannot learn ";
     if (!spellName.empty()) msg += spellName;
     else msg += "spell #" + std::to_string(spellId);
-    if (errorCode == 0) msg += " (not enough money)";
-    else if (errorCode == 1) msg += " (not enough skill)";
-    else if (errorCode == 2) msg += " (already known)";
-    else if (errorCode != 0) msg += " (error " + std::to_string(errorCode) + ")";
+    // SMSG_TRAINER_BUY_FAILED reason codes (WoW 3.3.5a):
+    //   0 = trainer service unavailable / cannot learn (requirements unmet, e.g. skill too low)
+    //   1 = not enough money
+    //   2 = does not meet requirements (class/race/level/skill)
+    if (errorCode == 1) msg += " (not enough money)";
+    else if (errorCode == 2) msg += " (requirements not met)";
+    else msg += " (requirements not met)";
     owner_.addUIError(msg);
     owner_.addSystemChatMessage(msg);
     if (auto* ac = owner_.services().audioCoordinator)
         if (auto* sfx = ac->getUiSoundManager()) sfx->playError();
-    if (errorCode == 0)
+    if (errorCode == 1)
         owner_.playErrorSpeech(audio::PlayerErrorSpeech::NOT_ENOUGH_MONEY);
     else
         owner_.playErrorSpeech(audio::PlayerErrorSpeech::CANT_LEARN_SPELL);

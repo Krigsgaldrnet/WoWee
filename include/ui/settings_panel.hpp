@@ -37,6 +37,7 @@ public:
     bool displaySettingsLoaded_ = false;
     bool pendingShadows = true;
     float pendingShadowDistance = 300.0f;
+    float pendingViewDistance = 1200.0f;
     bool pendingWaterRefraction = true;
     int pendingBrightness = 50; // 0-100, maps to 0.0-2.0 (50 = 1.0 default)
 
@@ -60,6 +61,7 @@ public:
     bool pendingExtendedZoom = false;
     float pendingCameraStiffness = 30.0f;  // Camera smooth speed (higher = tighter, less sway)
     float pendingPivotHeight = 1.6f;       // Camera pivot height above feet (lower = less detached feel)
+    bool pendingSmoothCameraFollow = false; // Keep lerping while turning (floaty, detached follow)
     float pendingFov = 70.0f;  // degrees, default matches WoW's ~70° horizontal FOV
 
     // ---- Pending UI / interface ----
@@ -67,6 +69,8 @@ public:
     bool pendingMinimapRotate = false;
     bool pendingMinimapSquare = false;
     bool pendingMinimapNpcDots = false;
+    bool pendingShowMinimapClock = false;
+    bool pendingShowMinimapCoordinates = false;
     bool pendingShowLatencyMeter = true;
     bool pendingSeparateBags = true;
     bool pendingShowKeyring = true;
@@ -130,6 +134,8 @@ public:
     bool minimapRotate_ = false;
     bool minimapSquare_ = false;
     bool minimapNpcDots_ = false;
+    bool showMinimapClock_ = false;
+    bool showMinimapCoordinates_ = false;
     bool showLatencyMeter_ = true;           // Show server latency indicator
     bool minimapSettingsApplied_ = false;
     bool volumeSettingsApplied_ = false;  // True once saved volume settings applied to audio managers

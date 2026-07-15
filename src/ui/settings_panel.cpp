@@ -212,6 +212,17 @@ if (ImGui::SliderFloat("Camera Stiffness", &pendingCameraStiffness, 5.0f, 100.0f
     saveCallback();
 }
 ImGui::SetItemTooltip("Higher = tighter camera with less sway. Default: 30");
+if (ImGui::Checkbox("Smooth Camera Follow", &pendingSmoothCameraFollow)) {
+    if (renderer) {
+        if (auto* cameraController = renderer->getCameraController()) {
+            cameraController->setSmoothCameraFollow(pendingSmoothCameraFollow);
+        }
+    }
+    saveCallback();
+}
+ImGui::SetItemTooltip("Camera keeps drifting toward its position even while turning,\n"
+                      "for a floaty, slightly detached follow. Off = turning moves the\n"
+                      "camera 1:1 with your input.");
 if (ImGui::SliderFloat("Camera Pivot Height", &pendingPivotHeight, 0.0f, 3.0f, "%.1f")) {
     if (renderer) {
         if (auto* cameraController = renderer->getCameraController()) {
@@ -277,6 +288,14 @@ if (ImGui::Checkbox("Show Nearby NPC Dots", &pendingMinimapNpcDots)) {
     minimapNpcDots_ = pendingMinimapNpcDots;
     saveCallback();
 }
+if (ImGui::Checkbox("Show Minimap Clock", &pendingShowMinimapClock)) {
+    showMinimapClock_ = pendingShowMinimapClock;
+    saveCallback();
+}
+if (ImGui::Checkbox("Show Minimap Coordinates", &pendingShowMinimapCoordinates)) {
+    showMinimapCoordinates_ = pendingShowMinimapCoordinates;
+    saveCallback();
+}
 // Zoom controls
 ImGui::Text("Minimap Zoom:");
 ImGui::SameLine();
@@ -337,10 +356,13 @@ if (ImGui::Button("Restore Gameplay Defaults", ImVec2(-1, 0))) {
     pendingMouseSensitivity = 0.2f;
     pendingInvertMouse = false;
     pendingExtendedZoom = false;
+    pendingSmoothCameraFollow = false;
     pendingUiOpacity = 65;
     pendingMinimapRotate = false;
     pendingMinimapSquare = false;
     pendingMinimapNpcDots = false;
+    pendingShowMinimapClock = false;
+    pendingShowMinimapCoordinates = false;
     pendingSeparateBags = true;
     inventoryScreen.setSeparateBags(true);
     pendingShowKeyring = true;
@@ -350,11 +372,14 @@ if (ImGui::Button("Restore Gameplay Defaults", ImVec2(-1, 0))) {
     minimapRotate_ = false;
     minimapSquare_ = false;
     minimapNpcDots_ = false;
+    showMinimapClock_ = false;
+    showMinimapCoordinates_ = false;
     if (renderer) {
         if (auto* cameraController = renderer->getCameraController()) {
             cameraController->setMouseSensitivity(pendingMouseSensitivity);
             cameraController->setInvertMouse(pendingInvertMouse);
             cameraController->setExtendedZoom(pendingExtendedZoom);
+            cameraController->setSmoothCameraFollow(pendingSmoothCameraFollow);
         }
         if (auto* minimap = renderer->getMinimap()) {
             minimap->setRotateWithCamera(minimapRotate_);
@@ -680,6 +705,7 @@ void SettingsPanel::renderSettingsWindow(InventoryScreen& inventoryScreen, ChatP
                 cameraController->setCameraSmoothSpeed(pendingCameraStiffness);
                 cameraController->setPivotHeight(pendingPivotHeight);
                 cameraController->setIdleOrbitEnabled(pendingIdleCameraOrbit);
+                cameraController->setSmoothCameraFollow(pendingSmoothCameraFollow);
             }
         }
         pendingResIndex = 0;
@@ -703,6 +729,8 @@ void SettingsPanel::renderSettingsWindow(InventoryScreen& inventoryScreen, ChatP
         pendingMinimapRotate = minimapRotate_;
         pendingMinimapSquare = minimapSquare_;
         pendingMinimapNpcDots = minimapNpcDots_;
+        pendingShowMinimapClock = showMinimapClock_;
+        pendingShowMinimapCoordinates = showMinimapCoordinates_;
         pendingShowLatencyMeter = showLatencyMeter_;
         if (renderer) {
             if (auto* minimap = renderer->getMinimap()) {
@@ -776,6 +804,16 @@ void SettingsPanel::renderSettingsWindow(InventoryScreen& inventoryScreen, ChatP
                     window->setVsync(pendingVsync);
                     updateGraphicsPresetFromCurrentSettings();
                     saveCallback();
+                }
+                ImGui::SetNextItemWidth(240.0f);
+                if (ImGui::SliderFloat("View Distance", &pendingViewDistance,
+                                       400.0f, 2400.0f, "%.0f")) {
+                    if (renderer) renderer->setViewDistance(pendingViewDistance);
+                    updateGraphicsPresetFromCurrentSettings();
+                    saveCallback();
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Controls terrain, world-object, and doodad draw distance.");
                 }
                 if (ImGui::Checkbox("Shadows", &pendingShadows)) {
                     if (renderer) renderer->setShadowsEnabled(pendingShadows);
@@ -1126,6 +1164,7 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
     // Define preset values based on quality level
     switch (preset) {
         case GraphicsPreset::LOW: {
+            pendingViewDistance = 600.0f;
             pendingShadows = false;
             pendingShadowDistance = 100.0f;
             pendingAntiAliasing = 0;  // Off
@@ -1133,6 +1172,7 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
             pendingPOM = false;
             pendingGroundClutterDensity = 25;
             if (renderer) {
+                renderer->setViewDistance(pendingViewDistance);
                 renderer->setShadowsEnabled(false);
                 renderer->setMsaaSamples(VK_SAMPLE_COUNT_1_BIT);
                 if (auto* wr = renderer->getWMORenderer()) {
@@ -1150,6 +1190,7 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
             break;
         }
         case GraphicsPreset::MEDIUM: {
+            pendingViewDistance = 1000.0f;
             pendingShadows = true;
             pendingShadowDistance = 200.0f;
             pendingAntiAliasing = 1;  // 2x MSAA
@@ -1159,6 +1200,7 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
             pendingPOMQuality = 0;  // Low
             pendingGroundClutterDensity = 60;
             if (renderer) {
+                renderer->setViewDistance(pendingViewDistance);
                 renderer->setShadowsEnabled(true);
                 renderer->setShadowDistance(200.0f);
                 renderer->setMsaaSamples(VK_SAMPLE_COUNT_2_BIT);
@@ -1181,6 +1223,7 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
             break;
         }
         case GraphicsPreset::HIGH: {
+            pendingViewDistance = 1600.0f;
             pendingShadows = true;
             pendingShadowDistance = 350.0f;
             pendingAntiAliasing = 2;  // 4x MSAA
@@ -1190,6 +1233,7 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
             pendingPOMQuality = 1;  // Medium
             pendingGroundClutterDensity = 100;
             if (renderer) {
+                renderer->setViewDistance(pendingViewDistance);
                 renderer->setShadowsEnabled(true);
                 renderer->setShadowDistance(350.0f);
                 renderer->setMsaaSamples(VK_SAMPLE_COUNT_4_BIT);
@@ -1212,6 +1256,7 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
             break;
         }
         case GraphicsPreset::ULTRA: {
+            pendingViewDistance = 2400.0f;
             pendingShadows = true;
             pendingShadowDistance = 500.0f;
             pendingAntiAliasing = 3;  // 8x MSAA
@@ -1222,6 +1267,7 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
             pendingPOMQuality = 2;  // High
             pendingGroundClutterDensity = 150;
             if (renderer) {
+                renderer->setViewDistance(pendingViewDistance);
                 renderer->setShadowsEnabled(true);
                 renderer->setShadowDistance(500.0f);
                 renderer->setMsaaSamples(VK_SAMPLE_COUNT_8_BIT);
@@ -1259,18 +1305,22 @@ void SettingsPanel::updateGraphicsPresetFromCurrentSettings() {
     auto matchesPreset = [this](GraphicsPreset preset) -> bool {
         switch (preset) {
             case GraphicsPreset::LOW:
-                return !pendingShadows && pendingAntiAliasing == 0 && !pendingNormalMapping && !pendingPOM &&
+                return pendingViewDistance >= 580.0f && pendingViewDistance <= 620.0f &&
+                       !pendingShadows && pendingAntiAliasing == 0 && !pendingNormalMapping && !pendingPOM &&
                        pendingGroundClutterDensity <= 30;
             case GraphicsPreset::MEDIUM:
-                return pendingShadows && pendingShadowDistance >= 180 && pendingShadowDistance <= 220 &&
+                return pendingViewDistance >= 980.0f && pendingViewDistance <= 1020.0f &&
+                       pendingShadows && pendingShadowDistance >= 180 && pendingShadowDistance <= 220 &&
                        pendingAntiAliasing == 1 && pendingNormalMapping && pendingPOM &&
                        pendingGroundClutterDensity >= 50 && pendingGroundClutterDensity <= 70;
             case GraphicsPreset::HIGH:
-                return pendingShadows && pendingShadowDistance >= 330 && pendingShadowDistance <= 370 &&
+                return pendingViewDistance >= 1580.0f && pendingViewDistance <= 1620.0f &&
+                       pendingShadows && pendingShadowDistance >= 330 && pendingShadowDistance <= 370 &&
                        pendingAntiAliasing == 2 && pendingNormalMapping && pendingPOM &&
                        pendingGroundClutterDensity >= 90 && pendingGroundClutterDensity <= 110;
             case GraphicsPreset::ULTRA:
-                return pendingShadows && pendingShadowDistance >= 480 && pendingAntiAliasing == 3 &&
+                return pendingViewDistance >= 2380.0f && pendingShadows &&
+                       pendingShadowDistance >= 480 && pendingAntiAliasing == 3 &&
                        pendingFXAA && pendingNormalMapping && pendingPOM && pendingGroundClutterDensity >= 140;
             default:
                 return false;

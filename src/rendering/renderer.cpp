@@ -475,6 +475,18 @@ void Renderer::updatePerFrameUBO() {
     float shadowBias = glm::clamp(0.8f * (shadowDistance_ / 300.0f), 0.0f, 1.0f);
     currentFrameData.shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, shadowBias, 0.0f, 0.0f);
 
+    for (uint32_t i = 0; i < MAX_LOCAL_LIGHTS; ++i) {
+        currentFrameData.localLightPosRadius[i] = glm::vec4(0.0f);
+        currentFrameData.localLightColorIntensity[i] = glm::vec4(0.0f);
+    }
+    const uint32_t localLightCount = m2Renderer
+        ? m2Renderer->gatherLocalLights(camera->getPosition(),
+              currentFrameData.localLightPosRadius,
+              currentFrameData.localLightColorIntensity,
+              MAX_LOCAL_LIGHTS)
+        : 0;
+    currentFrameData.localLightMeta = glm::ivec4(static_cast<int32_t>(localLightCount), 0, 0, 0);
+
     // Player water ripple data: pack player XY into shadowParams.zw, ripple strength into fogParams.w
     if (cameraController) {
         currentFrameData.shadowParams.z = characterPosition.x;
@@ -2023,6 +2035,10 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
         }
     }
 
+    // Renderer components can be recreated during map transitions. Restore the
+    // configured view distance instead of falling back to their defaults.
+    setViewDistance(viewDistance_);
+
     // Initialize shadow pipelines for M2 if not yet done
     if (m2Renderer && shadowRenderPass != VK_NULL_HANDLE && !m2Renderer->hasShadowPipeline()) {
         if (!m2Renderer->initializeShadow(shadowRenderPass))
@@ -2246,6 +2262,23 @@ void Renderer::setWireframeMode(bool enabled) {
     }
 }
 
+void Renderer::setViewDistance(float distance) {
+    viewDistance_ = glm::clamp(distance, 400.0f, 2400.0f);
+
+    if (terrainRenderer) terrainRenderer->setViewDistance(viewDistance_);
+    if (wmoRenderer) wmoRenderer->setViewDistance(viewDistance_);
+    if (m2Renderer) m2Renderer->setViewDistance(viewDistance_);
+    if (terrainManager) {
+        terrainManager->setLoadRadius(getTerrainLoadRadius());
+        terrainManager->setUnloadRadius(getTerrainUnloadRadius());
+    }
+}
+
+int Renderer::getTerrainLoadRadius() const {
+    constexpr float kAdtTileSize = 533.33333f;
+    return glm::clamp(static_cast<int>(std::ceil(viewDistance_ / kAdtTileSize)) + 1, 2, 6);
+}
+
 bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int centerY, int radius) {
     // Create terrain renderer if not already created
     if (!terrainRenderer) {
@@ -2413,8 +2446,21 @@ glm::mat4 Renderer::computeLightSpaceMatrix() {
         sunDir = glm::normalize(sunDir);
     }
 
-    // Shadow center follows the player directly; texel snapping below
-    // prevents shimmer without needing to freeze the projection.
+    // Lighting transitions are deliberately smoothed every frame. Feeding that
+    // continuously rotating direction straight into the shadow camera rotates
+    // the entire shadow texel grid and makes otherwise stationary shadows
+    // shimmer. Hold the projection direction until the lighting has moved by a
+    // visible amount; diffuse lighting can continue to transition smoothly.
+    constexpr float kShadowDirectionUpdateCos = 0.9999619f; // cos(0.5 degrees)
+    if (!shadowLightDirectionInitialized_ ||
+        glm::dot(shadowLightDirection_, sunDir) < kShadowDirectionUpdateCos) {
+        shadowLightDirection_ = sunDir;
+        shadowLightDirectionInitialized_ = true;
+    }
+    sunDir = shadowLightDirection_;
+
+    // Shadow center follows the player directly; texel snapping below keeps
+    // translation aligned with the now-stable projection axes.
     glm::vec3 desiredCenter = characterPosition;
     if (!shadowCenterInitialized) {
         if (glm::dot(desiredCenter, desiredCenter) < 1.0f) {

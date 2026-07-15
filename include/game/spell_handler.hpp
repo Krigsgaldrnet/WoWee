@@ -72,6 +72,24 @@ public:
     int getCraftQueueRemaining() const { return craftQueueRemaining_; }
     uint32_t getCraftQueueSpellId() const { return craftQueueSpellId_; }
 
+    // Crafting window (client-side; opened by casting a profession spell
+    // like Cooking or First Aid — see tradeskillOpenerSkillLine)
+    bool isCraftingWindowOpen() const { return craftingWindowOpen_; }
+    uint32_t getCraftingSkillLine() const { return craftingSkillLine_; }
+    void openCraftingWindow(uint32_t skillLine) { craftingWindowOpen_ = true; craftingSkillLine_ = skillLine; }
+    void closeCraftingWindow() { craftingWindowOpen_ = false; }
+    // Returns the skill line id if spellId is a tradeskill-window opener
+    // (e.g. Cooking → 185) with at least one known recipe, else 0.
+    uint32_t tradeskillOpenerSkillLine(uint32_t spellId);
+
+    // SpellFocusObject.dbc name ("Anvil", "Cooking Fire", ...) for
+    // requires-spell-focus cast failures; empty if unknown.
+    const std::string& getSpellFocusName(uint32_t focusId);
+
+    // TotemCategory.dbc name ("Blacksmith Hammer", "Mining Pick", ...) for
+    // totem-category cast failures; empty if unknown.
+    const std::string& getTotemCategoryName(uint32_t categoryId);
+
     // Spell queue (400ms window)
     uint32_t getQueuedSpellId() const { return queuedSpellId_; }
     void cancelQueuedSpell() { queuedSpellId_ = 0; queuedSpellTarget_ = 0; }
@@ -345,6 +363,18 @@ private:
     // Repeat-craft queue
     uint32_t craftQueueSpellId_ = 0;
     int craftQueueRemaining_ = 0;
+
+    // Crafting window
+    bool craftingWindowOpen_ = false;
+    uint32_t craftingSkillLine_ = 0;
+
+    // SpellFocusObject.dbc names, loaded lazily
+    std::unordered_map<uint32_t, std::string> spellFocusNames_;
+    bool spellFocusDbcLoaded_ = false;
+
+    // TotemCategory.dbc names, loaded lazily
+    std::unordered_map<uint32_t, std::string> totemCategoryNames_;
+    bool totemCategoryDbcLoaded_ = false;
 
     // Spell queue (400ms window)
     uint32_t queuedSpellId_ = 0;

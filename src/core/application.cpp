@@ -8,6 +8,7 @@
 #include "core/transport_callback_handler.hpp"
 #include "core/world_entry_callback_handler.hpp"
 #include "core/ui_screen_callback_handler.hpp"
+#include "game/spell_classification.hpp"
 #include "rendering/animation/animation_ids.hpp"
 #include "rendering/animation_controller.hpp"
 #include <unordered_set>
@@ -1007,7 +1008,7 @@ void Application::setState(AppState newState) {
                 gameHandler->setMeleeSwingCallback([this](uint32_t spellId) {
                     if (renderer) {
                         // Ranged auto-attack spells: Auto Shot (75), Shoot (5019), Throw (2764)
-                        if (spellId == 75 || spellId == 5019 || spellId == 2764) {
+                        if (game::spellclass::isRangedWeaponAutoAttack(spellId)) {
                             if (appearanceComposer_ && !appearanceComposer_->isShowingRanged())
                                 appearanceComposer_->showRangedWeapon(true);
                             if (auto* ac = renderer->getAnimationController()) ac->triggerRangedShot();
@@ -1650,8 +1651,12 @@ void Application::update(float deltaTime) {
                 // Taxi flights move fast (32 u/s) — load further ahead so terrain is ready
                 // before the camera arrives.  Keep updates frequent to spot new tiles early.
                 renderer->getTerrainManager()->setUpdateInterval(onTaxi ? 0.033f : 0.033f);
-                renderer->getTerrainManager()->setLoadRadius(onTaxi ? 8 : 4);
-                renderer->getTerrainManager()->setUnloadRadius(onTaxi ? 12 : 7);
+                const int configuredLoadRadius = renderer->getTerrainLoadRadius();
+                const int configuredUnloadRadius = renderer->getTerrainUnloadRadius();
+                renderer->getTerrainManager()->setLoadRadius(
+                    onTaxi ? std::max(8, configuredLoadRadius) : configuredLoadRadius);
+                renderer->getTerrainManager()->setUnloadRadius(
+                    onTaxi ? std::max(12, configuredUnloadRadius) : configuredUnloadRadius);
                 renderer->getTerrainManager()->setTaxiStreamingMode(onTaxi);
                 }
                 if (worldEntryCallbacks_) worldEntryCallbacks_->setLastTaxiFlight(actuallyFlying);

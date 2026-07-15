@@ -63,7 +63,8 @@ bool isBandageSpell(const GameHandler& owner, uint32_t spellId) {
 }
 
 std::string castFailureMessage(const GameHandler& owner, uint32_t spellId,
-                               uint8_t result, int powerType) {
+                               uint8_t result, int powerType, uint32_t miscArg = 0,
+                               uint32_t miscArg2 = 0) {
     // Bandages use a hidden target aura to enforce the Recently Bandaged
     // lockout. Exposing the protocol label ("Target aurastate") gives the
     // player no actionable information.
@@ -72,6 +73,38 @@ std::string castFailureMessage(const GameHandler& owner, uint32_t spellId,
             return "Cannot use another bandage while Recently Bandaged is active.";
         if (result == 40 || result == 41)
             return "Bandaging was interrupted. Remain still until it finishes.";
+    }
+
+    // "Requires spell focus" means a crafting station object must be nearby.
+    // The packet names which one via its SpellFocusObject id — surface it.
+    if (result == kCastResultRequiresSpellFocus) {
+        if (miscArg != 0) {
+            const std::string& focusName = owner.getSpellFocusName(miscArg);
+            if (!focusName.empty())
+                return "Requires " + focusName + " nearby.";
+        }
+        return "You must be near the right crafting station (forge, anvil, cooking fire, ...).";
+    }
+
+    // "Totems" / "Totem category" mean a required crafting tool is missing
+    // (blacksmith hammer, mining pick, ...). Name it from the packet's ids:
+    // TotemCategory.dbc entries for totem-category, item ids for totems.
+    if (result == kCastResultTotemCategory || result == kCastResultTotems) {
+        std::string tools;
+        for (uint32_t id : {miscArg, miscArg2}) {
+            if (id == 0) continue;
+            std::string name;
+            if (result == kCastResultTotemCategory) {
+                name = owner.getTotemCategoryName(id);
+            } else if (const auto* info = owner.getItemInfo(id); info && info->valid) {
+                name = info->name;
+            }
+            if (name.empty()) continue;
+            if (!tools.empty()) tools += " and ";
+            tools += name;
+        }
+        if (!tools.empty()) return "Requires " + tools + " in your inventory.";
+        return "Requires a crafting tool you don't have (blacksmith hammer, mining pick, ...).";
     }
 
     const char* reason = getSpellCastResultString(result, powerType);
@@ -99,15 +132,6 @@ bool isGatherSpellId(uint32_t spellId) {
     return false;
 }
 
-// The three ranged weapon auto-attacks. Used only to pick the shot animation —
-// melee classification comes from the spell's range, not from this list.
-bool isRangedWeaponAttackSpell(uint32_t spellId) {
-    // Client spell IDs shared by the supported legacy expansions.
-    return spellId == 75 ||    // Auto Shot
-           spellId == 5019 ||  // Shoot (wand)
-           spellId == 2764;    // Throw
-}
-
 bool shouldDespawnGatherTarget(uint8_t result) {
     return result == kSpellFailedAlreadyOpen || result == kSpellFailedChestInUse;
 }
@@ -120,7 +144,8 @@ std::string gatherCastFailureMessage(uint8_t result, const std::string& fallback
 
 // Map a (WotLK-normalized) SpellCastResult to a character speech response.
 // Results without a matching voice line return nullopt.
-std::optional<audio::PlayerErrorSpeech> errorSpeechForCastResult(uint8_t result, int powerType) {
+std::optional<audio::PlayerErrorSpeech> errorSpeechForCastResult(
+        uint32_t spellId, uint8_t result, int powerType) {
     using audio::PlayerErrorSpeech;
     switch (result) {
         case 11:  // Bad implicit targets
@@ -138,7 +163,12 @@ std::optional<audio::PlayerErrorSpeech> errorSpeechForCastResult(uint8_t result,
         case 75:  // No ammo
             return PlayerErrorSpeech::NO_AMMO;
         case 67:  // Not ready
-            return PlayerErrorSpeech::SPELL_COOLDOWN;
+            // Ranged weapon attacks are abilities, not conventional spells. If the
+            // server rejects one (weapon/ammo/attack state), use the generic "I can't
+            // do that yet" response instead of "That spell isn't ready yet."
+            return spellclass::isRangedWeaponAutoAttack(spellId)
+                ? PlayerErrorSpeech::ABILITY_COOLDOWN
+                : PlayerErrorSpeech::SPELL_COOLDOWN;
         case 85:  // Not enough power
             switch (powerType) {
                 case 1:  return PlayerErrorSpeech::NO_RAGE;
@@ -316,6 +346,29 @@ void SpellHandler::registerOpcodes(DispatchTable& table) {
     table[Opcode::SMSG_REMOVED_SPELL] = [this](network::Packet& packet) { handleRemovedSpell(packet); };
     table[Opcode::SMSG_SEND_UNLEARN_SPELLS] = [this](network::Packet& packet) { handleUnlearnSpells(packet); };
     table[Opcode::SMSG_TALENTS_INFO] = [this](network::Packet& packet) { handleTalentsInfo(packet); };
+    // Server asks the player to confirm a talent reset (guid + gold cost).
+    // Must be handled here: this handler owns the pending-wipe state that the
+    // confirm dialog reads.
+    table[Opcode::MSG_TALENT_WIPE_CONFIRM] = [this](network::Packet& packet) {
+        if (!packet.hasRemaining(12)) { packet.skipAll(); return; }
+        talentWipeNpcGuid_ = packet.readUInt64();
+        talentWipeCost_    = packet.readUInt32();
+        talentWipePending_ = true;
+        LOG_INFO("MSG_TALENT_WIPE_CONFIRM: npc=0x", std::hex, talentWipeNpcGuid_, std::dec,
+                 " cost=", talentWipeCost_);
+        owner_.fireAddonEvent("CONFIRM_TALENT_WIPE", {std::to_string(talentWipeCost_)});
+    };
+    // SMSG_PET_UNLEARN_CONFIRM: uint64 petGuid + uint32 cost (copper). Handled
+    // here for the same reason — this handler owns the pending-unlearn state.
+    // The other pet opcodes have different formats and must NOT set unlearn state.
+    table[Opcode::SMSG_PET_UNLEARN_CONFIRM] = [this](network::Packet& packet) {
+        if (packet.hasRemaining(12)) {
+            petUnlearnGuid_ = packet.readUInt64();
+            petUnlearnCost_ = packet.readUInt32();
+            petUnlearnPending_ = true;
+        }
+        packet.skipAll();
+    };
     table[Opcode::SMSG_ACHIEVEMENT_EARNED] = [this](network::Packet& packet) {
         handleAchievementEarned(packet);
     };
@@ -411,6 +464,15 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     // sending any error, so swap in the highest rank we actually know.
     spellId = resolveHighestKnownRank(spellId);
 
+    // Profession spells (Cooking, First Aid, Alchemy, ...) open the crafting
+    // window client-side instead of being sent as casts — matching the real
+    // client, where these spells just open the tradeskill UI.
+    if (uint32_t craftSkillLine = tradeskillOpenerSkillLine(spellId)) {
+        LOG_INFO("castSpell: spell ", spellId, " opens crafting window for skill line ", craftSkillLine);
+        openCraftingWindow(craftSkillLine);
+        return;
+    }
+
     // Casting any spell while mounted → dismount instead
     if (owner_.isMounted()) {
         owner_.dismount();
@@ -469,13 +531,26 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
                 owner_.addSystemChatMessage("You cannot attack that target.");
                 return;
             }
-            // Friendly creatures cannot be charged. Only creatures are filtered:
-            // players stay chargeable so duels and PvP still work, since a duel
-            // opponent shares the player's faction and so is not flagged hostile.
-            if (entity->getType() == ObjectType::UNIT &&
-                !unit->isHostile() && !owner_.isAggressiveTowardPlayer(target)) {
-                owner_.addSystemChatMessage("You cannot attack that target.");
-                return;
+            if (entity->getType() == ObjectType::UNIT) {
+                // Neutral combat creatures (yellow-name mobs such as Goretusks)
+                // are valid Charge targets even though they are not inherently
+                // hostile. Match normal right-click combat by rejecting only
+                // service NPCs and targets the server explicitly marks as
+                // non-attackable/immune, rather than requiring hostile faction.
+                constexpr uint32_t UNIT_FLAG_NON_ATTACKABLE = 0x00000002;
+                constexpr uint32_t UNIT_FLAG_IMMUNE_TO_PC   = 0x00000100;
+                constexpr uint32_t UNIT_FLAG_NOT_SELECTABLE = 0x02000000;
+                constexpr uint32_t kBlockedChargeFlags =
+                    UNIT_FLAG_NON_ATTACKABLE |
+                    UNIT_FLAG_IMMUNE_TO_PC |
+                    UNIT_FLAG_NOT_SELECTABLE;
+                const bool hostileOrAggressive =
+                    unit->isHostile() || owner_.isAggressiveTowardPlayer(target);
+                const bool clearlyFriendly = unit->isInteractable() && !hostileOrAggressive;
+                if (clearlyFriendly || (unit->getUnitFlags() & kBlockedChargeFlags) != 0) {
+                    owner_.addSystemChatMessage("You cannot attack that target.");
+                    return;
+                }
             }
         }
         float tx = entity->getX(), ty = entity->getY(), tz = entity->getZ();
@@ -1151,7 +1226,14 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
     if (data.result == kSpellFailedNotReady) {
         seedCooldownFromSpellInfo(data.spellId);
     }
-    std::string errMsg = castFailureMessage(owner_, data.spellId, data.result, powerType);
+    // Totem failures name tool item ids; request their info so a retry of the
+    // craft can show the tool's name even if it wasn't cached yet.
+    if (data.result == kCastResultTotems) {
+        if (data.miscArg != 0) owner_.ensureItemInfo(data.miscArg);
+        if (data.miscArg2 != 0) owner_.ensureItemInfo(data.miscArg2);
+    }
+    std::string errMsg = castFailureMessage(owner_, data.spellId, data.result, powerType,
+                                            data.miscArg, data.miscArg2);
     if (gatherCast) {
         errMsg = gatherCastFailureMessage(data.result, errMsg);
         if (shouldDespawnGatherTarget(data.result)) {
@@ -1173,7 +1255,7 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
     // Character speech response ("Not enough mana", "I'm out of range", ...)
     // Suppressed for gather casts, whose failures are routine and already rephrased.
     if (!gatherCast) {
-        if (auto speech = errorSpeechForCastResult(data.result, powerType))
+        if (auto speech = errorSpeechForCastResult(data.spellId, data.result, powerType))
             owner_.playErrorSpeech(*speech);
     }
 
@@ -1287,7 +1369,7 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
         // casts and are NOT classified as instant melee abilities, so trigger the
         // ranged shot animation explicitly here.
         uint32_t sid = data.spellId;
-        if (isRangedWeaponAttackSpell(sid)) {
+        if (spellclass::isRangedWeaponAutoAttack(sid)) {
             if (owner_.meleeSwingCallbackRef()) owner_.meleeSwingCallbackRef()(sid);
             owner_.suppressNextMeleeSwingAnim();
         }
@@ -1296,7 +1378,7 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
         // school: physical abilities cast at range (Steady Shot, Taunt) would otherwise
         // play a melee swing.
         bool isMeleeAbility = false;
-        if (!owner_.isProfessionSpell(sid) && !isRangedWeaponAttackSpell(sid)) {
+        if (!owner_.isProfessionSpell(sid) && !spellclass::isRangedWeaponAutoAttack(sid)) {
             if (spellclass::isMeleeRange(getSpellMaxRange(sid))) {
                 isMeleeAbility = (currentCastSpellId_ != sid);
             }
@@ -2334,6 +2416,106 @@ void SpellHandler::loadSkillLineAbilityDbc() {
     }
 }
 
+const std::string& SpellHandler::getSpellFocusName(uint32_t focusId) {
+    static const std::string kEmpty;
+    if (!spellFocusDbcLoaded_) {
+        spellFocusDbcLoaded_ = true;
+        auto* am = owner_.services().assetManager;
+        if (am && am->isInitialized()) {
+            auto dbc = am->loadDBC("SpellFocusObject.dbc");
+            // Layout is stable across expansions: ID(0) + Name locstring
+            // whose English text sits at field 1.
+            if (dbc && dbc->isLoaded() && dbc->getFieldCount() >= 2) {
+                for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
+                    uint32_t id = dbc->getUInt32(i, 0);
+                    std::string name = dbc->getString(i, 1);
+                    if (id != 0 && !name.empty())
+                        spellFocusNames_[id] = std::move(name);
+                }
+                LOG_INFO("Loaded ", spellFocusNames_.size(), " spell focus object names");
+            }
+        }
+    }
+    auto it = spellFocusNames_.find(focusId);
+    return it != spellFocusNames_.end() ? it->second : kEmpty;
+}
+
+const std::string& SpellHandler::getTotemCategoryName(uint32_t categoryId) {
+    static const std::string kEmpty;
+    if (!totemCategoryDbcLoaded_) {
+        totemCategoryDbcLoaded_ = true;
+        auto* am = owner_.services().assetManager;
+        if (am && am->isInitialized()) {
+            // TBC/WotLK only — absent in Vanilla, where totem failures carry
+            // item ids instead of category ids.
+            auto dbc = am->loadDBC("TotemCategory.dbc");
+            // ID(0) + Name locstring whose English text sits at field 1.
+            if (dbc && dbc->isLoaded() && dbc->getFieldCount() >= 2) {
+                for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
+                    uint32_t id = dbc->getUInt32(i, 0);
+                    std::string name = dbc->getString(i, 1);
+                    if (id != 0 && !name.empty())
+                        totemCategoryNames_[id] = std::move(name);
+                }
+                LOG_INFO("Loaded ", totemCategoryNames_.size(), " totem category names");
+            }
+        }
+    }
+    auto it = totemCategoryNames_.find(categoryId);
+    return it != totemCategoryNames_.end() ? it->second : kEmpty;
+}
+
+uint32_t SpellHandler::tradeskillOpenerSkillLine(uint32_t spellId) {
+    owner_.loadSpellNameCache();
+    owner_.loadSkillLineDbc();
+    owner_.loadSkillLineAbilityDbc();
+
+    // SkillLine.dbc categories that hold crafting recipes
+    static constexpr uint32_t CAT_SECONDARY  = 9;   // Cooking, First Aid, Fishing
+    static constexpr uint32_t CAT_PROFESSION = 11;  // Alchemy, Blacksmithing, ...
+    // Smelting shares the Mining skill line but isn't named after it
+    static constexpr uint32_t SPELL_SMELTING = 2656;
+
+    auto slIt = owner_.spellToSkillLineRef().find(spellId);
+    if (slIt == owner_.spellToSkillLineRef().end()) return 0;
+    const uint32_t skillLine = slIt->second;
+
+    auto catIt = owner_.skillLineCategoriesRef().find(skillLine);
+    if (catIt == owner_.skillLineCategoriesRef().end()) return 0;
+    if (catIt->second != CAT_SECONDARY && catIt->second != CAT_PROFESSION) return 0;
+
+    // Opener heuristic: the window-opening spell is named after its skill line
+    // ("Cooking" opens Cooking). Recipes, gathering casts (Disenchant, Fishing
+    // bobber cast is filtered below by the recipe requirement), and utility
+    // spells never share the skill line's name.
+    if (spellId != SPELL_SMELTING) {
+        const std::string& spellName = owner_.getSpellName(spellId);
+        auto nameIt = owner_.skillLineNamesRef().find(skillLine);
+        if (spellName.empty() || nameIt == owner_.skillLineNamesRef().end() ||
+            spellName != nameIt->second) {
+            return 0;
+        }
+    }
+
+    // Only open a window that will actually list something: require at least
+    // one known recipe (creates an item or consumes reagents) in this line.
+    // This keeps Fishing falling through to a normal bobber cast.
+    for (uint32_t known : knownSpells_) {
+        if (known == spellId) continue;
+        auto kslIt = owner_.spellToSkillLineRef().find(known);
+        if (kslIt == owner_.spellToSkillLineRef().end() || kslIt->second != skillLine) continue;
+        auto cacheIt = owner_.spellNameCacheRef().find(known);
+        if (cacheIt == owner_.spellNameCacheRef().end()) continue;
+        const auto& entry = cacheIt->second;
+        bool hasReagents = false;
+        for (const auto& reagent : entry.reagents) {
+            if (reagent.itemId != 0) { hasReagents = true; break; }
+        }
+        if (entry.createdItemId != 0 || hasReagents) return skillLine;
+    }
+    return 0;
+}
+
 void SpellHandler::categorizeTrainerSpells() {
     owner_.trainerTabsRef().clear();
 
@@ -2648,7 +2830,10 @@ void SpellHandler::extractExploredZoneFields(const FlatFieldMap& fields) {
 void SpellHandler::handleCastResult(network::Packet& packet) {
     uint32_t castResultSpellId = 0;
     uint8_t  castResult        = 0;
-    if (owner_.getPacketParsers()->parseCastResult(packet, castResultSpellId, castResult)) {
+    uint32_t castResultMiscArg = 0;
+    uint32_t castResultMiscArg2 = 0;
+    if (owner_.getPacketParsers()->parseCastResult(packet, castResultSpellId, castResult,
+                                                   castResultMiscArg, castResultMiscArg2)) {
         LOG_DEBUG("SMSG_CAST_RESULT: spellId=", castResultSpellId, " result=", static_cast<int>(castResult));
         if (castResult != 0) {
             const uint64_t gatherGoGuid = owner_.lastInteractedGoGuidRef();
@@ -2666,8 +2851,15 @@ void SpellHandler::handleCastResult(network::Packet& packet) {
             if (castResult == kSpellFailedNotReady) {
                 seedCooldownFromSpellInfo(castResultSpellId);
             }
+            // Totem failures name tool item ids; request their info so a retry
+            // of the craft can show the tool's name even if it wasn't cached.
+            if (castResult == kCastResultTotems) {
+                if (castResultMiscArg != 0) owner_.ensureItemInfo(castResultMiscArg);
+                if (castResultMiscArg2 != 0) owner_.ensureItemInfo(castResultMiscArg2);
+            }
             std::string errMsg = castFailureMessage(owner_, castResultSpellId,
-                                                     castResult, playerPowerType);
+                                                     castResult, playerPowerType,
+                                                     castResultMiscArg, castResultMiscArg2);
             if (gatherCast) {
                 errMsg = gatherCastFailureMessage(castResult, errMsg);
                 if (shouldDespawnGatherTarget(castResult)) {

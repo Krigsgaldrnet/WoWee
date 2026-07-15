@@ -1112,6 +1112,9 @@ bool CastFailedParser::parse(network::Packet& packet, CastFailedData& data) {
     data.castCount = packet.readUInt8();
     data.spellId = packet.readUInt32();
     data.result = packet.readUInt8();
+    // Spell-focus and totem failures append ids naming the missing
+    // station/tool so the client can surface them.
+    readCastResultArgs(packet, data.result, data.miscArg, data.miscArg2);
     LOG_INFO("Cast failed: spell=", data.spellId, " result=", static_cast<int>(data.result));
     return true;
 }

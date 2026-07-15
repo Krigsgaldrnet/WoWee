@@ -3,11 +3,13 @@
 #include "game/game_utils.hpp"
 #include "game/entity.hpp"
 #include "game/update_field_table.hpp"
+#include "game/quest_progress.hpp"
 #include "game/packet_parsers.hpp"
 #include "network/world_socket.hpp"
 #include "rendering/renderer.hpp"
 #include "audio/audio_coordinator.hpp"
 #include "audio/ui_sound_manager.hpp"
+#include "pipeline/asset_manager.hpp"
 #include "core/application.hpp"
 #include "core/logger.hpp"
 #include <algorithm>
@@ -343,8 +345,25 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
 
     // ---- SMSG_QUESTLOG_FULL ----
     table[Opcode::SMSG_QUESTLOG_FULL] = [this](network::Packet& /*packet*/) {
-        owner_.addUIError("Your quest log is full.");
-        owner_.addSystemChatMessage("Your quest log is full.");
+        const std::string msg = "Your quest log is full (" +
+            std::to_string(maxQuestLogSlots()) + " quests). Abandon a quest to make room.";
+        owner_.addUIError(msg);
+        owner_.addSystemChatMessage(msg);
+        // Roll back the optimistic local entries the server refused; without
+        // this the local log drifts past the server cap with phantom quests.
+        bool removed = false;
+        for (const auto& [pendingQuestId, npcGuid] : pendingQuestAcceptNpcGuids_) {
+            (void)npcGuid;
+            if (findQuestLogSlotIndexFromServer(pendingQuestId) < 0) {
+                removed |= std::erase_if(questLog_, [&](const QuestLogEntry& q) {
+                    return q.questId == pendingQuestId;
+                }) > 0;
+            }
+        }
+        pendingQuestAcceptTimeouts_.clear();
+        pendingQuestAcceptNpcGuids_.clear();
+        if (removed && owner_.addonEventCallbackRef())
+            owner_.addonEventCallbackRef()("QUEST_LOG_UPDATE", {});
     };
 
     // ---- SMSG_QUESTGIVER_REQUEST_ITEMS ----
@@ -502,6 +521,8 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                             sfx->playQuestComplete();
                     }
                     questLog_.erase(it);
+                    owner_.setQuestTracked(questId, false);
+                    owner_.setQuestShownOnMap(questId, false);
                     LOG_INFO("  Removed quest ", questId, " from quest log");
                     if (owner_.addonEventCallbackRef())
                         owner_.addonEventCallbackRef()("QUEST_TURNED_IN", {std::to_string(questId)});
@@ -533,7 +554,7 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
         if (rem >= 12) {
             uint32_t questId = packet.readUInt32();
             clearPendingQuestAccept(questId);
-            uint32_t entry = packet.readUInt32();
+            uint32_t entry = normalizeQuestObjectiveEntry(packet.readUInt32());
             uint32_t count = packet.readUInt32();
             uint32_t reqCount = 0;
             if (packet.hasRemaining(4)) {
@@ -565,6 +586,7 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                     // a corresponding objective count in SMSG_QUEST_QUERY_RESPONSE. Fall back to
                     // current count so the progress display shows "N/N" instead of "N/0".
                     if (reqCount == 0) reqCount = count;
+                    count = std::min(count, reqCount);
                     quest.killCounts[entry] = {count, reqCount};
 
                     std::string creatureName = owner_.getCachedCreatureName(entry);
@@ -682,11 +704,12 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
         if (rem >= 12) {
             uint32_t questId = packet.readUInt32();
             clearPendingQuestAccept(questId);
-            uint32_t entry = packet.readUInt32();
+            uint32_t entry = normalizeQuestObjectiveEntry(packet.readUInt32());
             uint32_t count = packet.readUInt32();
             uint32_t reqCount = 0;
             if (packet.hasRemaining(4)) reqCount = packet.readUInt32();
             if (reqCount == 0) reqCount = count;
+            count = std::min(count, reqCount);
             LOG_INFO("Quest kill update (compat via COMPLETE): questId=", questId,
                      " entry=", entry, " count=", count, "/", reqCount);
             for (auto& quest : questLog_) {
@@ -769,6 +792,8 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
             removed = true;
         }
         if (removed) {
+            owner_.setQuestTracked(questId, false);
+            owner_.setQuestShownOnMap(questId, false);
             if (!removedTitle.empty()) {
                 owner_.addSystemChatMessage("Quest removed: " + removedTitle);
             } else {
@@ -804,6 +829,18 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
             if (questLevel < -1 || questLevel > 255) questLevel = 0; // sanity: wrong layout
         }
 
+        // ZoneOrSort follows questLevel: offset 12 in Classic/TBC, 16 in WotLK
+        // (which inserted MinLevel before it). >0 = AreaTable zone id, <0 =
+        // QuestSort.dbc category. Used to group the quest log by zone.
+        int32_t zoneOrSort = 0;
+        {
+            const size_t zosOffset = (questLogStride >= 5) ? 16 : 12;
+            if (packet.getData().size() >= zosOffset + 4) {
+                zoneOrSort = static_cast<int32_t>(readU32At(packet.getData(), zosOffset));
+                if (zoneOrSort < -100000 || zoneOrSort > 100000) zoneOrSort = 0; // sanity
+            }
+        }
+
         const QuestQueryTextCandidate parsed = pickBestQuestQueryTexts(packet.getData(), isClassicLayout);
         const QuestQueryObjectives objs = extractQuestQueryObjectives(packet.getData(), questLogStride);
         const QuestQueryRewardsData rwds = QuestQueryRewardsParser::parse(packet.getData(), questLogStride);
@@ -812,6 +849,7 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
             if (q.questId != questId) continue;
 
             if (questLevel != 0) q.level = questLevel;
+            if (zoneOrSort != 0) q.zoneOrSort = zoneOrSort;
 
             const int existingScore = scoreQuestTitle(q.title);
             const bool parsedStrong = isStrongQuestTitle(parsed.title);
@@ -903,14 +941,10 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
 
     // ---- SMSG_QUESTUPDATE_ADD_PVP_KILL ----
     table[Opcode::SMSG_QUESTUPDATE_ADD_PVP_KILL] = [this](network::Packet& packet) {
-        if (packet.hasRemaining(16)) {
-            /*uint64_t guid =*/ packet.readUInt64();
+        if (packet.hasRemaining(12)) {
             uint32_t questId = packet.readUInt32();
             uint32_t count   = packet.readUInt32();
-            uint32_t reqCount = 0;
-            if (packet.hasRemaining(4)) {
-                reqCount = packet.readUInt32();
-            }
+            uint32_t reqCount = packet.readUInt32();
 
             constexpr uint32_t PVP_KILL_ENTRY = 0u;
             for (auto& quest : questLog_) {
@@ -929,6 +963,7 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                     }
                 }
                 if (reqCount == 0) reqCount = count;
+                count = std::min(count, reqCount);
                 quest.killCounts[PVP_KILL_ENTRY] = {count, reqCount};
 
                 std::string progressMsg = quest.title + ": PvP kills " +
@@ -1163,6 +1198,20 @@ void QuestHandler::acceptQuest() {
         std::erase_if(questLog_, [&](const QuestLogEntry& q) { return q.questId == questId; });
     }
 
+    // The server caps the quest log (20 slots in Vanilla, 25 in TBC/WotLK).
+    // Accepting past the cap only earns SMSG_QUESTLOG_FULL, so stop it here
+    // with a clearer message and no optimistic local entry to roll back.
+    const int maxSlots = maxQuestLogSlots();
+    if (static_cast<int>(questLog_.size()) >= maxSlots) {
+        const std::string msg = "Your quest log is full (" + std::to_string(maxSlots) +
+                                " quests). Abandon a quest to make room.";
+        owner_.addUIError(msg);
+        owner_.addSystemChatMessage(msg);
+        if (auto* ac = owner_.services().audioCoordinator)
+            if (auto* sfx = ac->getUiSoundManager()) sfx->playError();
+        return;
+    }
+
     network::Packet packet = owner_.getPacketParsers()
         ? owner_.getPacketParsers()->buildAcceptQuestPacket(npcGuid, questId)
         : QuestgiverAcceptQuestPacket::build(npcGuid, questId);
@@ -1362,6 +1411,33 @@ void QuestHandler::declineSharedQuest() {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+int QuestHandler::maxQuestLogSlots() const {
+    return isClassicLikeExpansion() ? 20 : 25;
+}
+
+const std::string& QuestHandler::getQuestSortName(uint32_t sortId) {
+    static const std::string kEmpty;
+    if (!questSortDbcLoaded_) {
+        questSortDbcLoaded_ = true;
+        auto* am = owner_.services().assetManager;
+        if (am && am->isInitialized()) {
+            auto dbc = am->loadDBC("QuestSort.dbc");
+            // ID(0) + Name locstring whose English text sits at field 1
+            if (dbc && dbc->isLoaded() && dbc->getFieldCount() >= 2) {
+                for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
+                    uint32_t id = dbc->getUInt32(i, 0);
+                    std::string name = dbc->getString(i, 1);
+                    if (id != 0 && !name.empty())
+                        questSortNames_[id] = std::move(name);
+                }
+                LOG_INFO("Loaded ", questSortNames_.size(), " quest sort names");
+            }
+        }
+    }
+    auto it = questSortNames_.find(sortId);
+    return it != questSortNames_.end() ? it->second : kEmpty;
+}
+
 bool QuestHandler::hasQuestInLog(uint32_t questId) const {
     for (const auto& q : questLog_) {
         if (q.questId == questId) return true;
@@ -1373,7 +1449,8 @@ int QuestHandler::findQuestLogSlotIndexFromServer(uint32_t questId) const {
     if (questId == 0 || owner_.lastPlayerFieldsRef().empty()) return -1;
     const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
     const uint8_t qStride = owner_.getPacketParsers() ? owner_.getPacketParsers()->questLogStride() : 5;
-    for (uint16_t slot = 0; slot < 25; ++slot) {
+    const uint16_t maxSlots = static_cast<uint16_t>(maxQuestLogSlots());
+    for (uint16_t slot = 0; slot < maxSlots; ++slot) {
         const uint16_t idField = ufQuestStart + slot * qStride;
         auto it = owner_.lastPlayerFieldsRef().find(idField);
         if (it != owner_.lastPlayerFieldsRef().end() && it->second == questId) {
@@ -1404,8 +1481,6 @@ bool QuestHandler::resyncQuestLogFromServerSlots(bool forceQueryMetadata) {
     const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
     const uint8_t qStride = owner_.getPacketParsers() ? owner_.getPacketParsers()->questLogStride() : 5;
 
-    static constexpr uint32_t kQuestStatusComplete = 1;
-
     std::unordered_map<uint32_t, bool> serverQuestComplete;
     serverQuestComplete.reserve(25);
     for (uint16_t slot = 0; slot < 25; ++slot) {
@@ -1420,8 +1495,7 @@ bool QuestHandler::resyncQuestLogFromServerSlots(bool forceQueryMetadata) {
         if (qStride >= 2) {
             auto stateIt = owner_.lastPlayerFieldsRef().find(stateField);
             if (stateIt != owner_.lastPlayerFieldsRef().end()) {
-                uint32_t state = stateIt->second & 0xFF;
-                complete = (state == kQuestStatusComplete);
+                complete = isQuestSlotComplete(qStride, stateIt->second);
             }
         }
         serverQuestComplete[questId] = complete;
@@ -1474,8 +1548,6 @@ void QuestHandler::applyQuestStateFromFields(const FlatFieldMap& fields) {
     const uint8_t qStride = owner_.getPacketParsers() ? owner_.getPacketParsers()->questLogStride() : 5;
     if (qStride < 2) return;
 
-    static constexpr uint32_t kQuestStatusComplete = 1;
-
     for (uint16_t slot = 0; slot < 25; ++slot) {
         const uint16_t idField    = ufQuestStart + slot * qStride;
         const uint16_t stateField = idField + 1;
@@ -1498,9 +1570,19 @@ void QuestHandler::applyQuestStateFromFields(const FlatFieldMap& fields) {
             clearPendingQuestAccept(questId);
         }
 
+        // VALUES updates are authoritative quest progress too. Some servers do
+        // not emit (or clients may miss) a separate ADD_KILL notification for
+        // every counter change, so refresh the tracker from the quest slot.
+        for (auto& quest : questLog_) {
+            if (quest.questId == questId) {
+                applyPackedKillCountsFromFields(quest);
+                break;
+            }
+        }
+
         auto stateIt = fields.find(stateField);
         if (stateIt == fields.end()) continue;
-        bool serverComplete = ((stateIt->second & 0xFF) == kQuestStatusComplete);
+        bool serverComplete = isQuestSlotComplete(qStride, stateIt->second);
         if (!serverComplete) continue;
 
         for (auto& quest : questLog_) {
@@ -1525,7 +1607,8 @@ void QuestHandler::applyPackedKillCountsFromFields(QuestLogEntry& quest) {
     int slot = findQuestLogSlotIndexFromServer(quest.questId);
     if (slot < 0) return;
 
-    const uint16_t countField1 = ufQuestStart + static_cast<uint16_t>(slot) * qStride + 2;
+    const uint16_t countField1 = ufQuestStart + static_cast<uint16_t>(slot) * qStride
+                               + questObjectiveCountFieldOffset(qStride);
     const uint16_t countField2 = (qStride >= 5)
                                      ? static_cast<uint16_t>(countField1 + 1)
                                      : static_cast<uint16_t>(0xFFFF);
@@ -1540,14 +1623,7 @@ void QuestHandler::applyPackedKillCountsFromFields(QuestLogEntry& quest) {
         if (f2It != owner_.lastPlayerFieldsRef().end()) packed2 = f2It->second;
     }
 
-    auto unpack6 = [](uint32_t word, int idx) -> uint8_t {
-        return static_cast<uint8_t>((word >> (idx * 6)) & 0x3F);
-    };
-    const uint8_t counts[6] = {
-        unpack6(packed1, 0), unpack6(packed1, 1),
-        unpack6(packed1, 2), unpack6(packed1, 3),
-        unpack6(packed2, 0), unpack6(packed2, 1),
-    };
+    const auto counts = decodeQuestObjectiveCounts(qStride, packed1, packed2);
 
     // Apply kill objective counts (indices 0-3).
     for (int i = 0; i < 4; ++i) {
@@ -1556,21 +1632,17 @@ void QuestHandler::applyPackedKillCountsFromFields(QuestLogEntry& quest) {
         const uint32_t entryKey = static_cast<uint32_t>(
             obj.npcOrGoId > 0 ? obj.npcOrGoId : -obj.npcOrGoId);
         if (counts[i] == 0 && quest.killCounts.count(entryKey)) continue;
-        quest.killCounts[entryKey] = {counts[i], obj.required};
+        const uint32_t current = std::min(counts[i], obj.required);
+        quest.killCounts[entryKey] = {current, obj.required};
         LOG_DEBUG("Quest ", quest.questId, " objective[", i, "]: npcOrGo=",
-                  obj.npcOrGoId, " count=", (int)counts[i], "/", obj.required);
+                  obj.npcOrGoId, " count=", current, "/", obj.required);
     }
 
-    // Apply item objective counts (WotLK only).
+    // Item collection progress is not stored in PLAYER_QUEST_LOG counters;
+    // those fields contain the four creature/GO counters in every expansion.
     for (int i = 0; i < 6; ++i) {
         const auto& obj = quest.itemObjectives[i];
         if (obj.itemId == 0 || obj.required == 0) continue;
-        if (i < 2 && qStride >= 5) {
-            uint8_t cnt = counts[4 + i];
-            if (cnt > 0) {
-                quest.itemCounts[obj.itemId] = std::max(quest.itemCounts[obj.itemId], static_cast<uint32_t>(cnt));
-            }
-        }
         quest.requiredItemCounts.emplace(obj.itemId, obj.required);
     }
 }
