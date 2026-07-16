@@ -574,7 +574,7 @@ bool Renderer::initialize(core::Window* win) {
 
     // LightingManager doesn't use GL — initialize for data-only use
     lightingManager = std::make_unique<LightingManager>();
-    [[maybe_unused]] auto* assetManager = core::Application::getInstance().getAssetManager();
+    auto* assetManager = core::Application::getInstance().getAssetManager();
 
     // Create zone manager; enrich music paths from DBC if available
     zoneManager = std::make_unique<game::ZoneManager>();
@@ -1162,7 +1162,24 @@ const std::string& Renderer::getCurrentZoneName() const {
 }
 
 uint32_t Renderer::getCurrentZoneId() const {
-    return audioCoordinator_ ? audioCoordinator_->getCurrentZoneId() : 0;
+    uint32_t tileZoneId = 0;
+    if (zoneManager && terrainManager) {
+        if (const auto areaId = terrainManager->getAreaIdAt(
+                characterPosition.x, characterPosition.y)) {
+            return zoneManager->resolveAreaZoneId(*areaId);
+        }
+        const auto tile = terrainManager->getCurrentTile();
+        tileZoneId = zoneManager->getZoneId(tile.x, tile.y);
+    }
+
+    const auto* gh = core::Application::getInstance().getGameHandler();
+    if (gh && gh->getWorldStateZoneId() != 0) {
+        const uint32_t areaId = gh->getWorldStateZoneId();
+        return zoneManager ? zoneManager->resolveAreaZoneId(areaId) : areaId;
+    }
+    if (audioCoordinator_ && audioCoordinator_->getCurrentZoneId() != 0)
+        return audioCoordinator_->getCurrentZoneId();
+    return tileZoneId;
 }
 
 void Renderer::update(float deltaTime) {
@@ -1220,14 +1237,22 @@ void Renderer::update(float deltaTime) {
         float gameTime    = gh ? gh->getGameTime() : -1.0f;
         bool isRaining    = gh ? gh->isRaining() : false;
         bool isUnderwater = cameraController ? cameraController->isSwimming() : false;
+        const uint32_t resolvedZoneId = getCurrentZoneId();
 
-        lightingManager->update(characterPosition, mapId, gameTime, isRaining, isUnderwater);
+        lightingManager->update(characterPosition, mapId, resolvedZoneId,
+                                gameTime, isRaining, isUnderwater);
 
         // Sync weather visual renderer with game state
         if (weather && gh) {
             uint32_t wType = gh->getWeatherType();
             float wInt = gh->getWeatherIntensity();
-            if (wType != 0) {
+            if (resolvedZoneId == 10) {
+                // Duskwood's defining effect is persistent ground fog. Some
+                // realms continuously report rain here; suppress those streak
+                // particles so they cannot replace the authored fog ambience.
+                weather->setWeatherType(Weather::Type::NONE);
+                weather->setIntensity(0.0f);
+            } else if (wType != 0) {
                 // Server-driven weather (SMSG_WEATHER) — authoritative
                 if (wType == 1)      weather->setWeatherType(Weather::Type::RAIN);
                 else if (wType == 2) weather->setWeatherType(Weather::Type::SNOW);
@@ -1415,14 +1440,18 @@ void Renderer::update(float deltaTime) {
             else if (wt == Weather::Type::STORM) zctx.weatherType = 3;
             zctx.weatherIntensity = weather->getIntensity();
         }
+        if (lightingManager) {
+            zctx.gameTimeHours = lightingManager->getVisualTimeOfDayHours();
+        }
         if (terrainManager) {
             auto tile = terrainManager->getCurrentTile();
             zctx.tileX = tile.x;
             zctx.tileY = tile.y;
             zctx.hasTile = true;
         }
-        const auto* gh2 = core::Application::getInstance().getGameHandler();
-        zctx.serverZoneId = gh2 ? gh2->getWorldStateZoneId() : 0;
+        // Use the precise MCNK area classification when available; this avoids
+        // stale server world-state zones and whole-ADT ambiguity at river banks.
+        zctx.serverZoneId = getCurrentZoneId();
         zctx.zoneManager = zoneManager.get();
         audioCoordinator_->updateZoneAudio(zctx);
     }
@@ -1564,7 +1593,9 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
 
     // Get time of day for sky-related rendering
     auto* skybox = skySystem ? skySystem->getSkybox() : nullptr;
-    float timeOfDay = skybox ? skybox->getTimeOfDay() : 12.0f;
+    float timeOfDay = lightingManager
+        ? lightingManager->getVisualTimeOfDayHours()
+        : (skybox ? skybox->getTimeOfDay() : 12.0f);
 
     // ── Multithreaded secondary command buffer recording ──
     // Terrain, WMO, and M2 record on worker threads while main thread handles
@@ -2687,7 +2718,9 @@ void Renderer::renderReflectionPass() {
         if (skySystem) {
             rendering::SkyParams skyParams;
             auto* reflSkybox = skySystem->getSkybox();
-            skyParams.timeOfDay = reflSkybox ? reflSkybox->getTimeOfDay() : 12.0f;
+            skyParams.timeOfDay = lightingManager
+                ? lightingManager->getVisualTimeOfDayHours()
+                : (reflSkybox ? reflSkybox->getTimeOfDay() : 12.0f);
             if (lightingManager) {
                 const auto& lp = lightingManager->getLightingParams();
                 skyParams.directionalDir = lp.directionalDir;

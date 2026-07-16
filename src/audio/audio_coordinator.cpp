@@ -106,9 +106,25 @@ void AudioCoordinator::updateZoneAudio(const ZoneAudioContext& ctx) {
         musicSwitchCooldown_ = std::max(0.0f, musicSwitchCooldown_ - deltaTime);
     }
 
+    // Resolve the spatial zone before updating ambience. Zone ambience used to
+    // run first, leaving it one zone behind and permanently on its noon default.
+    auto* zm = ctx.zoneManager;
+    const uint32_t tileZoneId = (zm && ctx.hasTile)
+        ? zm->getZoneId(ctx.tileX, ctx.tileY)
+        : 0;
+    const uint32_t serverZoneId = (zm && ctx.serverZoneId != 0)
+        ? zm->resolveAreaZoneId(ctx.serverZoneId)
+        : ctx.serverZoneId;
+    uint32_t zoneId = serverZoneId != 0 ? serverZoneId : tileZoneId;
+
     // ── Ambient weather audio sync ──
     if (ambientSoundManager_) {
         bool isBlacksmith = (ctx.insideWmoId == 96048);
+
+        if (zoneId != 0) {
+            ambientSoundManager_->setZoneId(zoneId);
+        }
+        ambientSoundManager_->setGameTime(ctx.gameTimeHours);
 
         // Map visual weather type to ambient sound weather type
         AmbientSoundManager::WeatherType audioWeatherType = AmbientSoundManager::WeatherType::NONE;
@@ -126,12 +142,7 @@ void AudioCoordinator::updateZoneAudio(const ZoneAudioContext& ctx) {
     }
 
     // ── Zone detection and music transitions ──
-    auto* zm = ctx.zoneManager;
     if (!zm || !musicManager_ || !ctx.hasTile) return;
-
-    uint32_t zoneId = (ctx.serverZoneId != 0)
-        ? ctx.serverZoneId
-        : zm->getZoneId(ctx.tileX, ctx.tileY);
 
     bool insideTavern = false;
     bool insideBlacksmith = false;
@@ -229,9 +240,6 @@ void AudioCoordinator::updateZoneAudio(const ZoneAudioContext& ctx) {
                     musicSwitchCooldown_ = 6.0f;
                 }
             }
-        }
-        if (ambientSoundManager_) {
-            ambientSoundManager_->setZoneId(zoneId);
         }
     }
 
