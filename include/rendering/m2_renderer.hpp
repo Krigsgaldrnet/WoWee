@@ -54,6 +54,7 @@ struct M2ModelGPU {
         uint8_t texFlags = 0;     // M2Texture.flags (bit0=WrapS, bit1=WrapT)
         bool lanternGlowHint = false; // Texture/model hints this batch is a glow-card billboard
         bool glowCardLike = false; // Batch likely is a flat emissive card that should be sprite-replaced
+        bool preserveGlowMesh = false; // Keep emissive glass/fixture mesh below its glow sprite
         uint8_t glowTint = 0; // 0=warm, 1=cool, 2=red
         float batchOpacity = 1.0f; // Resolved texture weight opacity (0=transparent, skip batch)
         glm::vec3 center = glm::vec3(0.0f); // Center of batch geometry (model space)
@@ -87,6 +88,7 @@ struct M2ModelGPU {
     bool isFireflyEffect = false;   // Firefly/fireflies M2 (exempt from particle dampeners)
     bool isWaterfall = false;       // Waterfall model (ambient sound + splash particles)
     bool isBrazierOrFire = false;   // Brazier / campfire / bonfire model
+    bool isGroundFire = false;      // Ground fire whose halo follows its lowest flame emitter
     bool isTorch = false;           // Wall-mounted or standing torch
     AmbientEmitterType ambientEmitterType = AmbientEmitterType::None;
 
@@ -277,6 +279,7 @@ struct M2MaterialUBO {
     float fadeAlpha;
     float interiorDarken;
     float specularIntensity;
+    float emissiveBoost;
 };
 
 // M2 params UBO — matches M2Params in m2.vert.glsl (set 1, binding 1)
@@ -299,6 +302,8 @@ public:
 
     [[nodiscard]] bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
                     pipeline::AssetManager* assets);
+    /** Configure this renderer for camera-centered sky M2s before initialize(). */
+    void setSkyMode(bool enabled) { skyMode_ = enabled; }
     void shutdown();
 
     bool hasModel(uint32_t modelId) const;
@@ -756,6 +761,7 @@ private:
     // M2 particle emitter system
     static constexpr size_t MAX_M2_PARTICLES = 4000;
     std::mt19937 particleRng_{123};
+    bool skyMode_ = false;
 
     // Cached camera state from update() for frustum-culling bones
     glm::vec3 cachedCamPos_ = glm::vec3(0.0f);

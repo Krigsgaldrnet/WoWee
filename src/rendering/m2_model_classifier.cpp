@@ -69,8 +69,9 @@ M2ClassificationResult classifyM2Model(
     r.isWaterfall       = has(n, "waterfall");
 
     r.isElvenLike   = has(n, "elf")     || has(n, "elven") || has(n, "quel");
-    r.isLanternLike = has(n, "lantern") || has(n, "lamp")  || has(n, "light")
-                    || has(n, "sconce");
+    r.isLanternLike = has(n, "lantern") || has(n, "lamp")  || has(n, "light") ||
+                      has(n, "sconce")  || has(n, "candle") ||
+                      has(n, "candelabra") || has(n, "chandelier");
     r.isKoboldFlame = has(n, "kobold")
                     && (has(n, "candle") || has(n, "torch") || has(n, "mine"));
 
@@ -80,6 +81,10 @@ M2ClassificationResult classifyM2Model(
     const bool forgeName   = has(n, "forge") && !has(n, "forgelava");
     const bool torchName   = has(n, "torch") && !r.isKoboldFlame;
     r.isBrazierOrFire = fireName || brazierName;
+    // TaurenLampPost is the small ground-level path fire used around Camp
+    // Narache, despite its misleading model name. Its decorative halo must
+    // follow the lowest flame emitter rather than the mesh/card center.
+    r.isGroundFire    = (fireName && !brazierName) || has(n, "taurenlamppost");
     r.isTorch         = torchName;
 
     // ---------------------------------------------------------------
@@ -311,6 +316,11 @@ M2BatchTexClassification classifyBatchTexture(const std::string& lowerTexKey)
     if (r.exactLanternGlowTex) r.hasGlowCardToken = true;
     r.likelyFlame      = hasAny(lowerTexKey, kLikelyFlameTokens);
     r.lanternFamily    = hasAny(lowerTexKey, kLanternFamilyTokens);
+    // Stormwind street lamps use an opaque unlit glass texture rather than a
+    // named glow card or particle emitter. Preserve that glass mesh and layer
+    // a soft halo over it in the renderer.
+    r.softGlowSurface  = lowerTexKey ==
+        "dungeons\\textures\\doodads\\stormwindlampglass.blp";
     r.glowTint         = hasAny(lowerTexKey, kCoolTintTokens) ? 1
                        : hasAny(lowerTexKey, kRedTintTokens)  ? 2
                        : 0;

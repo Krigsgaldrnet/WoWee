@@ -413,6 +413,12 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
     modelData.boundingBoxMin = model.boundingBoxMin;
     modelData.boundingBoxMax = model.boundingBoxMax;
     modelData.wmoAmbientColor = model.ambientColor;
+    std::string lowerSourcePath = model.sourcePath;
+    std::replace(lowerSourcePath.begin(), lowerSourcePath.end(), '/', '\\');
+    std::transform(lowerSourcePath.begin(), lowerSourcePath.end(), lowerSourcePath.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const bool isStormwindCityWmo =
+        lowerSourcePath.find("\\buildings\\stormwind\\stormwind.wmo") != std::string::npos;
     {
         glm::vec3 ext = model.boundingBoxMax - model.boundingBoxMin;
         float horiz = std::max(ext.x, ext.y);
@@ -542,7 +548,13 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 isCityShell = (lower.find("city") == 0 && lower.size() <= 8);
             }
             bool isIndoor = (wmoGroup.flags & 0x2000) != 0;
-            if ((nVerts < 100 && isLargeWmo && !isIndoor) || (alwaysDraw && nVerts < 5000 && isLargeWmo && !isIndoor) || (isFacade && isLargeWmo && !isIndoor) || (isCityShell && !isIndoor && isLargeWmo)) {
+            const bool isStormwindCathedralShell = isStormwindCityWmo && isLargeWmo &&
+                                                   isIndoor && (wmoGroup.flags & 0x80) != 0;
+            if ((nVerts < 100 && isLargeWmo && !isIndoor) ||
+                (alwaysDraw && nVerts < 5000 && isLargeWmo && !isIndoor) ||
+                (isFacade && isLargeWmo && !isIndoor) ||
+                (isCityShell && !isIndoor && isLargeWmo) ||
+                isStormwindCathedralShell) {
                 resources.isLOD = true;
             }
             modelData.groups.push_back(resources);
@@ -563,11 +575,20 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             bool alphaTest;
             bool unlit;
             bool isWindow;
-            bool operator==(const BatchKey& o) const { return texPtr == o.texPtr && alphaTest == o.alphaTest && unlit == o.unlit && isWindow == o.isWindow; }
+            bool isEmissive;
+            bool operator==(const BatchKey& o) const {
+                return texPtr == o.texPtr && alphaTest == o.alphaTest &&
+                       unlit == o.unlit && isWindow == o.isWindow &&
+                       isEmissive == o.isEmissive;
+            }
         };
         struct BatchKeyHash {
             size_t operator()(const BatchKey& k) const {
-                return std::hash<uintptr_t>()(k.texPtr) ^ (std::hash<bool>()(k.alphaTest) << 1) ^ (std::hash<bool>()(k.unlit) << 2) ^ (std::hash<bool>()(k.isWindow) << 3);
+                return std::hash<uintptr_t>()(k.texPtr) ^
+                       (std::hash<bool>()(k.alphaTest) << 1) ^
+                       (std::hash<bool>()(k.unlit) << 2) ^
+                       (std::hash<bool>()(k.isWindow) << 3) ^
+                       (std::hash<bool>()(k.isEmissive) << 4);
             }
         };
         std::unordered_map<BatchKey, GroupResources::MergedBatch, BatchKeyHash> batchMap;
@@ -613,6 +634,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             // distinguish actual glass from lamp post geometry.
             bool isWindow = false;
             bool isLava = false;
+            bool isEmissive = false;
             if (batch.materialId < modelData.materialTextureIndices.size()) {
                 uint32_t ti = modelData.materialTextureIndices[batch.materialId];
                 if (ti < modelData.textureNames.size()) {
@@ -620,7 +642,9 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                     // Case-insensitive search for material types
                     std::string texNameLower = texName;
                     std::transform(texNameLower.begin(), texNameLower.end(), texNameLower.begin(), ::tolower);
-                    isWindow = (texNameLower.find("window") != std::string::npos ||
+                    isEmissive = texNameLower.find("stormwindlampglass.blp") != std::string::npos;
+                    isWindow = !isEmissive &&
+                               (texNameLower.find("window") != std::string::npos ||
                                 texNameLower.find("glass") != std::string::npos);
                     isLava = (texNameLower.find("lava") != std::string::npos ||
                               texNameLower.find("molten") != std::string::npos ||
@@ -628,7 +652,8 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 }
             }
 
-            BatchKey key{ reinterpret_cast<uintptr_t>(tex), alphaTest, unlit, isWindow };
+            BatchKey key{ reinterpret_cast<uintptr_t>(tex), alphaTest, unlit,
+                          isWindow, isEmissive };
             auto& mb = batchMap[key];
             if (mb.draws.empty()) {
                 mb.texture = tex;
@@ -638,6 +663,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 mb.isTransparent = (blendMode >= 2);
                 mb.isWindow = isWindow;
                 mb.isLava = isLava;
+                mb.isEmissive = isEmissive;
                 // Look up normal/height map from texture cache
                 if (hasTexture && tex != whiteTexture_.get()) {
                     for (const auto& [cacheKey, cacheEntry] : textureCache) {
@@ -688,6 +714,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             matData.wmoAmbientR = modelData.wmoAmbientColor.r;
             matData.wmoAmbientG = modelData.wmoAmbientColor.g;
             matData.wmoAmbientB = modelData.wmoAmbientColor.b;
+            matData.emissive = mb.isEmissive ? 1 : 0;
             if (matBuf.info.pMappedData) {
                 memcpy(matBuf.info.pMappedData, &matData, sizeof(matData));
             }

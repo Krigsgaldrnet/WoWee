@@ -1166,7 +1166,9 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     const bool batchUnlit = (batch.materialFlags & 0x01) != 0;
                     const bool shouldUseGlowSprite =
                         !koboldFlameCard &&
-                        (model.isElvenLike || ((model.isLanternLike || model.isTorch) && batch.lanternGlowHint)) &&
+                        (model.isElvenLike ||
+                         ((model.isLanternLike || model.isTorch || model.isBrazierOrFire) &&
+                          batch.lanternGlowHint)) &&
                         !model.isSpellEffect &&
                         smallCardLikeBatch &&
                         (batch.lanternGlowHint ||
@@ -1176,7 +1178,36 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                         // Generate glow sprites for each instance in the group
                         for (size_t j = lodIdx; j < lodEnd; j++) {
                             auto& inst = instances[pending[j].instanceIdx];
-                            glm::vec3 worldPos = glm::vec3(inst.modelMatrix * glm::vec4(batch.center, 1.0f));
+                            glm::vec3 worldPos;
+                            if (model.isGroundFire &&
+                                !model.particleEmitters.empty()) {
+                                worldPos = glm::vec3(std::numeric_limits<float>::max());
+                                for (const auto& emitter : model.particleEmitters) {
+                                    glm::mat4 boneXform(1.0f);
+                                    if (emitter.bone < inst.boneMatrices.size()) {
+                                        boneXform = inst.boneMatrices[emitter.bone];
+                                    }
+                                    const glm::vec3 emitterWorld = glm::vec3(
+                                        inst.modelMatrix * boneXform * glm::vec4(emitter.position, 1.0f));
+                                    if (emitterWorld.z < worldPos.z) worldPos = emitterWorld;
+                                }
+                            } else {
+                                worldPos = glm::vec3(inst.modelMatrix *
+                                                     glm::vec4(batch.center, 1.0f));
+                            }
+                            // Preserved emissive glass writes opaque depth before
+                            // this additive point sprite. Move only the visual
+                            // halo just beyond the camera-facing glass surface so
+                            // depth testing does not reject it; the associated
+                            // local light remains at the true batch center.
+                            if (batch.preserveGlowMesh) {
+                                const glm::vec3 towardCamera = camPos - worldPos;
+                                const float lenSq = glm::dot(towardCamera, towardCamera);
+                                if (lenSq > 0.0001f) {
+                                    worldPos += towardCamera * glm::inversesqrt(lenSq) *
+                                        (batch.glowSize * inst.scale * 1.25f);
+                                }
+                            }
                             GlowSprite gs;
                             gs.worldPos = worldPos;
                             if (batch.glowTint == 1 || model.isElvenLike)
@@ -1188,17 +1219,22 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                             // Match the parent M2's distance fade instead of a separate
                             // hard 180-unit cutoff, which made tunnel lights pop on.
                             gs.color.a *= pending[j].fadeAlpha;
-                            gs.size = batch.glowSize * inst.scale * 1.45f;
+                            gs.size = batch.glowSize * inst.scale *
+                                (batch.preserveGlowMesh ? 2.0f : 1.45f);
+                            if (batch.preserveGlowMesh) gs.color.a *= 1.25f;
                             glowSprites_.push_back(gs);
                             GlowSprite halo = gs;
-                            halo.color.a *= 0.42f;
-                            halo.size *= 1.8f;
+                            halo.color.a *= batch.preserveGlowMesh ? 0.34f : 0.42f;
+                            halo.size *= batch.preserveGlowMesh ? 2.2f : 1.8f;
                             glowSprites_.push_back(halo);
                         }
                         const bool cardLikeSkipMesh =
-                            batch.glowCardLike || (batch.blendMode >= 3) || batch.colorKeyBlack || batchUnlit;
+                            !batch.preserveGlowMesh &&
+                            (batch.glowCardLike || (batch.blendMode >= 3) ||
+                             batch.colorKeyBlack || batchUnlit);
                         const bool lanternGlowCardSkip =
-                            (model.isLanternLike || model.isTorch) && batch.lanternGlowHint &&
+                            (model.isLanternLike || model.isTorch || model.isBrazierOrFire) &&
+                            batch.lanternGlowHint &&
                             smallCardLikeBatch && cardLikeSkipMesh;
                         if (lanternGlowCardSkip || (cardLikeSkipMesh && !model.isLanternLike))
                             continue;
@@ -1319,7 +1355,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     // Push constants + instanced draw
                     M2PushConstants pc;
                     pc.texCoordSet = static_cast<int32_t>(batch.textureUnit);
-                    pc.isFoliage = model.shadowWindFoliage ? 1 : 0;
+                    pc.isFoliage = skyMode_ ? -1 : (model.shadowWindFoliage ? 1 : 0);
                     pc.instanceDataOffset = static_cast<int32_t>(drawOffset);
                     vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
                     vkCmdDrawIndexed(cmd, batch.indexCount, groupSize, batch.indexStart, 0, 0);
@@ -1418,15 +1454,19 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 (batch.lanternGlowHint && batch.glowSize <= 6.0f);
             const bool shouldUseGlowSprite =
                 !koboldFlameCard &&
-                (model.isElvenLike || model.isLanternLike || model.isTorch) &&
+                (model.isElvenLike ||
+                 ((model.isLanternLike || model.isTorch || model.isBrazierOrFire) &&
+                  batch.lanternGlowHint)) &&
                 !model.isSpellEffect &&
                 smallCardLikeBatch &&
                 (batch.lanternGlowHint || (batch.blendMode >= 3) ||
                  (batch.colorKeyBlack && batchUnlit && batch.blendMode >= 1));
             if (shouldUseGlowSprite) {
-                const bool cardLikeSkipMesh = batch.glowCardLike || (batch.blendMode >= 3) || batch.colorKeyBlack || batchUnlit;
+                const bool cardLikeSkipMesh = !batch.preserveGlowMesh &&
+                    (batch.glowCardLike || (batch.blendMode >= 3) ||
+                     batch.colorKeyBlack || batchUnlit);
                 const bool lanternGlowCardSkip =
-                    (model.isLanternLike || model.isTorch) &&
+                    (model.isLanternLike || model.isTorch || model.isBrazierOrFire) &&
                     batch.lanternGlowHint &&
                     smallCardLikeBatch &&
                     cardLikeSkipMesh;
@@ -1502,7 +1542,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             // Push constants + single-instance draw
             M2PushConstants pc;
             pc.texCoordSet = static_cast<int32_t>(batch.textureUnit);
-            pc.isFoliage = model.shadowWindFoliage ? 1 : 0;
+            pc.isFoliage = skyMode_ ? -1 : (model.shadowWindFoliage ? 1 : 0);
             pc.instanceDataOffset = static_cast<int32_t>(drawOffset);
             vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
             vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);

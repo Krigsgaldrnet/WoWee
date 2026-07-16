@@ -28,6 +28,7 @@ layout(set = 1, binding = 2) uniform M2Material {
     float fadeAlpha;
     float interiorDarken;
     float specularIntensity;
+    float emissiveBoost;
 };
 
 layout(set = 0, binding = 1) uniform sampler2DShadow uShadowMap;
@@ -38,6 +39,7 @@ layout(location = 2) in vec2 TexCoord;
 layout(location = 3) flat in vec3 InstanceOrigin;
 layout(location = 4) in float ModelHeight;
 layout(location = 5) in float vFadeAlpha;
+layout(location = 6) flat in int vSkyMode;
 
 layout(location = 0) out vec4 outColor;
 
@@ -114,6 +116,13 @@ void main() {
     }
     if (blendMode == 1 && texColor.a < 0.004) discard;
 
+    // Original client sky M2s carry their authored color and alpha. They are
+    // camera-centered, unlit, and must not be swallowed by world-distance fog.
+    if (vSkyMode != 0) {
+        outColor = vec4(texColor.rgb, texColor.a * vFadeAlpha);
+        return;
+    }
+
     // Per-instance color variation (foliage only)
     if (isFoliage) {
         float hash = fract(sin(dot(InstanceOrigin.xy, vec2(127.1, 311.7))) * 43758.5453);
@@ -140,7 +149,10 @@ void main() {
 
     vec3 result;
     if (unlit != 0) {
-        result = texColor.rgb;
+        result = texColor.rgb * emissiveBoost;
+        if (emissiveBoost > 1.0) {
+            result += vec3(0.32, 0.14, 0.025) * (emissiveBoost - 1.0);
+        }
     } else {
         vec3 viewDir = normalize(viewPos.xyz - FragPos);
 
