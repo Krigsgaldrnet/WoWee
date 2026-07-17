@@ -2016,7 +2016,7 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
             ? instance.overrideModelMatrix
             : getModelMatrix(instance);
 
-        for (const auto& wa : instance.weaponAttachments) {
+        for (auto& wa : instance.weaponAttachments) {
             auto weapIt = instances.find(wa.weaponInstanceId);
             if (weapIt == instances.end()) continue;
 
@@ -2028,9 +2028,65 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
 
             // Weapon model matrix = character model * bone transform * attachment
             // offset * item/sheath orientation.
-            const glm::mat4 weaponMat =
+            glm::mat4 weaponMat =
                 charModelMat * boneMat * glm::translate(glm::mat4(1.0f), wa.offset) *
                 wa.localTransform;
+
+            // Back-sheathed weapons: the swinging left arm passes through the
+            // canted blade while running. Sample the whole arm — shoulder,
+            // elbow, hand attachment points plus segment midpoints — against
+            // the weapon model's AABB and ease the blade outward, away from
+            // the spine, so the arm pushes it instead of clipping. A single
+            // sphere at the elbow joint missed forearm/upper-arm contact.
+            constexpr uint32_t kAttachmentBack = 12;
+            if (wa.attachmentId == kAttachmentBack && weapIt->second.cachedModel) {
+                constexpr uint32_t kAttachmentHandLeft = 2;
+                constexpr uint32_t kAttachmentElbowLeft = 4;
+                constexpr uint32_t kAttachmentShoulderLeft = 6;
+                constexpr float kArmRadius = 0.16f;      // arm mesh thickness around the joint chain
+                constexpr float kPushClearance = 0.03f;  // keep the blade slightly off the sleeve
+                constexpr float kMaxPush = 0.35f;
+
+                const glm::mat4 weaponInv = glm::inverse(weaponMat);
+                const auto& wm = weapIt->second.cachedModel->data;
+
+                glm::vec3 joints[3];
+                int jointCount = 0;
+                for (uint32_t attId : {kAttachmentShoulderLeft, kAttachmentElbowLeft, kAttachmentHandLeft}) {
+                    glm::mat4 m;
+                    if (getAttachmentTransform(pair.first, attId, m)) {
+                        joints[jointCount++] = glm::vec3(m[3]);
+                    }
+                }
+
+                float targetPush = 0.0f;
+                auto testPoint = [&](const glm::vec3& worldPt) {
+                    const glm::vec3 local = glm::vec3(weaponInv * glm::vec4(worldPt, 1.0f));
+                    const glm::vec3 closest = glm::clamp(local, wm.boundMin, wm.boundMax);
+                    const float pen = kArmRadius - glm::distance(local, closest);
+                    if (pen > 0.0f) targetPush = std::max(targetPush, pen + kPushClearance);
+                };
+                for (int j = 0; j < jointCount; ++j) {
+                    testPoint(joints[j]);
+                    if (j + 1 < jointCount) testPoint((joints[j] + joints[j + 1]) * 0.5f);
+                }
+                targetPush = std::min(targetPush, kMaxPush);
+                if (targetPush > 0.0f && wa.sheathPush < 0.01f) {
+                    core::Logger::getInstance().debug("Sheath push engaged: pen=", targetPush,
+                                                      " joints=", jointCount);
+                }
+
+                wa.sheathPush += (targetPush - wa.sheathPush) * std::min(1.0f, deltaTime * 14.0f);
+                if (wa.sheathPush > 0.001f) {
+                    // Horizontal direction from the spine out through the weapon.
+                    glm::vec3 outward = glm::vec3(weaponMat[3]) - glm::vec3(charModelMat[3]);
+                    outward.z = 0.0f;
+                    const float len = glm::length(outward);
+                    if (len > 0.001f) {
+                        weaponMat = glm::translate(glm::mat4(1.0f), (outward / len) * wa.sheathPush) * weaponMat;
+                    }
+                }
+            }
             weapIt->second.overrideModelMatrix = weaponMat;
             weapIt->second.hasOverrideModelMatrix = true;
 
@@ -3460,11 +3516,18 @@ void CharacterRenderer::removeInstance(uint32_t instanceId) {
              " remaining=", instances.size() - 1,
              " override=", (void*)renderPassOverride_);
 
-    // Remove child attachments first (helmets/weapons), otherwise they leak as
-    // orphan render instances when the parent creature despawns.
+    // Remove child attachments first (helmets/weapons/enchant effects),
+    // otherwise they leak as orphan render instances when the parent creature
+    // despawns. Their models get a fresh id per attach, so unload those too
+    // once the instances are gone.
     auto attachments = it->second.weaponAttachments;
     for (const auto& wa : attachments) {
+        for (const auto& fx : wa.effects) removeInstance(fx.effectInstanceId);
         removeInstance(wa.weaponInstanceId);
+    }
+    for (const auto& wa : attachments) {
+        unloadModelIfUnused(wa.weaponModelId);
+        for (const auto& fx : wa.effects) unloadModelIfUnused(fx.effectModelId);
     }
 
     // Defer bone buffer destruction — in-flight command buffers may still
@@ -3741,14 +3804,32 @@ void CharacterRenderer::detachWeapon(uint32_t charInstanceId, uint32_t attachmen
 
     for (auto it = attachments.begin(); it != attachments.end(); ++it) {
         if (it->attachmentId == attachmentId) {
-            for (const auto& fx : it->effects) removeInstance(fx.effectInstanceId);
+            // Collect model ids before erasing the attachment, then unload the
+            // ones no instance still uses (each attach allocates a fresh id).
+            std::vector<uint32_t> modelIds;
+            modelIds.push_back(it->weaponModelId);
+            for (const auto& fx : it->effects) {
+                removeInstance(fx.effectInstanceId);
+                modelIds.push_back(fx.effectModelId);
+            }
             removeInstance(it->weaponInstanceId);
             attachments.erase(it);
+            for (uint32_t mid : modelIds) unloadModelIfUnused(mid);
             core::Logger::getInstance().info("Detached weapon from instance ", charInstanceId,
                 " attachment ", attachmentId);
             return;
         }
     }
+}
+
+void CharacterRenderer::unloadModelIfUnused(uint32_t modelId) {
+    auto modelIt = models.find(modelId);
+    if (modelIt == models.end()) return;
+    for (const auto& p : instances) {
+        if (p.second.modelId == modelId) return;
+    }
+    destroyModelGPU(modelIt->second, /*defer=*/true);
+    models.erase(modelIt);
 }
 
 bool CharacterRenderer::attachWeaponEffect(uint32_t charInstanceId, uint32_t attachmentId,

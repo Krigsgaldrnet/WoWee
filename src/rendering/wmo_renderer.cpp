@@ -1464,8 +1464,38 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
             // from an interior group whose portals aren't in the frustum — hiding
             // the entire WMO.
             glm::vec3 localRealCam = glm::vec3(instance.invModelMatrix * glm::vec4(camPos, 1.0f));
-            if (findContainingGroup(model, localRealCam) < 0) {
+            int camGroup = findContainingGroup(model, localRealCam);
+            if (camGroup < 0) {
                 usePortalCulling = false;
+            } else {
+                // Entranceways and awnings: the best-fit AABB often claims an
+                // interior group while the camera is visually outside (interior
+                // boxes spill past the doorway). Only trust portal traversal
+                // when the camera group is interior-only — the same rule
+                // getVisibleGroupsViaPortals applies to the viewer position.
+                constexpr uint32_t WMO_GROUP_FLAG_OUTDOOR = 0x8;
+                constexpr uint32_t WMO_GROUP_FLAG_INDOOR = 0x2000;
+                const uint32_t gFlags = model.groups[camGroup].groupFlags;
+                const bool isIndoor = (gFlags & WMO_GROUP_FLAG_INDOOR) != 0;
+                const bool isOutdoor = (gFlags & WMO_GROUP_FLAG_OUTDOOR) != 0;
+                if (!isIndoor || isOutdoor) {
+                    usePortalCulling = false;
+                } else {
+                    // Doorway thresholds sit inside both the interior box and
+                    // an outdoor street group's box — treat those as outdoors
+                    // too (second half of the viewer-side rule).
+                    for (size_t gi = 0; gi < model.groups.size(); ++gi) {
+                        if (static_cast<int>(gi) == camGroup) continue;
+                        const auto& g = model.groups[gi];
+                        if (!(g.groupFlags & WMO_GROUP_FLAG_OUTDOOR)) continue;
+                        if (localRealCam.x >= g.boundingBoxMin.x && localRealCam.x <= g.boundingBoxMax.x &&
+                            localRealCam.y >= g.boundingBoxMin.y && localRealCam.y <= g.boundingBoxMax.y &&
+                            localRealCam.z >= g.boundingBoxMin.z && localRealCam.z <= g.boundingBoxMax.z) {
+                            usePortalCulling = false;
+                            break;
+                        }
+                    }
+                }
             }
         }
         if (usePortalCulling) {
@@ -2224,13 +2254,33 @@ void WMORenderer::getVisibleGroupsViaPortals(const ModelData& model,
         }
     }
 
-    // BFS through portals from camera's group
+    // Exterior groups are never portal-culled. AABB containment misclassifies
+    // doorway/awning thresholds as indoors (interior boxes spill past the
+    // door and outdoor boxes don't always overlap them), and a wrong BFS
+    // start then hides the whole city. Portal traversal below only decides
+    // interior-only groups; streets and facades always draw (distance culling
+    // still bounds them).
+    for (size_t gi = 0; gi < model.groups.size(); ++gi) {
+        const uint32_t f = model.groups[gi].groupFlags;
+        if (!(f & WMO_GROUP_FLAG_INDOOR) || (f & WMO_GROUP_FLAG_OUTDOOR))
+            outVisibleGroups.insert(static_cast<uint32_t>(gi));
+    }
+
+    // BFS through portals from the viewer's group plus every always-visible
+    // exterior group, so interiors seen through open doors still draw even
+    // when the viewer's containing group was misclassified.
     std::vector<bool> visited(model.groups.size(), false);
     std::vector<uint32_t> queue;
     queue.reserve(model.groups.size());
     queue.push_back(static_cast<uint32_t>(cameraGroup));
     visited[cameraGroup] = true;
     outVisibleGroups.insert(static_cast<uint32_t>(cameraGroup));
+    for (uint32_t gi : outVisibleGroups) {
+        if (!visited[gi]) {
+            visited[gi] = true;
+            queue.push_back(gi);
+        }
+    }
 
     size_t queueIdx = 0;
     while (queueIdx < queue.size()) {
@@ -3330,14 +3380,21 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 float triHeight = tb.maxZ - tb.minZ;
                 if (triHeight < 1.0f && tb.maxZ <= localFeetZ + 1.2f) continue;
 
-                // Use MOPY flags to filter wall collision.
-                // Collide with triangles that have the collision flag (0x08) or no flags at all.
-                // Skip detail/decorative (0x04) and render-only (0x20 without 0x08) surfaces.
+                // Use MOPY flags to filter wall collision. Blocking set is the
+                // union of both flag conventions seen in the assets:
+                //  - explicit collision hulls (0x08), rendered or not — tunnel
+                //    walls rely on invisible hulls;
+                //  - rendered geometry (0x20) that is not detail (0x04) — the
+                //    Deeprun Tram gates carry render flags without 0x08 and
+                //    were walk-through when only 0x08 blocked.
+                // Detail/decorative (0x04: gears, railings, webs) never blocks.
                 uint32_t triIdx = triStart / 3;
                 if (!group.triMopyFlags.empty() && triIdx < group.triMopyFlags.size()) {
                     uint8_t mopy = group.triMopyFlags[triIdx];
                     if (mopy != 0) {
-                        if ((mopy & 0x04) || !(mopy & 0x08)) continue;
+                        const bool collisionHull = (mopy & 0x08) != 0;
+                        const bool renderedSolid = (mopy & 0x20) != 0 && !(mopy & 0x04);
+                        if (!collisionHull && !renderedSolid) continue;
                     }
                 }
 
