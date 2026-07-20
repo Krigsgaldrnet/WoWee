@@ -78,6 +78,7 @@ void EntitySpawner::update() {
     processPendingTransportRegistrations();
     processPendingTransportDoodads();
     processPendingMount();
+    processPendingRemotePlayerMounts();
     syncCreatureStealthVisuals();
 }
 
@@ -138,6 +139,8 @@ void EntitySpawner::shutdown() {
     creatureWeaponAttachAttempts_.clear();
     playerInstances_.clear();
     onlinePlayerAppearance_.clear();
+    remotePlayerMounts_.clear();
+    pendingRemotePlayerMounts_.clear();
     gameObjectInstances_.clear();
 }
 
@@ -164,6 +167,8 @@ void EntitySpawner::resetAllState() {
     creatureRenderPosCache_.clear();
     playerInstances_.clear();
     onlinePlayerAppearance_.clear();
+    remotePlayerMounts_.clear();
+    pendingRemotePlayerMounts_.clear();
     gameObjectInstances_.clear();
 
     // Clear animation state maps
@@ -218,6 +223,26 @@ void EntitySpawner::clearMountState() {
     mountInstanceId_ = 0;
     mountModelId_ = 0;
     pendingMountDisplayId_ = 0;
+}
+
+void EntitySpawner::setRemotePlayerMountDisplayId(uint64_t guid, uint32_t displayId) {
+    if (guid == 0) return;
+    pendingRemotePlayerMounts_[guid] = displayId;
+}
+
+void EntitySpawner::removeRemotePlayerMount(uint64_t guid) {
+    auto it = remotePlayerMounts_.find(guid);
+    if (it == remotePlayerMounts_.end()) return;
+    if (renderer_) {
+        if (auto* cr = renderer_->getCharacterRenderer()) {
+            if (it->second.instanceId != 0) cr->removeInstance(it->second.instanceId);
+            auto playerIt = playerInstances_.find(guid);
+            if (playerIt != playerInstances_.end()) {
+                cr->playAnimation(playerIt->second, rendering::anim::STAND, true);
+            }
+        }
+    }
+    remotePlayerMounts_.erase(it);
 }
 
 void EntitySpawner::queueTransportRegistration(uint64_t guid, uint32_t entry, uint32_t displayId,
@@ -2009,8 +2034,18 @@ void EntitySpawner::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float
             if (group == 15) hasGroup15 = true;
         }
 
-        // Only apply to humanoid-like clothing models.
-        if (hasGroup3 || hasGroup4 || hasGroup8 || hasGroup12 || hasGroup13 || hasGroup15) {
+        // These numeric submesh groups only mean clothing on player-character
+        // models. Creature models reuse the same IDs for unrelated authored
+        // geometry (elementals use them for their built-in wrist pieces), so a
+        // group-number heuristic alone can manufacture a second floating set of
+        // "bracers". CreatureDisplayInfoExtra is the authoritative indication
+        // that this display uses humanoid equipment geosets.
+        const bool hasHumanoidDisplayExtra =
+            itDisplayData != displayDataMap_.end() &&
+            itDisplayData->second.extraDisplayId != 0 &&
+            humanoidExtraMap_.find(itDisplayData->second.extraDisplayId) != humanoidExtraMap_.end();
+        if (hasHumanoidDisplayExtra &&
+            (hasGroup3 || hasGroup4 || hasGroup8 || hasGroup12 || hasGroup13 || hasGroup15)) {
             bool hasRenderableCape = false;
             std::string capeTexturePath;  // first found cape texture for override
             bool hasEquippedTabard = false;

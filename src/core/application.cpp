@@ -40,6 +40,7 @@
 #include "rendering/m2_renderer.hpp"
 #include "rendering/minimap.hpp"
 #include "rendering/quest_marker_renderer.hpp"
+#include "rendering/footprint_renderer.hpp"
 #include "rendering/loading_screen.hpp"
 #include "audio/music_manager.hpp"
 #include "audio/footstep_manager.hpp"
@@ -1265,6 +1266,9 @@ void Application::performLogoutToLogin() {
         if (auto* questMarkers = renderer->getQuestMarkerRenderer()) {
             questMarkers->clear();
         }
+        if (auto* footprints = renderer->getFootprintRenderer()) {
+            footprints->clear();
+        }
         if (auto* ac = renderer->getAnimationController()) ac->clearMount();
         renderer->setCharacterFollow(0);
         if (auto* music = audioCoordinator_ ? audioCoordinator_->getMusicManager() : nullptr) {
@@ -1934,8 +1938,14 @@ void Application::update(float deltaTime) {
                 glm::vec3 playerRenderPos(0.0f);
                 bool havePlayerPos = false;
                 float playerCollisionRadius = 0.65f;
-                if (auto playerEntity = gameHandler->getEntityManager().getEntity(gameHandler->getPlayerGuid())) {
-                    playerPos = glm::vec3(playerEntity->getX(), playerEntity->getY(), playerEntity->getZ());
+                if (gameHandler->getPlayerGuid() != 0) {
+                    // The server does not continuously echo our own movement into
+                    // the cached player Entity. MovementInfo is the live canonical
+                    // position that we render and send to the server; using the
+                    // Entity here eventually distance-culls nearby enemies against
+                    // the player's old spawn position and freezes their visuals.
+                    const auto& movement = gameHandler->getMovementInfo();
+                    playerPos = glm::vec3(movement.x, movement.y, movement.z);
                     playerRenderPos = core::coords::canonicalToRender(playerPos);
                     havePlayerPos = true;
                     glm::vec3 pc;
@@ -1957,6 +1967,9 @@ void Application::update(float deltaTime) {
                 auto& _creatureWasSwimming = entitySpawner_->getCreatureWasSwimming();
                 auto& _creatureWasFlying = entitySpawner_->getCreatureWasFlying();
                 auto& _creatureWasWalking = entitySpawner_->getCreatureWasWalking();
+                const uint64_t currentTargetGuid = gameHandler->hasTarget()
+                    ? gameHandler->getTargetGuid() : 0;
+                const uint64_t autoAttackGuid = gameHandler->getAutoAttackTargetGuid();
                 for (const auto& [guid, instanceId] : _creatureInstances) {
                     auto entity = gameHandler->getEntityManager().getEntity(guid);
                     if (!entity || entity->getType() != game::ObjectType::UNIT) continue;
@@ -1978,7 +1991,9 @@ void Application::update(float deltaTime) {
                     if (havePlayerPos) {
                         glm::vec3 d = latestCanonical - playerPos;
                         canonDistSq = glm::dot(d, d);
-                        if (canonDistSq > syncRadiusSq) continue;
+                        const bool activeCombatTarget =
+                            guid == currentTargetGuid || guid == autoAttackGuid;
+                        if (canonDistSq > syncRadiusSq && !activeCombatTarget) continue;
                     }
 
                     // Use the destination position once the entity has reached its
@@ -2018,8 +2033,6 @@ void Application::update(float deltaTime) {
                     bool isCombatTarget = false;
                     if (havePlayerPos && canonDistSq < 64.0f) { // 8² = melee range
                         auto unit = std::static_pointer_cast<game::Unit>(entity);
-                        const uint64_t currentTargetGuid = gameHandler->hasTarget() ? gameHandler->getTargetGuid() : 0;
-                        const uint64_t autoAttackGuid = gameHandler->getAutoAttackTargetGuid();
                         isCombatTarget = (guid == currentTargetGuid || guid == autoAttackGuid);
                         clipGuardEligible = unit->getHealth() > 0 &&
                                             (unit->isHostile() ||
@@ -2190,8 +2203,9 @@ void Application::update(float deltaTime) {
                 auto* charRenderer = renderer->getCharacterRenderer();
                 glm::vec3 pPos(0.0f);
                 bool havePPos = false;
-                if (auto pe = gameHandler->getEntityManager().getEntity(gameHandler->getPlayerGuid())) {
-                    pPos = glm::vec3(pe->getX(), pe->getY(), pe->getZ());
+                if (gameHandler->getPlayerGuid() != 0) {
+                    const auto& movement = gameHandler->getMovementInfo();
+                    pPos = glm::vec3(movement.x, movement.y, movement.z);
                     havePPos = true;
                 }
                 const float pSyncRadiusSq = 320.0f * 320.0f;
@@ -2205,6 +2219,9 @@ void Application::update(float deltaTime) {
                 auto& _pCreatureWalkingState = entitySpawner_->getCreatureWalkingState();
                 auto& _pCreatureFlyingState = entitySpawner_->getCreatureFlyingState();
                 auto& _pCreatureRenderPosCache = entitySpawner_->getCreatureRenderPosCache();
+                const uint64_t playerTargetGuid = gameHandler->hasTarget()
+                    ? gameHandler->getTargetGuid() : 0;
+                const uint64_t playerAutoAttackGuid = gameHandler->getAutoAttackTargetGuid();
                 for (const auto& [guid, instanceId] : _playerInstances) {
                     auto entity = gameHandler->getEntityManager().getEntity(guid);
                     if (!entity || entity->getType() != game::ObjectType::PLAYER) continue;
@@ -2213,7 +2230,9 @@ void Application::update(float deltaTime) {
                     if (havePPos) {
                         glm::vec3 latestCanonical(entity->getLatestX(), entity->getLatestY(), entity->getLatestZ());
                         glm::vec3 d = latestCanonical - pPos;
-                        if (glm::dot(d, d) > pSyncRadiusSq) continue;
+                        const bool activeCombatTarget =
+                            guid == playerTargetGuid || guid == playerAutoAttackGuid;
+                        if (glm::dot(d, d) > pSyncRadiusSq && !activeCombatTarget) continue;
                     }
 
                     // Position sync — clamp to destination during dead-reckoning
@@ -2229,6 +2248,11 @@ void Application::update(float deltaTime) {
                         posIt != _pCreatureRenderPosCache.end()
                             ? std::optional<glm::vec3>(posIt->second)
                             : std::nullopt;
+                    const auto* remoteMount = entitySpawner_->getRemotePlayerMount(guid);
+                    std::optional<glm::vec3> previousMountPos = previousRenderPos;
+                    if (remoteMount && previousMountPos) {
+                        previousMountPos->z -= remoteMount->riderHeight;
+                    }
 
                     // Match creature projection: terrain alone is not a valid floor in
                     // WMO overlap regions (tunnels, buildings, bridges).
@@ -2236,13 +2260,19 @@ void Application::update(float deltaTime) {
                                               !_pCreatureSwimmingState.count(guid);
                     if (entity->isActivelyMoving() && groundPlayer) {
                         if (auto floorZ = movingEntityFloor(renderer.get(), renderPos,
-                                                            previousRenderPos)) {
+                                                            previousMountPos)) {
                             renderPos.z = *floorZ;
                         }
                     }
 
+                    const glm::vec3 mountRenderPos = renderPos;
+                    if (remoteMount) renderPos.z += remoteMount->riderHeight;
+
                     if (posIt == _pCreatureRenderPosCache.end()) {
                         charRenderer->setInstancePosition(instanceId, renderPos);
+                        if (remoteMount) {
+                            charRenderer->setInstancePosition(remoteMount->instanceId, mountRenderPos);
+                        }
                         _pCreatureRenderPosCache[guid] = renderPos;
                     } else {
                         const glm::vec3 prevPos = posIt->second;
@@ -2261,10 +2291,16 @@ void Application::update(float deltaTime) {
 
                         if (deadOrCorpse || largeCorrection) {
                             charRenderer->setInstancePosition(instanceId, renderPos);
+                            if (remoteMount) {
+                                charRenderer->setInstancePosition(remoteMount->instanceId, mountRenderPos);
+                            }
                         } else if (planarDistSq > kMoveThreshSq2 || dz > 0.08f) {
                             float planarDist = std::sqrt(planarDistSq);
                             float duration = std::clamp(planarDist / 5.5f, 0.05f, 0.22f);
                             charRenderer->moveInstanceTo(instanceId, renderPos, duration);
+                            if (remoteMount) {
+                                charRenderer->moveInstanceTo(remoteMount->instanceId, mountRenderPos, duration);
+                            }
                         }
                         posIt->second = renderPos;
 
@@ -2272,6 +2308,15 @@ void Application::update(float deltaTime) {
                         const bool isSwimmingNow = _pCreatureSwimmingState.count(guid) > 0;
                         const bool isWalkingNow  = _pCreatureWalkingState.count(guid) > 0;
                         const bool isFlyingNow   = _pCreatureFlyingState.count(guid) > 0;
+                        uint32_t mountedRiderAnim = rendering::anim::MOUNT;
+                        if (remoteMount && isFlyingNow) {
+                            const uint32_t flightPose = isMovingNow
+                                ? rendering::anim::MOUNT_FLIGHT_FORWARD
+                                : rendering::anim::MOUNT_FLIGHT_IDLE;
+                            if (charRenderer->hasAnimation(instanceId, flightPose)) {
+                                mountedRiderAnim = flightPose;
+                            }
+                        }
                         bool prevMoving   = _pCreatureWasMoving[guid];
                         bool prevSwimming = _pCreatureWasSwimming[guid];
                         bool prevFlying   = _pCreatureWasFlying[guid];
@@ -2289,7 +2334,23 @@ void Application::update(float deltaTime) {
                             bool gotState = charRenderer->getAnimationState(instanceId, curAnimId, curT, curDur);
                             if (!gotState || curAnimId != rendering::anim::DEATH) {
                                 uint32_t targetAnim;
-                                if (isMovingNow) {
+                                if (remoteMount) {
+                                    // The rider keeps the mounted seat pose; locomotion
+                                    // belongs to the separately rendered mount model.
+                                    targetAnim = mountedRiderAnim;
+                                    uint32_t mountAnim = rendering::anim::STAND;
+                                    if (isMovingNow) {
+                                        if (isFlyingNow) mountAnim = rendering::anim::FLY_FORWARD;
+                                        else if (isWalkingNow) mountAnim = rendering::anim::WALK;
+                                        else mountAnim = rendering::anim::RUN;
+                                    } else if (isFlyingNow) {
+                                        mountAnim = rendering::anim::FLY_IDLE;
+                                    }
+                                    if (!charRenderer->hasAnimation(remoteMount->instanceId, mountAnim)) {
+                                        mountAnim = isMovingNow ? rendering::anim::RUN : rendering::anim::STAND;
+                                    }
+                                    charRenderer->playAnimation(remoteMount->instanceId, mountAnim, true);
+                                } else if (isMovingNow) {
                                     if (isFlyingNow)        targetAnim = rendering::anim::FLY_FORWARD;
                                     else if (isSwimmingNow) targetAnim = rendering::anim::SWIM;
                                     else if (isWalkingNow)  targetAnim = rendering::anim::WALK;
@@ -2302,11 +2363,31 @@ void Application::update(float deltaTime) {
                                 charRenderer->playAnimation(instanceId, targetAnim, /*loop=*/true);
                             }
                         }
+
+                        // Server emotes and state updates can arrive after the mount
+                        // field and replace the one-shot mounted pose with Stand. A
+                        // rider's mount field is authoritative, so repair that pose
+                        // even when their movement state did not transition this frame.
+                        if (remoteMount) {
+                            uint32_t riderAnim = 0;
+                            float riderTime = 0.0f, riderDuration = 0.0f;
+                            const bool haveRiderState = charRenderer->getAnimationState(
+                                instanceId, riderAnim, riderTime, riderDuration);
+                            if ((!haveRiderState || riderAnim != mountedRiderAnim) &&
+                                riderAnim != rendering::anim::DEATH) {
+                                charRenderer->playAnimation(instanceId, mountedRiderAnim,
+                                                            /*loop=*/true);
+                            }
+                        }
                     }
 
                     // Orientation sync
                     float renderYaw = entity->getOrientation() + glm::radians(90.0f);
                     charRenderer->setInstanceRotation(instanceId, glm::vec3(0.0f, 0.0f, renderYaw));
+                    if (remoteMount) {
+                        charRenderer->setInstanceRotation(remoteMount->instanceId,
+                                                          glm::vec3(0.0f, 0.0f, renderYaw));
+                    }
                 }
             }
             {
