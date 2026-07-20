@@ -154,6 +154,7 @@ void TransportManager::registerTransport(uint64_t guid,
     transport.entry = entry;
     transport.displayId = displayId;
     transport.isM2 = isM2;
+    transport.worldCoords = pathEntry->worldCoords;
     transport.allowBootstrapVelocity = false;
 
     // CRITICAL: Set basePosition from spawn position and t=0 offset
@@ -197,6 +198,8 @@ void TransportManager::registerTransport(uint64_t guid,
     transport.clientAnimationReverse = false;
     transport.serverYaw = 0.0f;
     transport.hasServerYaw = false;
+    transport.dockYaw = 0.0f;
+    transport.hasDockYaw = false;
     transport.serverYawFlipped180 = false;
     transport.serverYawAlignmentScore = 0;
     transport.lastServerUpdate = 0.0f;
@@ -363,7 +366,51 @@ glm::vec3 TransportManager::getPlayerWorldPosition(uint64_t transportGuid, const
     // use the render-space transform matrix.
     glm::vec4 localPos(localOffset, 1.0f);
     glm::vec4 worldPos = transport->transform * localPos;
-    return glm::vec3(worldPos);
+    // transform is a renderer-space matrix; every caller of this API expects
+    // canonical world coordinates. Returning it raw swaps X/Y again when the
+    // application converts canonical -> render, leaving riders behind or mirrored.
+    return core::coords::renderToCanonical(glm::vec3(worldPos));
+}
+
+glm::vec3 TransportManager::serverToTransportLocal(
+    uint64_t transportGuid, const glm::vec3& serverOffset) const {
+    const auto it = transports_.find(transportGuid);
+    // WMO transport movement blocks already express offsets in the model's
+    // local axes. Their render transform consumes those axes directly; applying
+    // the world-space server->canonical X/Y swap here displaced deck NPCs and
+    // server-attached players across the hull. M2 transports retain their older
+    // canonical-delta representation.
+    if (it != transports_.end() && !it->second.isM2) return serverOffset;
+    return core::coords::serverToCanonical(serverOffset);
+}
+
+bool TransportManager::isPointOnTransportDeck(uint64_t transportGuid,
+                                               const glm::vec3& canonicalPosition,
+                                               float maxFloorDelta) const {
+    const auto floor = getTransportDeckFloorHeight(transportGuid, canonicalPosition);
+    if (!floor) return false;
+
+    const float floorDelta = canonicalPosition.z - *floor;
+    return floorDelta >= -0.35f && floorDelta <= maxFloorDelta;
+}
+
+std::optional<float> TransportManager::getTransportDeckFloorHeight(
+    uint64_t transportGuid,
+    const glm::vec3& canonicalPosition) const {
+    if (!wmoRenderer_) return std::nullopt;
+    const auto it = transports_.find(transportGuid);
+    if (it == transports_.end() || it->second.isM2 || it->second.wmoInstanceId == 0) {
+        return std::nullopt;
+    }
+
+    const glm::vec3 renderPosition = core::coords::canonicalToRender(canonicalPosition);
+    float normalZ = 0.0f;
+    const auto floor = wmoRenderer_->getInstanceFloorHeight(
+        it->second.wmoInstanceId,
+        renderPosition.x, renderPosition.y, renderPosition.z + 0.35f,
+        &normalZ);
+    if (!floor || normalZ < 0.55f) return std::nullopt;
+    return floor;
 }
 
 glm::mat4 TransportManager::getTransportInvTransform(uint64_t transportGuid) {
@@ -475,6 +522,15 @@ void TransportManager::updateServerTransport(uint64_t guid, const glm::vec3& pos
     }
 
     auto* pathEntry = pathRepo_.findPath(transport->pathId);
+
+    // MO_TRANSPORT spawn orientation is the authored dock alignment. Preserve
+    // it before TaxiPathNode assignment replaces the stationary spawn path;
+    // route tangent yaw is correct underway but points the bow into the pier
+    // during a repeated-position dwell.
+    if (!transport->isM2 && !transport->worldCoords) {
+        transport->dockYaw = orientation;
+        transport->hasDockYaw = true;
+    }
 
     if (!pathEntry || pathEntry->spline.durationMs() == 0) {
         // No path or stationary — handle directly before delegating to ClockSync.
@@ -589,23 +645,38 @@ bool TransportManager::assignTaxiPathToTransport(uint32_t entry, uint32_t taxiPa
     for (auto& [guid, transport] : transports_) {
         if (transport.entry != entry) continue;
 
+        // Keep the authoritative spawn sample long enough to phase Kraken's
+        // per-continent path segment. Seeding this route from wall-clock modulo
+        // made its visual arrival unrelated to the server's map-transfer time.
+        const glm::vec3 serverSpawnPosition = transport.position;
+
         // Copy the taxi path into the main paths (indexed by GO entry for this transport)
-        PathEntry copied(taxiEntry->spline, entry, taxiEntry->zOnly, taxiEntry->fromDBC, taxiEntry->worldCoords);
+        PathEntry copied(taxiEntry->spline, entry, taxiEntry->zOnly,
+                         /*fromDBC=*/false, taxiEntry->worldCoords);
         pathRepo_.storePath(entry, std::move(copied));
 
         auto* storedEntry = pathRepo_.findPath(entry);
 
         // Update transport to use the new path
         transport.pathId = entry;
+        transport.worldCoords = true;
         transport.basePosition = glm::vec3(0.0f);  // World-coordinate path, no base offset
-        if (storedEntry && storedEntry->spline.keyCount() > 0) {
-            transport.position = storedEntry->spline.evaluatePosition(0);
-        }
         transport.useClientAnimation = true;  // Server won't send position updates
 
-        // Seed local clock to a deterministic phase (see nowEpochMs comment above)
+        // Most legacy routes retain their established deterministic phase. Kraken
+        // crosses map boundaries, so anchor each freshly loaded segment to the
+        // server-authored spawn location; otherwise it can still be approaching
+        // Borean Tundra when the server correctly transfers the rider back to map 0.
         if (storedEntry && storedEntry->spline.durationMs() > 0) {
-            transport.localClockMs = static_cast<uint32_t>(nowEpochMs() % storedEntry->spline.durationMs());
+            if (entry == 190536u && !storedEntry->spline.keys().empty()) {
+                const size_t nearest = storedEntry->spline.findNearestKey(serverSpawnPosition);
+                transport.localClockMs = storedEntry->spline.keys()[nearest].timeMs;
+            } else {
+                transport.localClockMs = static_cast<uint32_t>(
+                    nowEpochMs() % storedEntry->spline.durationMs());
+            }
+            transport.position = storedEntry->spline.evaluatePosition(
+                transport.localClockMs % storedEntry->spline.durationMs());
         }
 
         updateTransformMatrices(transport);

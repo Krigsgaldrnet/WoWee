@@ -427,12 +427,21 @@ void EntityController::updateNonPlayerTransportAttachment(const UpdateBlock& blo
     if (entityType != ObjectType::UNIT && entityType != ObjectType::GAMEOBJECT) return;
 
     if (block.onTransport && block.transportGuid != 0) {
-        glm::vec3 localOffset = core::coords::serverToCanonical(
-            glm::vec3(block.transportX, block.transportY, block.transportZ));
+        const glm::vec3 serverOffset(block.transportX, block.transportY, block.transportZ);
+        const bool transportResolved = owner_.getTransportManager() &&
+            owner_.getTransportManager()->getTransport(block.transportGuid);
+        // Preserve the raw wire offset if the child arrives before its parent
+        // transport during a map load. Its coordinate convention depends on
+        // whether that parent is an M2 or WMO and can only be decided once the
+        // transport has registered.
+        glm::vec3 localOffset = transportResolved
+            ? owner_.getTransportManager()->serverToTransportLocal(block.transportGuid, serverOffset)
+            : serverOffset;
         const bool hasLocalOrientation = (block.updateFlags & 0x0020) != 0; // UPDATEFLAG_LIVING
         float localOriCanonical = core::coords::normalizeAngleRad(-block.transportO);
         owner_.setTransportAttachment(block.guid, entityType, block.transportGuid,
-                               localOffset, hasLocalOrientation, localOriCanonical);
+                               localOffset, hasLocalOrientation, localOriCanonical,
+                               !transportResolved);
         if (owner_.getTransportManager() && owner_.getTransportManager()->getTransport(block.transportGuid)) {
             glm::vec3 composed = owner_.getTransportManager()->getPlayerWorldPosition(block.transportGuid, localOffset);
             entity->setPosition(composed.x, composed.y, composed.z, entity->getOrientation());
@@ -663,7 +672,9 @@ void EntityController::applyPlayerTransportState(const UpdateBlock& block,
     if (block.onTransport) {
         // Convert transport offset from server → canonical coordinates
         glm::vec3 serverOffset(block.transportX, block.transportY, block.transportZ);
-        glm::vec3 canonicalOffset = core::coords::serverToCanonical(serverOffset);
+        glm::vec3 canonicalOffset = owner_.getTransportManager()
+            ? owner_.getTransportManager()->serverToTransportLocal(block.transportGuid, serverOffset)
+            : core::coords::serverToCanonical(serverOffset);
         owner_.setPlayerOnTransport(block.transportGuid, canonicalOffset);
         if (owner_.getTransportManager() && owner_.getTransportManager()->getTransport(owner_.playerTransportGuidRef())) {
             glm::vec3 composed = owner_.getTransportManager()->getPlayerWorldPosition(owner_.playerTransportGuidRef(), owner_.playerTransportOffsetRef());
@@ -695,14 +706,16 @@ void EntityController::applyPlayerTransportState(const UpdateBlock& block,
                 owner_.movementInfoRef().z = canonicalPos.z;
             }
         }
-        // Don't clear client-side M2 transport boarding (trams) —
-        // the server doesn't know about client-detected transport attachment.
-        bool isClientM2Transport = false;
+        // Don't clear client-detected transport boarding. The server does not know
+        // about locally animated M2 trams or TaxiPathNode WMO ships until our next
+        // movement heartbeat publishes the attachment.
+        bool isClientAnimatedTransport = false;
         if (owner_.playerTransportGuidRef() != 0 && owner_.getTransportManager()) {
             auto* tr = owner_.getTransportManager()->getTransport(owner_.playerTransportGuidRef());
-            isClientM2Transport = (tr && tr->isM2);
+            isClientAnimatedTransport = tr &&
+                (tr->isM2 || (tr->worldCoords && tr->useClientAnimation));
         }
-        if (owner_.playerTransportGuidRef() != 0 && !isClientM2Transport) {
+        if (owner_.playerTransportGuidRef() != 0 && !isClientAnimatedTransport) {
             LOG_INFO("Player left transport");
             owner_.clearPlayerTransport();
         }
@@ -2300,18 +2313,7 @@ void EntityController::handleGameObjectQueryResponse(network::Packet& packet) {
         }
 
         // MO_TRANSPORT (type 15): assign TaxiPathNode path if available.
-        // Temporary WARN-level diagnostics for the WotLK boat routing investigation:
-        // show what the server actually reports for transport-type GOs so we can see
-        // whether type==15 and what taxiPathId (data[0]) it carries.
         const uint32_t mapId = owner_.getCurrentMapId();
-        const bool transportType = (data.type == 11 || data.type == 15);
-        if (transportType && owner_.getTransportManager()) {
-            const uint32_t d0 = data.hasData ? data.data[0] : 0u;
-            const bool taxiKnown = d0 != 0 && owner_.getTransportManager()->hasTaxiPathForMap(d0, mapId);
-            LOG_DEBUG("Transport GO query: entry=", data.entry, " type=", data.type,
-                      " hasData=", data.hasData, " data[0]=", d0, " map=", mapId,
-                      " taxiPathOnMap=", taxiKnown);
-        }
         if (data.type == 15 && data.hasData && data.data[0] != 0 && owner_.getTransportManager()) {
             uint32_t taxiPathId = data.data[0];
             if (owner_.getTransportManager()->hasTaxiPathForMap(taxiPathId, mapId)) {
