@@ -1123,14 +1123,22 @@ void EntitySpawner::processPendingTransportRegistrations() {
             pendingTransportMoves_.erase(moveIt);
         }
 
-        if (glm::dot(canonicalSpawnPos, canonicalSpawnPos) < 1.0f) {
+        // MO_TRANSPORT (type 15) boats route via their taxi path (data[0] ->
+        // TaxiPathNode.dbc), which is a world-coordinate path and thus independent of
+        // where the boat spawned. Assign it whenever the GO template is already cached
+        // — not only for origin-spawned transports. Boats spawn at their dock (a
+        // non-origin position), so the old origin gate here meant the cached path was
+        // never applied and the boat fell back to an unrelated route. If the template
+        // isn't cached yet, the GO-query response hook assigns it when it arrives.
+        {
             auto goData = gameHandler_->getCachedGameObjectInfo(pending.entry);
             if (goData && goData->type == 15 && goData->hasData && goData->data[0] != 0) {
                 uint32_t taxiPathId = goData->data[0];
-                if (transportManager->hasTaxiPath(taxiPathId)) {
-                    transportManager->assignTaxiPathToTransport(pending.entry, taxiPathId);
+                const uint32_t mapId = gameHandler_->getCurrentMapId();
+                if (transportManager->hasTaxiPathForMap(taxiPathId, mapId)) {
+                    transportManager->assignTaxiPathToTransport(pending.entry, taxiPathId, mapId);
                     LOG_DEBUG("Assigned cached TaxiPathNode path for MO_TRANSPORT entry=", pending.entry,
-                             " taxiPathId=", taxiPathId);
+                             " taxiPathId=", taxiPathId, " map=", mapId);
                 }
             }
         }

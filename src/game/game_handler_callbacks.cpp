@@ -1130,6 +1130,19 @@ const std::vector<MailMessage>& GameHandler::getMailInbox() const {
     if (inventoryHandler_) return inventoryHandler_->getMailInbox();
     return mailInbox_;
 }
+std::string GameHandler::getMailDisplaySubject(const MailMessage& mail) {
+    if (mail.messageType != 2) return mail.subject;
+
+    AuctionMailSubject auction;
+    if (!parseAuctionMailSubject(mail.subject, auction)) return mail.subject;
+
+    ensureItemInfo(auction.itemEntry);
+    const auto* info = getItemInfo(auction.itemEntry);
+    const std::string itemName = info && !info->name.empty()
+        ? info->name
+        : "Item #" + std::to_string(auction.itemEntry);
+    return formatAuctionMailSubject(auction, itemName);
+}
 int GameHandler::getSelectedMailIndex() const {
     return inventoryHandler_ ? inventoryHandler_->getSelectedMailIndex() : selectedMailIndex_;
 }
@@ -1299,6 +1312,10 @@ void GameHandler::setOrientation(float orientation) {
 
 void GameHandler::sendChatMessage(ChatType type, const std::string& message, const std::string& target) {
     if (chatHandler_) chatHandler_->sendChatMessage(type, message, target);
+}
+
+void GameHandler::sendAddonMessage(ChatType type, const std::string& message, const std::string& target) {
+    if (chatHandler_) chatHandler_->sendAddonMessage(type, message, target);
 }
 
 void GameHandler::sendTextEmote(uint32_t textEmoteId, uint64_t targetGuid) {

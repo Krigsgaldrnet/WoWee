@@ -702,6 +702,14 @@ public:
     static bool parse(network::Packet& packet, MessageChatData& data);
 };
 
+// Returns true when a chat packet is addon traffic and extracts the standard
+// prefix<TAB>payload envelope when present. Some legacy clients send the
+// envelope with a spoken language instead of LANG_ADDON, so the envelope itself
+// is also authoritative.
+bool decodeAddonChatPayload(const MessageChatData& data,
+                            std::string& prefix,
+                            std::string& payload);
+
 /**
  * Get human-readable string for chat type
  */
@@ -2615,6 +2623,28 @@ struct MailMessage {
     bool read = false;
     std::vector<MailAttachment> attachments;
 };
+
+struct AuctionMailSubject {
+    uint32_t itemEntry = 0;
+    uint32_t response = 0;
+    uint32_t lotId = 0;
+    uint32_t itemCount = 0;
+};
+
+// Decoded auction-house mail body ("invoice"). The wire body is a colon-
+// separated string the retail client never prints verbatim.
+struct AuctionMailInvoice {
+    uint32_t ownerGuidLow = 0;  // seller/buyer low GUID (hex field)
+    uint32_t bid = 0;           // copper
+    uint32_t buyout = 0;        // copper
+    uint32_t deposit = 0;       // copper (successful-sale mail only)
+    uint32_t consignment = 0;   // copper — auction house cut (successful sale)
+};
+
+bool parseAuctionMailSubject(const std::string& subject, AuctionMailSubject& result);
+std::string formatAuctionMailSubject(const AuctionMailSubject& subject,
+                                     const std::string& itemName);
+bool parseAuctionMailBody(const std::string& body, AuctionMailInvoice& result);
 
 /** CMSG_GET_MAIL_LIST packet builder */
 class GetMailListPacket {

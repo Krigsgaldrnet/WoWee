@@ -1627,9 +1627,15 @@ void EntityController::onCreateGameObject(const UpdateBlock& block, std::shared_
         owner_.gameObjectSpawnCallbackRef()(block.guid, go->getEntry(), go->getDisplayId(),
             go->getX(), go->getY(), go->getZ(), go->getOrientation(), goScale);
     }
-    // Fire transport move callback for transports (position update on re-creation)
+    // Fire transport move callback for transports (position update on re-creation).
+    // NOTE: do NOT mark the guid as server-updated here. A CREATE only carries the
+    // spawn position, not evidence that the server is authoritatively streaming this
+    // transport's motion. Marking it here forces preferServerData=true at spawn
+    // resolution, which puts client-animated ships/zeppelins into strict mode and
+    // skips the entry->DBC path remap — WotLK ship GO entries don't match
+    // TransportAnimation.dbc 1:1, so they were left stationary. Only genuine
+    // movement updates (onValuesUpdateGameObject / MOVEMENT blocks) set that flag.
     if (transportGuids_.count(block.guid) && owner_.transportMoveCallbackRef()) {
-        serverUpdatedTransportGuids_.insert(block.guid);
         owner_.transportMoveCallbackRef()(block.guid,
             go->getX(), go->getY(), go->getZ(), go->getOrientation());
     }
@@ -2293,16 +2299,29 @@ void EntityController::handleGameObjectQueryResponse(network::Packet& packet) {
             }
         }
 
-        // MO_TRANSPORT (type 15): assign TaxiPathNode path if available
+        // MO_TRANSPORT (type 15): assign TaxiPathNode path if available.
+        // Temporary WARN-level diagnostics for the WotLK boat routing investigation:
+        // show what the server actually reports for transport-type GOs so we can see
+        // whether type==15 and what taxiPathId (data[0]) it carries.
+        const uint32_t mapId = owner_.getCurrentMapId();
+        const bool transportType = (data.type == 11 || data.type == 15);
+        if (transportType && owner_.getTransportManager()) {
+            const uint32_t d0 = data.hasData ? data.data[0] : 0u;
+            const bool taxiKnown = d0 != 0 && owner_.getTransportManager()->hasTaxiPathForMap(d0, mapId);
+            LOG_DEBUG("Transport GO query: entry=", data.entry, " type=", data.type,
+                      " hasData=", data.hasData, " data[0]=", d0, " map=", mapId,
+                      " taxiPathOnMap=", taxiKnown);
+        }
         if (data.type == 15 && data.hasData && data.data[0] != 0 && owner_.getTransportManager()) {
             uint32_t taxiPathId = data.data[0];
-            if (owner_.getTransportManager()->hasTaxiPath(taxiPathId)) {
-                if (owner_.getTransportManager()->assignTaxiPathToTransport(data.entry, taxiPathId)) {
-                    LOG_DEBUG("MO_TRANSPORT entry=", data.entry, " assigned TaxiPathNode path ", taxiPathId);
+            if (owner_.getTransportManager()->hasTaxiPathForMap(taxiPathId, mapId)) {
+                if (owner_.getTransportManager()->assignTaxiPathToTransport(data.entry, taxiPathId, mapId)) {
+                    LOG_INFO("MO_TRANSPORT entry=", data.entry, " assigned TaxiPathNode path ", taxiPathId,
+                             " on map ", mapId);
                 }
             } else {
-                LOG_DEBUG("MO_TRANSPORT entry=", data.entry, " taxiPathId=", taxiPathId,
-                         " not found in TaxiPathNode.dbc");
+                LOG_WARNING("MO_TRANSPORT entry=", data.entry, " taxiPathId=", taxiPathId,
+                         " has no TaxiPathNode segment on map ", mapId);
             }
         }
     }
