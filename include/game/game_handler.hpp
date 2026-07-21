@@ -318,6 +318,19 @@ public:
         return randomPropertyNameResolver_ ? randomPropertyNameResolver_(id) : std::string{};
     }
 
+    // Random-suffix/property stat bonuses. Given the item's signed randomPropertyId and its
+    // suffixFactor (ITEM_FIELD_PROPERTY_SEED), returns the rolled {statType, value} pairs a
+    // green/blue item gains from "of the Bear" etc. statType uses the ITEM_MOD codes shared
+    // with ItemDef::ExtraStat (4=Str, 7=Sta, 45=SpellPower, ...). Suffix stats scale as
+    // AllocationPct*suffixFactor/10000; positive properties use the enchant's fixed amount.
+    struct RandomStatBonus { uint32_t statType = 0; int32_t value = 0; };
+    using RandomStatResolver = std::function<std::vector<RandomStatBonus>(int32_t, uint32_t)>;
+    void setRandomStatResolver(RandomStatResolver r) { randomStatResolver_ = std::move(r); }
+    std::vector<RandomStatBonus> getRandomStatBonuses(int32_t id, uint32_t suffixFactor) const {
+        return randomStatResolver_ ? randomStatResolver_(id, suffixFactor)
+                                   : std::vector<RandomStatBonus>{};
+    }
+
     // Emote animation callback: (entityGuid, animationId)
     // guid, animId, isState. isState marks persistent STATE_ emotes (from
     // UNIT_NPC_EMOTESTATE or state-type SMSG_EMOTE) that loop until cleared;
@@ -974,6 +987,16 @@ public:
     // spellId: 0 = regular auto-attack swing, non-zero = melee ability (special attack)
     using MeleeSwingCallback = std::function<void(uint32_t spellId)>;
     void setMeleeSwingCallback(MeleeSwingCallback cb) { meleeSwingCallback_ = std::move(cb); }
+
+    // Snap the character to face the camera's current look direction and return the
+    // resulting canonical orientation. Used by fishing so the bobber lands in front of
+    // where the player is looking: while standing still the character yaw does not track
+    // the free-look camera, so without this the bobber would drop toward a stale heading.
+    using FaceCameraProvider = std::function<float()>;
+    void setFaceCameraProvider(FaceCameraProvider cb) { faceCameraProvider_ = std::move(cb); }
+    float faceCameraDirection() {
+        return faceCameraProvider_ ? faceCameraProvider_() : getMovementInfo().orientation;
+    }
 
     // Ranged weapon swap callback — show=true: swap to ranged weapon, false: back to melee
     using RangedWeaponSwapCallback = std::function<void(bool show)>;
@@ -2673,6 +2696,9 @@ public:
         uint32_t permanentEnchantId = 0;
         uint32_t temporaryEnchantId = 0;
         std::array<uint32_t, 3> socketEnchantIds{};
+        uint32_t flags = 0;              // ITEM_FIELD_FLAGS (bit 0x1 = soulbound)
+        int32_t  randomPropertyId = 0;   // ITEM_FIELD_RANDOM_PROPERTIES_ID (signed)
+        uint32_t suffixFactor = 0;       // ITEM_FIELD_PROPERTY_SEED (random-suffix stat scale)
     };
     bool isHostileFaction(uint32_t factionTemplateId) const {
         auto it = factionHostileMap_.find(factionTemplateId);
@@ -2919,6 +2945,7 @@ private:
     ItemIconPathResolver itemIconPathResolver_;
     SpellDataResolver spellDataResolver_;
     RandomPropertyNameResolver randomPropertyNameResolver_;
+    RandomStatResolver randomStatResolver_;
     EmoteAnimCallback emoteAnimCallback_;
 
     // Targeting
@@ -3621,6 +3648,7 @@ private:
     AppearanceChangedCallback appearanceChangedCallback_;
     GhostStateCallback ghostStateCallback_;
     MeleeSwingCallback meleeSwingCallback_;
+    FaceCameraProvider faceCameraProvider_;
     RangedWeaponSwapCallback rangedWeaponSwapCallback_;
     bool suppressMeleeSwingAnim_ = false;
     // lastMeleeSwingMs_ moved to CombatHandler

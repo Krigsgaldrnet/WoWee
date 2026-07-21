@@ -828,7 +828,6 @@ void InventoryHandler::lootItem(uint8_t slotIndex) {
 void InventoryHandler::closeLoot() {
     if (!lootWindowOpen_) return;
     const uint64_t lootGuid = currentLoot_.lootGuid;
-    const bool despawnGatherNode = owner_.isGatherGameObject(lootGuid);
     if (owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         auto packet = LootReleasePacket::build(lootGuid);
         owner_.getSocket()->send(packet);
@@ -836,7 +835,11 @@ void InventoryHandler::closeLoot() {
     lootWindowOpen_ = false;
     if (owner_.lootWindowCallbackRef()) owner_.lootWindowCallbackRef()(false);
     if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("LOOT_CLOSED", {});
-    if (despawnGatherNode) owner_.despawnGameObjectLocally(lootGuid);
+    // Do NOT locally despawn a gather node on loot-close. Node lifetime is
+    // server-authoritative: a mineral vein / herb can still hold charges for another
+    // gatherer, and the server sends SMSG_DESTROY_OBJECT when it is truly depleted.
+    // Predicting the despawn here removed the node after a single loot, so it couldn't
+    // be shared or re-mined (it looked like one player "mined it all").
     currentLoot_ = LootResponseData{};
 }
 
@@ -919,12 +922,13 @@ void InventoryHandler::handleLootResponse(network::Packet& packet) {
 void InventoryHandler::handleLootReleaseResponse(network::Packet& packet) {
     (void)packet;
     const uint64_t lootGuid = currentLoot_.lootGuid;
-    const bool despawnGatherNode = owner_.isGatherGameObject(lootGuid);
     localLootState_.erase(lootGuid);
     lootWindowOpen_ = false;
     if (owner_.lootWindowCallbackRef()) owner_.lootWindowCallbackRef()(false);
     if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("LOOT_CLOSED", {});
-    if (despawnGatherNode) owner_.despawnGameObjectLocally(lootGuid);
+    // Node lifetime is server-authoritative — see closeLoot(). The server despawns a
+    // depleted gather node via SMSG_DESTROY_OBJECT; don't predict it here or a node the
+    // server keeps (still holding charges for another gatherer) disappears locally.
     currentLoot_ = LootResponseData{};
 }
 
@@ -3114,7 +3118,9 @@ void InventoryHandler::extractContainerFields(uint64_t containerGuid, const Flat
 // here so adding new ItemDef fields doesn't require editing 4 separate copy-
 // paste sites in rebuildOnlineInventory.
 ItemDef InventoryHandler::buildItemDef(uint32_t entry, uint32_t stackCount,
-                                       uint32_t curDur, uint32_t maxDur, uint64_t guid) {
+                                       uint32_t curDur, uint32_t maxDur, uint64_t guid,
+                                       uint32_t flags, int32_t randomPropertyId,
+                                       uint32_t suffixFactor) {
     ItemDef def;
     def.itemId = entry;
     def.guid = guid;
@@ -3122,6 +3128,9 @@ ItemDef InventoryHandler::buildItemDef(uint32_t entry, uint32_t stackCount,
     def.curDurability = curDur;
     def.maxDurability = maxDur;
     def.maxStack = 1;
+    // ITEM_FLAG_SOULBOUND (0x1): a BoE item that has already bound must not re-prompt.
+    def.soulbound = (flags & 0x1u) != 0;
+    def.randomPropertyId = randomPropertyId;
 
     auto infoIt = owner_.itemInfoCacheRef().find(entry);
     if (infoIt != owner_.itemInfoCacheRef().end()) {
@@ -3155,6 +3164,23 @@ ItemDef InventoryHandler::buildItemDef(uint32_t entry, uint32_t stackCount,
         def.name = "Item " + std::to_string(def.itemId);
         queryItemInfo(def.itemId, guid);
     }
+
+    // Merge the rolled random-suffix/property stats on top of the base template. Primary
+    // stats fold into their dedicated fields; everything else (ratings, AP, spell power)
+    // joins extraStats so the existing tooltip rendering shows them as green stat lines.
+    if (randomPropertyId != 0) {
+        for (const auto& b : owner_.getRandomStatBonuses(randomPropertyId, suffixFactor)) {
+            if (b.value == 0) continue;
+            switch (b.statType) {
+                case 3: def.agility   += b.value; break;
+                case 4: def.strength  += b.value; break;
+                case 5: def.intellect += b.value; break;
+                case 6: def.spirit    += b.value; break;
+                case 7: def.stamina   += b.value; break;
+                default: def.extraStats.push_back({b.statType, b.value}); break;
+            }
+        }
+    }
     return def;
 }
 
@@ -3170,7 +3196,7 @@ void InventoryHandler::rebuildOnlineInventory() {
         if (guid == 0) continue;
         auto itemIt = owner_.onlineItemsRef().find(guid);
         if (itemIt == owner_.onlineItemsRef().end()) continue;
-        owner_.inventoryRef().setEquipSlot(static_cast<EquipSlot>(i), buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
+        owner_.inventoryRef().setEquipSlot(static_cast<EquipSlot>(i), buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid, itemIt->second.flags, itemIt->second.randomPropertyId, itemIt->second.suffixFactor));
     }
 
     // Backpack slots
@@ -3179,7 +3205,7 @@ void InventoryHandler::rebuildOnlineInventory() {
         if (guid == 0) continue;
         auto itemIt = owner_.onlineItemsRef().find(guid);
         if (itemIt == owner_.onlineItemsRef().end()) continue;
-        owner_.inventoryRef().setBackpackSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
+        owner_.inventoryRef().setBackpackSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid, itemIt->second.flags, itemIt->second.randomPropertyId, itemIt->second.suffixFactor));
     }
 
     // Keyring slots
@@ -3188,7 +3214,7 @@ void InventoryHandler::rebuildOnlineInventory() {
         if (guid == 0) continue;
         auto itemIt = owner_.onlineItemsRef().find(guid);
         if (itemIt == owner_.onlineItemsRef().end()) continue;
-        owner_.inventoryRef().setKeyringSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
+        owner_.inventoryRef().setKeyringSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid, itemIt->second.flags, itemIt->second.randomPropertyId, itemIt->second.suffixFactor));
     }
 
     // Bag contents (BAG1-BAG4 are equip slots 19-22)
@@ -3241,7 +3267,7 @@ void InventoryHandler::rebuildOnlineInventory() {
 
             auto itemIt = owner_.onlineItemsRef().find(itemGuid);
             if (itemIt == owner_.onlineItemsRef().end()) continue;
-            ItemDef def = buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, itemGuid);
+            ItemDef def = buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, itemGuid, itemIt->second.flags, itemIt->second.randomPropertyId, itemIt->second.suffixFactor);
             // Bags inside bags need containerSlots for the UI slot-count display.
             auto bagInfoIt = owner_.itemInfoCacheRef().find(itemIt->second.entry);
             if (bagInfoIt != owner_.itemInfoCacheRef().end())

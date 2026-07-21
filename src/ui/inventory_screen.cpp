@@ -630,7 +630,9 @@ void InventoryScreen::placeInBag(game::Inventory& inv, int bagIndex, int slotInd
 void InventoryScreen::placeInEquipment(game::Inventory& inv, game::EquipSlot slot) {
     if (!holdingItem) return;
 
-    if (heldItem.bindType == 2 && !equipConfirmOpen_) {
+    // Only prompt for a BoE item that has not already bound. Once soulbound, re-equipping
+    // (slot swaps, unequip/re-equip) must not ask again.
+    if (heldItem.bindType == 2 && !heldItem.soulbound && !equipConfirmOpen_) {
         equipConfirmOpen_ = true;
         equipConfirmAuto_ = false;
         equipConfirmSlot_ = slot;
@@ -2880,7 +2882,7 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                     uint64_t iGuid = gameHandler_->getBackpackItemGuid(backpackIndex);
                     gameHandler_->offerQuestFromItem(iGuid, item.startQuestId);
                 } else if (item.inventoryType > 0) {
-                    if (item.bindType == 2) {
+                    if (item.bindType == 2 && !item.soulbound) {
                         equipConfirmOpen_ = true;
                         equipConfirmAuto_ = true;
                         equipConfirmBag_ = 0xFF;
@@ -2910,7 +2912,7 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
                     uint64_t iGuid = gameHandler_->getBagItemGuid(bagIndex, bagSlotIndex);
                     gameHandler_->offerQuestFromItem(iGuid, item.startQuestId);
                 } else if (item.inventoryType > 0) {
-                    if (item.bindType == 2) {
+                    if (item.bindType == 2 && !item.soulbound) {
                         equipConfirmOpen_ = true;
                         equipConfirmAuto_ = true;
                         equipConfirmBag_ = static_cast<uint8_t>(bagIndex);
@@ -2998,7 +3000,14 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
     ImGui::BeginTooltip();
 
     ImVec4 qColor = getQualityColor(item.quality);
-    ImGui::TextColored(qColor, "%s", item.name.c_str());
+    // Append the rolled random suffix (e.g. "of the Bear") so a randomly-enchanted item
+    // reads with its full name, matching how the auction house already labels it.
+    std::string displayName = item.name;
+    if (item.randomPropertyId != 0 && gameHandler_) {
+        std::string suffix = gameHandler_->getRandomPropertyName(item.randomPropertyId);
+        if (!suffix.empty()) displayName += " " + suffix;
+    }
+    ImGui::TextColored(qColor, "%s", displayName.c_str());
     if (item.itemLevel > 0) {
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.7f), "Item Level %u", item.itemLevel);
     }
@@ -3047,7 +3056,18 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
     // Slot type
     if (item.inventoryType > 0) {
         const char* slotName = ui::getInventorySlotName(item.inventoryType);
-        if (slotName[0]) {
+        const auto* qi = gameHandler_ ? gameHandler_->getItemInfo(item.itemId) : nullptr;
+        // Containers (bags, quivers, ammo pouches, specialty bags) show their capacity as
+        // "N Slot Bag", matching the WoW bag tooltip. containerSlots comes from the item
+        // template query; itemClass 1 = Container, 11 = Quiver/ammo.
+        const bool isContainer = qi && qi->valid &&
+                                 (qi->itemClass == 1 || qi->itemClass == 11) &&
+                                 qi->containerSlots > 0;
+        if (isContainer) {
+            const char* bagType = !item.subclassName.empty() ? item.subclassName.c_str()
+                                : (slotName[0] ? slotName : "Bag");
+            ImGui::TextColored(ui::colors::kLightGray, "%u Slot %s", qi->containerSlots, bagType);
+        } else if (slotName[0]) {
             if (!item.subclassName.empty()) {
                 ImGui::TextColored(ui::colors::kLightGray, "%s  %s", slotName, item.subclassName.c_str());
             } else {
@@ -3055,11 +3075,8 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
             }
         }
 
-        if (gameHandler_) {
-            const auto* qi = gameHandler_->getItemInfo(item.itemId);
-            if (qi && qi->valid)
-                renderItemTypeWarningIfNeeded(gameHandler_, qi->itemClass, qi->subClass);
-        }
+        if (qi && qi->valid)
+            renderItemTypeWarningIfNeeded(gameHandler_, qi->itemClass, qi->subClass);
     }
 
     auto isWeaponInventoryType = [](uint32_t invType) {
@@ -3593,7 +3610,15 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
     // Slot / subclass
     if (info.inventoryType > 0) {
         const char* slotName = ui::getInventorySlotName(info.inventoryType);
-        if (slotName[0]) {
+        // Containers (bags, quivers, ammo pouches) show capacity as "N Slot Bag" —
+        // itemClass 1 = Container, 11 = Quiver/ammo. Same treatment as the ItemDef overload.
+        const bool isContainer = (info.itemClass == 1 || info.itemClass == 11) &&
+                                 info.containerSlots > 0;
+        if (isContainer) {
+            const char* bagType = !info.subclassName.empty() ? info.subclassName.c_str()
+                                : (slotName[0] ? slotName : "Bag");
+            ImGui::TextColored(ui::colors::kLightGray, "%u Slot %s", info.containerSlots, bagType);
+        } else if (slotName[0]) {
             if (!info.subclassName.empty())
                 ImGui::TextColored(ui::colors::kLightGray, "%s  %s", slotName, info.subclassName.c_str());
             else

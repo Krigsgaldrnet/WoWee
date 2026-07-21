@@ -1100,14 +1100,19 @@ void EntitySpawner::processPendingTransportRegistrations() {
                              " for entry ", pending.entry, " displayId=", pending.displayId,
                              " (usableEntryPath=", transportManager->hasPathForEntry(pending.entry), ")");
                 } else {
-                    LOG_WARNING("No TransportAnimation.dbc path for entry ", pending.entry,
-                                " - transport will be stationary");
+                    // DEBUG, not WARNING: TaxiPath-driven ships (Auberdine/Stormwind boats,
+                    // etc.) legitimately have no TransportAnimation.dbc entry and hit this
+                    // spawn-time fallback, then receive their real route via
+                    // assignTaxiPathToTransport and sail normally — so this fired for boats
+                    // that move fine and was misleading noise when scanning the log.
+                    LOG_DEBUG("No TransportAnimation.dbc path for entry ", pending.entry,
+                              " - transport will be stationary until a route is assigned");
                     std::vector<glm::vec3> path = { canonicalSpawnPos };
                     transportManager->loadPathFromNodes(pathId, path, false, 0.0f);
                 }
             }
         } else {
-            LOG_WARNING("Using real transport path from TransportAnimation.dbc for entry ", pending.entry);
+            LOG_DEBUG("Using real transport path from TransportAnimation.dbc for entry ", pending.entry);
         }
 
         const bool isM2Transport = !goIt->second.isWmo;
@@ -1848,9 +1853,7 @@ void EntitySpawner::despawnGameObject(uint64_t guid) {
         if (auto* transportManager = gameHandler_->getTransportManager()) {
             if (auto* transport = transportManager->getTransport(guid)) {
                 const bool isDeeprunTram =
-                    transport->displayId == 3831u ||
-                    (transport->entry >= 176080u && transport->entry <= 176085u) ||
-                    (transport->pathId >= 176080u && transport->pathId <= 176085u);
+                    game::TransportManager::isDeeprunTramTransport(*transport);
                 if (transport->isM2 && isDeeprunTram && game::isPreWotlk()) {
                     LOG_DEBUG("Keeping Deeprun tram render instance through server despawn: guid=0x",
                                 std::hex, guid, std::dec,

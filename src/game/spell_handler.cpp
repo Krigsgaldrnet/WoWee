@@ -546,6 +546,22 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     // sending any error, so swap in the highest rank we actually know.
     spellId = resolveHighestKnownRank(spellId);
 
+    // Fishing places a bobber in front of the caster using the facing the server has
+    // on record. The client only sends MSG_MOVE_SET_FACING when the aim changes by >3°
+    // (throttled to 10 Hz), so a small final aim adjustment before pressing cast may not
+    // have reached the server — leaving it with a slightly stale facing that drops the
+    // bobber off to the side or on land ("Face open water"). Push the exact current
+    // facing right before the cast so the bobber lands where the player is aiming.
+    if (spellclass::isFishingCast(spellId) && owner_.getSocket()) {
+        // Snap the character to face where the camera is looking, then push that facing to
+        // the server, so the bobber lands in front of the player's view. Standing still the
+        // character yaw doesn't follow the free-look camera, so without this the bobber
+        // dropped toward a stale heading (off to the side / on land → "Face open water").
+        const float canonO = owner_.faceCameraDirection();
+        owner_.setOrientation(canonO);
+        owner_.sendMovement(Opcode::MSG_MOVE_SET_FACING);
+    }
+
     // Profession spells (Cooking, First Aid, Alchemy, ...) open the crafting
     // window client-side instead of being sent as casts — matching the real
     // client, where these spells just open the tradeskill UI.
@@ -2138,10 +2154,13 @@ void SpellHandler::handleTalentsInfo(network::Packet& packet) {
 }
 
 void SpellHandler::handleAchievementEarned(network::Packet& packet) {
-    size_t remaining = packet.getRemainingSize();
-    if (remaining < 16) return;
-
-    uint64_t guid          = packet.readUInt64();
+    // WotLK SMSG_ACHIEVEMENT_EARNED: packGUID player + uint32 achievementId + packedTime.
+    // The player GUID is a PACKED guid, not a full uint64 — reading it as uint64 swallowed
+    // 4 bytes of the achievement id (showing the raw guid + a garbage id), so decode the
+    // packed guid and the fixed fields follow at the correct offset.
+    if (!packet.hasFullPackedGuid()) return;
+    uint64_t guid = packet.readPackedGuid();
+    if (!packet.hasRemaining(8)) return;  // achievementId(4) + packedTime(4)
     uint32_t achievementId = packet.readUInt32();
     uint32_t earnDate      = packet.readUInt32();
 
@@ -3619,9 +3638,9 @@ void SpellHandler::handlePeriodicAuraLog(network::Packet& packet) {
 }
 
 void SpellHandler::handleSpellEnergizeLog(network::Packet& packet) {
-    // WotLK: packed_guid victim + packed_guid caster + uint32 spellId + uint8 powerType + int32 amount
-    // TBC: full uint64 victim + uint64 caster + uint32 spellId + uint8 powerType + int32 amount
-    // Classic/Vanilla: packed_guid (same as WotLK)
+    // WotLK: packed_guid victim + packed_guid caster + uint32 spellId + uint32 powerType + int32 amount
+    // TBC: full uint64 victim + uint64 caster + uint32 spellId + uint32 powerType + int32 amount
+    // Classic/Vanilla: packed_guid (same as WotLK). PowerType is uint32 in every expansion.
     const bool energizeTbc = isActiveExpansion("tbc");
     auto readEnergizeGuid = [&]() -> uint64_t {
         if (energizeTbc)
@@ -3638,11 +3657,15 @@ void SpellHandler::handleSpellEnergizeLog(network::Packet& packet) {
         packet.skipAll(); return;
     }
     uint64_t casterGuid = readEnergizeGuid();
-    if (!packet.hasRemaining(9)) {
+    // spellId(4) + powerType(4) + amount(4) = 12. PowerType is a uint32 on the wire in
+    // every expansion (Vanilla/TBC/WotLK); reading it as a uint8 left 3 bytes in front of
+    // amount, turning a small power gain (e.g. 10 = 0x0000000A after powerType 0x00000001)
+    // into 0x0A000000 = 167772160 floating combat text.
+    if (!packet.hasRemaining(12)) {
         packet.skipAll(); return;
     }
     uint32_t spellId       = packet.readUInt32();
-    uint8_t  energizePowerType = packet.readUInt8();
+    uint8_t  energizePowerType = static_cast<uint8_t>(packet.readUInt32());
     int32_t  amount        = static_cast<int32_t>(packet.readUInt32());
     bool isPlayerVictim = (victimGuid == owner_.getPlayerGuid());
     bool isPlayerCaster = (casterGuid == owner_.getPlayerGuid());

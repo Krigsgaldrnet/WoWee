@@ -577,27 +577,131 @@ bool Application::initialize() {
                     if (!amPtr || id == 0) return {};
                     if (!*propLoaded) {
                         *propLoaded = true;
-                        // ItemRandomProperties.dbc: ID=0, Name=4 (string)
+                        // Both DBCs carry the display name ("of the Bear" / "of Strength") as
+                        // the first string column, field 1, across classic/tbc/wotlk/turtle.
+                        constexpr uint32_t kNameField = 1;
+                        // ItemRandomProperties.dbc: ID=0, Name=1 (positive IDs)
                         if (auto dbc = amPtr->loadDBC("ItemRandomProperties.dbc"); dbc && dbc->isLoaded()) {
-                            uint32_t nameField = (dbc->getFieldCount() > 4) ? 4 : 1;
                             for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
                                 int32_t rid = static_cast<int32_t>(dbc->getUInt32(r, 0));
-                                std::string name = dbc->getString(r, nameField);
+                                std::string name = dbc->getString(r, kNameField);
                                 if (!name.empty() && rid > 0) (*propNames)[rid] = name;
                             }
                         }
-                        // ItemRandomSuffix.dbc: ID=0, Name=4 (string) — stored as negative IDs
+                        // ItemRandomSuffix.dbc: ID=0, Name=1 — keyed as negative IDs
                         if (auto dbc = amPtr->loadDBC("ItemRandomSuffix.dbc"); dbc && dbc->isLoaded()) {
-                            uint32_t nameField = (dbc->getFieldCount() > 4) ? 4 : 1;
                             for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
                                 int32_t rid = static_cast<int32_t>(dbc->getUInt32(r, 0));
-                                std::string name = dbc->getString(r, nameField);
+                                std::string name = dbc->getString(r, kNameField);
                                 if (!name.empty() && rid > 0) (*propNames)[-rid] = name;
                             }
                         }
                     }
                     auto it = propNames->find(id);
                     return (it != propNames->end()) ? it->second : std::string{};
+                });
+            }
+            // Wire random-suffix/property stat resolver. Reproduces the server's roll from the
+            // same DBCs: a suffix (negative id) scales each SpellItemEnchantment STAT amount by
+            // AllocationPct*suffixFactor/10000; a property (positive id) uses the enchant's fixed
+            // amount. Caches all three tables on first use.
+            {
+                struct EnchEffect { uint32_t type; uint32_t arg; int32_t minAmount; };
+                auto suffixMap = std::make_shared<std::unordered_map<int32_t, std::vector<std::pair<uint32_t,uint32_t>>>>();
+                auto propMap   = std::make_shared<std::unordered_map<int32_t, std::vector<uint32_t>>>();
+                auto enchMap   = std::make_shared<std::unordered_map<uint32_t, std::vector<EnchEffect>>>();
+                auto loaded    = std::make_shared<bool>(false);
+                auto* amPtr = assetManager.get();
+                gameHandler->setRandomStatResolver(
+                    [suffixMap, propMap, enchMap, loaded, amPtr](int32_t id, uint32_t suffixFactor)
+                        -> std::vector<game::GameHandler::RandomStatBonus> {
+                    std::vector<game::GameHandler::RandomStatBonus> out;
+                    if (!amPtr || id == 0) return out;
+                    if (!*loaded) {
+                        *loaded = true;
+                        // SpellItemEnchantment: enchId -> up to 3 (type, statArg, minAmount).
+                        // Arg (stat type) is the 3 fields before Name; the effect-type array
+                        // precedes the amount block(s) — 2 blocks (Min+Max) on TBC/WotLK, 1 on Vanilla.
+                        if (auto dbc = amPtr->loadDBC("SpellItemEnchantment.dbc"); dbc && dbc->isLoaded()) {
+                            const auto* sieL = pipeline::getActiveDBCLayout()
+                                ? pipeline::getActiveDBCLayout()->getLayout("SpellItemEnchantment") : nullptr;
+                            const uint32_t fc = dbc->getFieldCount();
+                            const uint32_t nameF = pipeline::detectEnchantmentNameField(dbc.get(), sieL);
+                            if (nameF >= 12 && nameF < fc) {
+                                const uint32_t argBase = nameF - 3;
+                                const bool singleAmount = fc < 34;  // Vanilla/Turtle: no separate Max array
+                                const uint32_t effBase = argBase - (singleAmount ? 6u : 9u);
+                                const uint32_t minBase = effBase + 3u;
+                                for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                                    uint32_t enchId = dbc->getUInt32(r, 0);
+                                    if (enchId == 0) continue;
+                                    std::vector<EnchEffect> effs;
+                                    for (uint32_t s = 0; s < 3; ++s) {
+                                        uint32_t type = dbc->getUInt32(r, effBase + s);
+                                        if (type == 0) continue;
+                                        effs.push_back({type, dbc->getUInt32(r, argBase + s), dbc->getInt32(r, minBase + s)});
+                                    }
+                                    if (!effs.empty()) (*enchMap)[enchId] = std::move(effs);
+                                }
+                            }
+                        }
+                        // ItemRandomSuffix: enchant array at field 19, AllocationPct follows; N=(fc-19)/2.
+                        if (auto dbc = amPtr->loadDBC("ItemRandomSuffix.dbc"); dbc && dbc->isLoaded()) {
+                            const uint32_t fc = dbc->getFieldCount();
+                            if (fc > 21 && (fc - 19u) % 2u == 0u) {
+                                const uint32_t n = (fc - 19u) / 2u;
+                                for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                                    int32_t sid = static_cast<int32_t>(dbc->getUInt32(r, 0));
+                                    if (sid <= 0) continue;
+                                    std::vector<std::pair<uint32_t,uint32_t>> ens;
+                                    for (uint32_t k = 0; k < n; ++k) {
+                                        uint32_t ench = dbc->getUInt32(r, 19u + k);
+                                        uint32_t pct  = dbc->getUInt32(r, 19u + n + k);
+                                        if (ench != 0) ens.emplace_back(ench, pct);
+                                    }
+                                    if (!ens.empty()) (*suffixMap)[sid] = std::move(ens);
+                                }
+                            }
+                        }
+                        // ItemRandomProperties: up to 5 enchant ids at fields 2..6 (fixed amount).
+                        if (auto dbc = amPtr->loadDBC("ItemRandomProperties.dbc"); dbc && dbc->isLoaded()) {
+                            if (dbc->getFieldCount() > 6) {
+                                for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                                    int32_t pid = static_cast<int32_t>(dbc->getUInt32(r, 0));
+                                    if (pid <= 0) continue;
+                                    std::vector<uint32_t> ens;
+                                    for (uint32_t k = 2; k <= 6; ++k) {
+                                        uint32_t ench = dbc->getUInt32(r, k);
+                                        if (ench != 0) ens.push_back(ench);
+                                    }
+                                    if (!ens.empty()) (*propMap)[pid] = std::move(ens);
+                                }
+                            }
+                        }
+                    }
+                    auto addEnchant = [&](uint32_t enchId, int32_t computedAmount, bool useComputed) {
+                        auto eit = enchMap->find(enchId);
+                        if (eit == enchMap->end()) return;
+                        for (const auto& e : eit->second) {
+                            if (e.type != 5) continue;  // ITEM_ENCHANTMENT_TYPE_STAT only
+                            int32_t amount = (useComputed && e.minAmount == 0) ? computedAmount : e.minAmount;
+                            if (amount != 0) out.push_back({e.arg, amount});
+                        }
+                    };
+                    if (id < 0) {
+                        auto sit = suffixMap->find(-id);
+                        if (sit != suffixMap->end())
+                            for (const auto& [ench, pct] : sit->second) {
+                                int32_t amount = static_cast<int32_t>(
+                                    (static_cast<int64_t>(pct) * suffixFactor) / 10000);
+                                addEnchant(ench, amount, true);
+                            }
+                    } else {
+                        auto pit = propMap->find(id);
+                        if (pit != propMap->end())
+                            for (uint32_t ench : pit->second) addEnchant(ench, 0, false);
+                    }
+                    return out;
                 });
             }
             LOG_INFO("Addon system initialized, found ", addonManager_->getAddons().size(), " addon(s)");
@@ -1029,6 +1133,24 @@ void Application::setState(AppState newState) {
                 cc->setUseWoWSpeed(true);
             }
             if (gameHandler) {
+                gameHandler->setFaceCameraProvider([this]() -> float {
+                    // Turn the character to the camera's look direction and report it in
+                    // canonical space (same camera-yaw→canonical mapping as the per-frame
+                    // orientation sync). Lets a fishing cast drop the bobber in front of
+                    // where the player is aiming even while standing still.
+                    if (!renderer || !renderer->getCameraController())
+                        return gameHandler ? gameHandler->getMovementInfo().orientation : 0.0f;
+                    // Use the CAMERA's live look yaw (getYaw), not getFacingYaw: the latter is
+                    // the character's facing, which is NOT updated by left-mouse orbit, so while
+                    // aiming at the water standing still it is stale. Turn the character to the
+                    // camera aim and use the same yaw→canonical mapping the (working) melee
+                    // facing uses, so the bobber lands where the player is looking.
+                    float camYawDeg = renderer->getCameraController()->getYaw();
+                    renderer->setCharacterYaw(camYawDeg);
+                    renderer->getCameraController()->setFacingYaw(camYawDeg);
+                    return core::coords::normalizeAngleRad(glm::radians(180.0f - camYawDeg));
+                });
+
                 gameHandler->setMeleeSwingCallback([this](uint32_t spellId) {
                     if (renderer) {
                         // Ranged auto-attack spells: Auto Shot (75), Shoot (5019), Throw (2764)
@@ -1601,7 +1723,7 @@ void Application::update(float deltaTime) {
                                           !gameHandler->isMounted();
                 renderer->getCameraController()->setExternalFollow(
                     externallyDrivenMotion || landingClampActive || hearthFreeze ||
-                    transportTransferFreeze || krakenDeckFloorPending_);
+                    transportTransferFreeze || deckFloorPending_);
                 renderer->getCameraController()->setExternalMoving(externallyDrivenMotion);
                 if (externallyDrivenMotion) {
                     // Drop any stale local movement toggles while server drives taxi motion.
@@ -1787,8 +1909,8 @@ void Application::update(float deltaTime) {
                         const bool sameRideFrame = hasWMORideLock_ &&
                             lastWMORideTransportGuid_ == transportGuid &&
                             lastWMORideMapId_ == mapId;
-                        if (!sameRideFrame && tr->entry == 190536u) {
-                            krakenDeckFloorPending_ = true;
+                        if (!sameRideFrame && !tr->isM2) {
+                            deckFloorPending_ = true;
                         }
                         if (sameRideFrame && renderer->getCameraController()) {
                             const glm::vec3 localMotion =
@@ -1802,15 +1924,19 @@ void Application::update(float deltaTime) {
                             }
                         }
 
-                        // Moving WMO instances are intentionally excluded from the
-                        // camera controller's ordinary static-world floor query. Kraken's
-                        // entry ramp therefore needs its exact transport-instance floor
-                        // held after boarding, or gravity is folded into the attachment
-                        // and pulls the rider through the hull. Keep this entry-scoped so
-                        // established ship handling in other expansions is unchanged.
-                        // An upward jump remains fully controlled by vertical physics.
+                        // Moving WMO instances are intentionally excluded from the camera
+                        // controller's ordinary static-world floor query, so every WMO ship
+                        // needs its exact transport-instance floor held under the rider —
+                        // otherwise gravity folds into the attachment and pulls them through
+                        // the hull, and multi-deck ships (stairs, ramps) can't be climbed
+                        // because nothing raises the rider onto the upper geometry. This is
+                        // the walkable-deck query for ANY ship, keyed on the transport being
+                        // a WMO (not M2), not on a specific ship entry. getInstanceFloorHeight
+                        // returns the height of whatever deck/stair is under the player, so
+                        // walking up onto a higher deck just follows the collision. An upward
+                        // jump remains fully controlled by vertical physics (skipped below).
                         auto* cameraController = renderer->getCameraController();
-                        if (tr->entry == 190536u && cameraController &&
+                        if (!tr->isM2 && cameraController &&
                             !cameraController->isJumping()) {
                             const glm::vec3 intendedCanonical =
                                 core::coords::renderToCanonical(intendedRender);
@@ -1820,8 +1946,8 @@ void Application::update(float deltaTime) {
                                 intendedRender.z <= *deckFloor + 0.35f) {
                                 intendedRender.z = *deckFloor + 0.10f;
                                 cameraController->suppressVerticalPhysics();
-                                krakenDeckFloorPending_ = false;
-                            } else if (krakenDeckFloorPending_) {
+                                deckFloorPending_ = false;
+                            } else if (deckFloorPending_) {
                                 // A continent transfer registers the transport GO
                                 // before its WMO collision necessarily finishes loading.
                                 // Preserve the local offset until this exact instance's
@@ -1858,7 +1984,7 @@ void Application::update(float deltaTime) {
                     hasWMORideLock_ = false;
                     lastWMORideTransportGuid_ = 0;
                     lastWMORideMapId_ = 0xFFFFFFFFu;
-                    krakenDeckFloorPending_ = false;
+                    deckFloorPending_ = false;
                     glm::vec3 renderPos = renderer->getCharacterPosition();
 
                     // M2 transport riding: resolve in canonical space and lock once per frame.
@@ -1882,9 +2008,7 @@ void Application::update(float deltaTime) {
                             // riding appeared to "float" in place no matter how far the tram
                             // traveled underneath.
                             const bool isDeeprunTram =
-                                tr->displayId == 3831u ||
-                                (tr->entry >= 176080u && tr->entry <= 176085u) ||
-                                (tr->pathId >= 176080u && tr->pathId <= 176085u);
+                                game::TransportManager::isDeeprunTramTransport(*tr);
                             glm::vec3 localOffset = gameHandler->getPlayerTransportOffset();
                             glm::vec3 tentativeCanonical = core::coords::renderToCanonical(renderPos);
                             if (hasM2RideLock_) {
