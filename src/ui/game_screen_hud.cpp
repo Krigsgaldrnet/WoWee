@@ -461,8 +461,23 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
         std::vector<rendering::WorldMapTaxiNode> taxiNodes;
         const auto& nodes = gameHandler.getTaxiNodes();
         uint32_t currentTaxiNode = gameHandler.getTaxiCurrentNode();
+        const bool playerAlliance = gameHandler.isPlayerAlliance();
         taxiNodes.reserve(nodes.size());
         for (const auto& [id, node] : nodes) {
+            const bool known = gameHandler.isKnownTaxiNode(id);
+            // Undiscovered nodes are shown so the player can see where flight
+            // paths exist, but only ones their faction can actually use. A node's
+            // faction is inferred from which taxi mount TaxiNodes.dbc lists:
+            // own-faction mount → show; both mounts → neutral flight point, show;
+            // opposite-faction-only OR no mount at all (boat/zeppelin/script
+            // nodes) → hide. Known nodes are always shown.
+            if (!known) {
+                const bool hasAlliance = node.mountDisplayIdAlliance != 0;
+                const bool hasHorde    = node.mountDisplayIdHorde != 0;
+                const bool bothFactions = hasAlliance && hasHorde;   // neutral hub
+                const bool ownFaction   = playerAlliance ? hasAlliance : hasHorde;
+                if (!bothFactions && !ownFaction) continue;
+            }
             rendering::WorldMapTaxiNode wtn;
             wtn.id    = node.id;
             wtn.mapId = node.mapId;
@@ -475,7 +490,7 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
             wtn.wowY  = canonical.y;
             wtn.wowZ  = canonical.z;
             wtn.name  = node.name;
-            wtn.known = gameHandler.isKnownTaxiNode(id);
+            wtn.known = known;
             wtn.costCopper = gameHandler.getTaxiCostTo(id);
             wtn.current    = (id == currentTaxiNode);
             wtn.reachable  = gameHandler.hasTaxiRouteTo(id);
@@ -594,6 +609,28 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
             rares.push_back(std::move(m));
         }
         wm->setRares(std::move(rares));
+    }
+
+    // Chest tracker: mark loaded type-3 chest objects while excluding mining and
+    // herbalism nodes, which share GAMEOBJECT_TYPE_CHEST on the wire.
+    {
+        std::vector<rendering::WorldMapChestMark> chests;
+        if (settingsPanel_.showChestTracker_) {
+            for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
+                if (!entity || entity->getType() != game::ObjectType::GAMEOBJECT) continue;
+                auto chest = std::static_pointer_cast<game::GameObject>(entity);
+                const auto* info = gameHandler.getCachedGameObjectInfo(chest->getEntry());
+                if (!info || !info->isValid() || info->type != 3) continue;
+                if (gameHandler.isGatherGameObject(guid)) continue;
+
+                rendering::WorldMapChestMark mark;
+                mark.renderPos = core::coords::canonicalToRender(
+                    glm::vec3(chest->getX(), chest->getY(), chest->getZ()));
+                mark.name = chest->getName().empty() ? info->name : chest->getName();
+                chests.push_back(std::move(mark));
+            }
+        }
+        wm->setChests(std::move(chests));
     }
 
     glm::vec3 playerPos = renderer->getCharacterPosition();

@@ -616,7 +616,28 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Mount/dismount
-    dispatchTable_[Opcode::SMSG_DISMOUNT] = [this](network::Packet& /*packet*/) {
+    dispatchTable_[Opcode::SMSG_DISMOUNT] = [this](network::Packet& packet) {
+        // TBC/WotLK identify the dismounting unit with a packed GUID. Applying
+        // every nearby unit's dismount to the local player made an enemy
+        // dismounting to attack knock us off our own mount. Classic variants
+        // may send the legacy empty packet, which is implicitly local.
+        uint64_t dismountGuid = playerGuid;
+        if (packet.hasRemaining(1)) {
+            dismountGuid = packet.readPackedGuid();
+            if (dismountGuid == 0) {
+                LOG_WARNING("Ignoring SMSG_DISMOUNT with an invalid packed GUID");
+                return;
+            }
+        }
+        if (dismountGuid != playerGuid) {
+            LOG_DEBUG("Remote SMSG_DISMOUNT: guid=0x", std::hex,
+                      dismountGuid, std::dec);
+            if (otherPlayerMountCallback_) {
+                otherPlayerMountCallback_(dismountGuid, 0);
+            }
+            return;
+        }
+
         // Live-confirmed: CMaNGOS sends this partway through a taxi flight (its
         // own server-side flight-completion estimate firing early, well before
         // the client-simulated path actually finishes) - obeying it unconditionally
@@ -656,6 +677,30 @@ void GameHandler::registerOpcodeHandlers() {
             // not match where the server actually stopped us.
             movementHandler_->finishClientTaxiFlight(/*snapToFinalWaypoint=*/false);
             return;
+        }
+
+        // UNIT_FIELD_MOUNTDISPLAYID is the authoritative persistent mount
+        // state.  Some realms emit an isolated SMSG_DISMOUNT while processing
+        // damage (notably periodic poison) without actually removing the mount
+        // aura or clearing the update field.  Treating that transient packet as
+        // state made the local model dismount even though the player remained
+        // mounted server-side.  A real dismount also clears the update field;
+        // let that values update drive the visual when the two signals disagree.
+        if (isActiveExpansion("wotlk")) {
+            const uint16_t mountField = fieldIndex(UF::UNIT_FIELD_MOUNTDISPLAYID);
+            auto playerEntity = entityController_->getEntityManager().getEntity(playerGuid);
+            const uint32_t serverMountDisplay =
+                (playerEntity && mountField != 0xFFFF && playerEntity->hasField(mountField))
+                    ? playerEntity->getField(mountField)
+                    : 0;
+            if (serverMountDisplay != 0) {
+                LOG_WARNING("Ignoring transient SMSG_DISMOUNT while authoritative mount field is ",
+                            serverMountDisplay,
+                            " casting=", isCasting(),
+                            " channeling=", isChanneling(),
+                            " spell=", getCurrentCastSpellId());
+                return;
+            }
         }
         currentMountDisplayId_ = 0;
         if (mountCallback_) mountCallback_(0);
