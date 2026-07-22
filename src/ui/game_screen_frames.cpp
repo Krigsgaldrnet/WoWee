@@ -954,11 +954,17 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
     auto* window = services_.window;
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
 
-    float frameW = 250.0f;
+    // The frame auto-sizes (AlwaysAutoResize) to its widest content, so long names,
+    // subtitles, guild tags, and the level/classification line all fit without
+    // clipping. A 250px floor keeps the default look; the health/power bars use -1
+    // width so they fill whatever the frame grows to. Centering uses last frame's
+    // measured width since the position is set before the window lays out.
+    float frameW = lastTargetFrameWidth_;
     float frameX = (screenW - frameW) / 2.0f;
 
     ImGui::SetNextWindowPos(ImVec2(frameX, 30.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(frameW, 0.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(250.0f, 0.0f),
+                                        ImVec2(screenW * 0.6f, static_cast<float>(window ? window->getHeight() : 720)));
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
@@ -1024,6 +1030,9 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
     ImGui::PushStyleColor(ImGuiCol_Border, borderColor);
 
     if (ImGui::Begin("##TargetFrame", nullptr, flags)) {
+        // Record the auto-fitted width so next frame can center the window correctly.
+        frameW = ImGui::GetWindowSize().x;
+        lastTargetFrameWidth_ = frameW;
         // Raid mark icon (Star/Circle/Diamond/Triangle/Moon/Square/Cross/Skull)
         static constexpr struct { const char* sym; ImU32 col; } kRaidMarks[] = {
             { "\xe2\x98\x85", IM_COL32(255, 220,  50, 255) },  // 0 Star     (yellow)

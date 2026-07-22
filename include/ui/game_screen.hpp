@@ -114,7 +114,7 @@ private:
     ImVec2 questTrackerSize_ = ImVec2(220.0f, 200.0f); // saved size
     float questTrackerRightOffset_ = -1.0f;            // pixels from right edge; <0 = use default
     bool questTrackerPosInit_ = false;
-    int questTrackerFilter_ = 0;                        // 0=All, 1=Active, 2=Done
+    int questTrackerFilter_ = 3;                        // 0=All, 1=Active, 2=Done, 3=Zone (default)
     bool questTrackerCollapsed_ = false;                // collapsed to floating bubble
 
 
@@ -138,6 +138,9 @@ private:
      * Render target frame
      */
     void renderTargetFrame(game::GameHandler& gameHandler);
+    // Last measured width of the auto-sizing target frame, used to keep it centered
+    // (position is set before the window lays out, so it lags by one frame).
+    float lastTargetFrameWidth_ = 250.0f;
     void renderFocusFrame(game::GameHandler& gameHandler);
 
     /**
