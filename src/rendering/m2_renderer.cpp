@@ -214,8 +214,14 @@ uint32_t M2Renderer::gatherLocalLights(const glm::vec3& cameraPos,
                     float intensity = chandelier ? 1.25f : 0.85f;
                     glm::vec3 color(1.0f, 0.58f, 0.22f);
                     if (openFlame) {
-                        radius    = model->isTorch ? 8.0f : 11.0f;
-                        intensity = model->isTorch ? 1.10f : 1.30f;
+                        // Local lights are not shadowed, so this radius is the
+                        // distance the glow reaches straight through whatever
+                        // surrounds the fire. At 11 a hearth fire lit its entire
+                        // chimney from the inside out and the brickwork read as
+                        // though it were glowing. Keep the reach close to the
+                        // firebox and let the sprite and flames carry the rest.
+                        radius    = model->isTorch ? 3.0f : 3.5f;
+                        intensity = model->isTorch ? 0.95f : 1.05f;
                         color     = glm::vec3(1.0f, 0.50f, 0.18f);
                     }
                     candidates.push_back({distSq,

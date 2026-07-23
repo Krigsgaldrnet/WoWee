@@ -1301,6 +1301,37 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                                 (batch.preserveGlowMesh ? 2.0f : 1.45f);
                             if (batch.preserveGlowMesh) gs.color.a *= 1.25f;
 
+                            // A fixture with real particle flames should read as
+                            // flames with a halo behind them. The sprite is sized
+                            // from its glow card's geometric radius, which on a
+                            // chandelier spans the whole fixture — an additive
+                            // blob about a unit across, against candle flames of
+                            // 0.15, so the glow swallowed them entirely. Cap it
+                            // just above what a small glow card already produces
+                            // (the 0.5 floor times 1.45), so candles, lanterns
+                            // and torches are untouched and only oversized cards
+                            // are clamped.
+                            if (!model.particleEmitters.empty() && model.isLanternLike) {
+                                constexpr float kMaxHaloRadius = 0.75f;
+                                gs.size = std::min(gs.size, kMaxHaloRadius * inst.scale);
+                            }
+
+                            // Fire burning inside a hearth. The sprite is a point
+                            // billboard carrying one depth value for the whole
+                            // quad, so as soon as its centre shows through the
+                            // fireplace opening the entire square draws — brick
+                            // surround included, which reads as the fire glowing
+                            // through the masonry. Sized from the glow card's
+                            // geometric radius these spheres are wider than the
+                            // opening, so keep them inside it.
+                            const bool hearthFire = model.isBrazierOrFire ||
+                                                    model.isGroundFire ||
+                                                    model.isForge;
+                            if (hearthFire) {
+                                constexpr float kMaxFireGlowRadius = 0.5f;
+                                gs.size = std::min(gs.size, kMaxFireGlowRadius * inst.scale);
+                            }
+
                             // Flame guttering. The phase comes from the lamp's own
                             // world position, so two lanterns on the same street
                             // never pulse together — a synchronised row of lamps
@@ -1325,6 +1356,12 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                             GlowSprite halo = gs;
                             halo.color.a *= batch.preserveGlowMesh ? 0.34f : 0.42f;
                             halo.size *= batch.preserveGlowMesh ? 2.2f : 1.8f;
+                            // The halo is nearly twice the sprite, so capping only
+                            // the sprite would leave the bleed to the halo.
+                            if (hearthFire) {
+                                constexpr float kMaxFireHaloRadius = 0.85f;
+                                halo.size = std::min(halo.size, kMaxFireHaloRadius * inst.scale);
+                            }
                             glowSprites_.push_back(halo);
                         }
                         const bool cardLikeSkipMesh =
