@@ -1,4 +1,5 @@
 #include "ui/game_screen.hpp"
+#include "ui/ui_raid_icons.hpp"
 #include "ui/ui_colors.hpp"
 #include "ui/ui_helpers.hpp"
 #include "rendering/vk_context.hpp"
@@ -737,25 +738,16 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             drawList->AddCircleFilled(ImVec2(sx, sy), 4.0f, dotColor);
             drawList->AddCircle(ImVec2(sx, sy), 4.0f, IM_COL32(255, 255, 255, 160), 12, 1.0f);
 
-            // Raid mark: tiny symbol drawn above the dot
+            // Raid mark: the marker artwork drawn small above the dot
             {
-                static constexpr struct { const char* sym; ImU32 col; } kMMMarks[] = {
-                    { "\xe2\x98\x85", IM_COL32(255, 220,  50, 255) },
-                    { "\xe2\x97\x8f", IM_COL32(255, 140,   0, 255) },
-                    { "\xe2\x97\x86", IM_COL32(160,  32, 240, 255) },
-                    { "\xe2\x96\xb2", IM_COL32( 50, 200,  50, 255) },
-                    { "\xe2\x97\x8c", IM_COL32( 80, 160, 255, 255) },
-                    { "\xe2\x96\xa0", IM_COL32( 50, 200, 220, 255) },
-                    { "\xe2\x9c\x9d", IM_COL32(255,  80,  80, 255) },
-                    { "\xe2\x98\xa0", IM_COL32(255, 255, 255, 255) },
-                };
                 uint8_t pmk = gameHandler.getEntityRaidMark(member.guid);
                 if (pmk < game::GameHandler::kRaidMarkCount) {
-                    ImFont* mmFont = ImGui::GetFont();
-                    ImVec2 msz = mmFont->CalcTextSizeA(9.0f, FLT_MAX, 0.0f, kMMMarks[pmk].sym);
-                    drawList->AddText(mmFont, 9.0f,
-                        ImVec2(sx - msz.x * 0.5f, sy - 4.0f - msz.y),
-                        kMMMarks[pmk].col, kMMMarks[pmk].sym);
+                    if (VkDescriptorSet markTex = ui::getRaidTargetIcon(pmk, services_.assetManager)) {
+                        constexpr float kMarkSize = 10.0f;
+                        drawList->AddImage((ImTextureID)(uintptr_t)markTex,
+                            ImVec2(sx - kMarkSize * 0.5f, sy - 4.0f - kMarkSize),
+                            ImVec2(sx + kMarkSize * 0.5f, sy - 4.0f));
+                    }
                 }
             }
 
@@ -1570,6 +1562,15 @@ void GameScreen::saveSettings() {
     out << "show_minimap_coordinates=" << (settingsPanel_.pendingShowMinimapCoordinates ? 1 : 0) << "\n";
     out << "show_latency_meter=" << (settingsPanel_.pendingShowLatencyMeter ? 1 : 0) << "\n";
     out << "show_dps_meter=" << (settingsPanel_.showDPSMeter_ ? 1 : 0) << "\n";
+    {
+        // Only written once the user has dragged it; otherwise the meter keeps
+        // following the target frame on the next launch.
+        ImVec2 dpsPos = combatUI_.getDPSMeterPos();
+        if (dpsPos.x >= 0.0f) {
+            out << "dps_meter_x=" << dpsPos.x << "\n";
+            out << "dps_meter_y=" << dpsPos.y << "\n";
+        }
+    }
     out << "show_cooldown_tracker=" << (settingsPanel_.showCooldownTracker_ ? 1 : 0) << "\n";
     out << "show_rare_tracker=" << (settingsPanel_.showRareTracker_ ? 1 : 0) << "\n";
     out << "show_chest_tracker=" << (settingsPanel_.showChestTracker_ ? 1 : 0) << "\n";
@@ -1732,6 +1733,12 @@ void GameScreen::loadSettings() {
                 settingsPanel_.pendingShowLatencyMeter = settingsPanel_.showLatencyMeter_;
             } else if (key == "show_dps_meter") {
                 settingsPanel_.showDPSMeter_ = (std::stoi(val) != 0);
+            } else if (key == "dps_meter_x") {
+                dpsMeterSavedX_ = std::stof(val);
+                if (dpsMeterSavedY_ >= 0.0f) combatUI_.setDPSMeterPos(dpsMeterSavedX_, dpsMeterSavedY_);
+            } else if (key == "dps_meter_y") {
+                dpsMeterSavedY_ = std::stof(val);
+                if (dpsMeterSavedX_ >= 0.0f) combatUI_.setDPSMeterPos(dpsMeterSavedX_, dpsMeterSavedY_);
             } else if (key == "show_cooldown_tracker") {
                 settingsPanel_.showCooldownTracker_ = (std::stoi(val) != 0);
             } else if (key == "show_rare_tracker") {

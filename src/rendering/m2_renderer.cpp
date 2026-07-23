@@ -117,13 +117,18 @@ uint32_t M2Renderer::gatherLocalLights(const glm::vec3& cameraPos,
         float distSq;
         glm::vec4 posRadius;
         glm::vec4 colorIntensity;
+        bool flame = false;  // lamps/torches/braziers gutter; lava burns steady
+        // Fixture placement, used only to seed the flicker phase. The light's own
+        // position animates with the flame, which would re-roll the phase every frame.
+        glm::vec3 phaseSeed{0.0f};
     };
     std::vector<Candidate> candidates;
 
     for (const auto& instance : instances) {
         const M2ModelGPU* model = instance.cachedModel;
         if (!model || (!model->isLanternLike && !model->isTorch &&
-                       !model->isBrazierOrFire && !model->isLavaModel)) continue;
+                       !model->isBrazierOrFire && !model->isForge &&
+                       !model->isLavaModel)) continue;
 
         if (model->isLavaModel) {
             const glm::vec3 worldPos = instance.cachedCullCenter;
@@ -133,7 +138,8 @@ uint32_t M2Renderer::gatherLocalLights(const glm::vec3& cameraPos,
                 const float radius = std::clamp(instance.cachedVisualRadius * 0.8f,
                                                 10.0f, 35.0f);
                 candidates.push_back({distSq, glm::vec4(worldPos, radius),
-                                      glm::vec4(1.0f, 0.28f, 0.035f, 1.75f)});
+                                      glm::vec4(1.0f, 0.28f, 0.035f, 1.75f),
+                                      /*flame=*/false, instance.position});
             }
         }
 
@@ -169,15 +175,19 @@ uint32_t M2Renderer::gatherLocalLights(const glm::vec3& cameraPos,
             if (batch.glowTint == 1) color = glm::vec3(0.42f, 0.68f, 1.0f);
             else if (batch.glowTint == 2) color = glm::vec3(1.0f, 0.24f, 0.14f);
             candidates.push_back({distSq, glm::vec4(worldPos, radius),
-                                  glm::vec4(color, 1.35f)});
+                                  glm::vec4(color, 1.35f), /*flame=*/true,
+                                  instance.position});
             hasBatchLight = true;
         }
 
-        // Standalone candles expose their flame/glow only through particle
-        // emitters, so they have no glow-card batch for the path above. Use a
-        // single light at the emitter centroid; chandeliers with an authored
-        // glow batch remain represented by that batch rather than five lights.
-        if (!hasBatchLight && model->isLanternLike &&
+        // Candles, hearth fires, campfires, torches and forges express their
+        // flame purely as particle emitters, with no glow-card batch for the
+        // path above — so without this they lit nothing at all. One light at
+        // the emitter centroid; chandeliers with an authored glow batch stay
+        // represented by that batch rather than by five separate lights.
+        const bool openFlame = model->isBrazierOrFire || model->isTorch ||
+                               model->isGroundFire || model->isForge;
+        if (!hasBatchLight && (model->isLanternLike || openFlame) &&
             !model->particleEmitters.empty()) {
             glm::vec3 worldPos(0.0f);
             uint32_t emitterCount = 0;
@@ -198,10 +208,20 @@ uint32_t M2Renderer::gatherLocalLights(const glm::vec3& cameraPos,
                     const bool chandelier =
                         model->name.find("Chandelier") != std::string::npos ||
                         model->name.find("chandelier") != std::string::npos;
+                    // A hearth or campfire throws light much further than a
+                    // candle, and burns oranger than a lamp wick.
+                    float radius    = chandelier ? 10.0f : 5.0f;
+                    float intensity = chandelier ? 1.25f : 0.85f;
+                    glm::vec3 color(1.0f, 0.58f, 0.22f);
+                    if (openFlame) {
+                        radius    = model->isTorch ? 8.0f : 11.0f;
+                        intensity = model->isTorch ? 1.10f : 1.30f;
+                        color     = glm::vec3(1.0f, 0.50f, 0.18f);
+                    }
                     candidates.push_back({distSq,
-                        glm::vec4(worldPos, chandelier ? 10.0f : 5.0f),
-                        glm::vec4(1.0f, 0.58f, 0.22f,
-                                  chandelier ? 1.25f : 0.85f)});
+                        glm::vec4(worldPos, radius),
+                        glm::vec4(color, intensity),
+                        /*flame=*/true, instance.position});
                 }
             }
         }
@@ -212,9 +232,18 @@ uint32_t M2Renderer::gatherLocalLights(const glm::vec3& cameraPos,
     if (count == 0) return 0;
     std::partial_sort(candidates.begin(), candidates.begin() + count, candidates.end(),
         [](const Candidate& a, const Candidate& b) { return a.distSq < b.distSq; });
+    // Guttering is applied to the light itself, not just the glow sprite: the
+    // pool of light a lamp throws on the ground and nearby walls is what the eye
+    // actually reads as firelight, so modulating the sprite alone was too subtle
+    // to notice.
+    const float flickerSeconds = lampFlickerClockSeconds();
     for (uint32_t i = 0; i < count; ++i) {
         outPosRadius[i] = candidates[i].posRadius;
         outColorIntensity[i] = candidates[i].colorIntensity;
+        if (candidates[i].flame) {
+            outColorIntensity[i].w *= lampFlicker(candidates[i].phaseSeed,
+                                                  flickerSeconds, 0.82f, 0.12f, 0.06f);
+        }
     }
     return count;
 }
@@ -992,6 +1021,7 @@ void M2Renderer::shutdown() {
         destroyModelGPU(model);
     }
     models.clear();
+    pinnedModelIds_.clear();
 
     // Destroy instance bone buffers
     for (auto& inst : instances) {
@@ -1399,6 +1429,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     gpuModel.isWaterfall                 = cls.isWaterfall;
     gpuModel.isBrazierOrFire             = cls.isBrazierOrFire;
     gpuModel.isGroundFire                = cls.isGroundFire;
+    gpuModel.isForge                     = cls.isForge;
     gpuModel.isTorch                     = cls.isTorch;
     // Data-driven flight-path detection: name tokens miss many flying doodads
     // (buzzards, swallows, bird swarms, ...). A small mesh whose bone animation
@@ -1769,13 +1800,26 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
                  (!tcls.likelyFlame || modelLanternFamily));
             bgpu.glowCardLike = bgpu.lanternGlowHint &&
                 (tcls.hasGlowCardToken || tcls.softGlowSurface);
-            bgpu.preserveGlowMesh = tcls.softGlowSurface;
+            // A flame texture is the fire itself, not a flat card standing in for
+            // one, so swapping it for a featureless sprite deletes the visible
+            // flame — chandeliers and candelabra lit their surroundings while
+            // their candles sat unlit. Braziers already keep their flame mesh for
+            // this reason (see fireGlowCard above); FLAMELICK counts as a
+            // glow-card token, so lantern-family models were not getting the same
+            // treatment. Keep the mesh and let the sprite glow behind it.
+            const bool flameCard = tcls.hasFlameToken || tcls.likelyFlame;
+            bgpu.preserveGlowMesh = tcls.softGlowSurface ||
+                                    (bgpu.lanternGlowHint && flameCard);
             bgpu.glowTint = tcls.glowTint;
             if (tex != nullptr && tex != whiteTexture_.get()) {
                 auto pit = texturePropsByPtr_.find(tex);
                 if (pit != texturePropsByPtr_.end()) {
                     bgpu.hasAlpha = pit->second.hasAlpha;
                     bgpu.colorKeyBlack = pit->second.colorKeyBlack;
+                    // Forge fire uses ARMORREFLECT, an effect texture whose name
+                    // carries none of the flame/glow tokens the colour-key hint
+                    // looks for, so its black backing was being kept.
+                    if (gpuModel.isForge) bgpu.colorKeyBlack = true;
                 }
             }
             // textureCoordIndex is an index into a texture coord combo table, not directly
