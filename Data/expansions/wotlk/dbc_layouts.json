@@ -239,6 +239,7 @@
     "EffectBasePoints2": 82,
     "ID": 0,
     "IconID": 133,
+    "Description": 170,
     "ManaCost": 42,
     "Name": 136,
     "PowerType": 41,
@@ -246,7 +247,7 @@
     "Rank": 153,
     "SchoolMask": 225,
     "SpellVisualID": 131,
-    "Tooltip": 139
+    "Tooltip": 187
   },
   "SpellIcon": {
     "ID": 0,

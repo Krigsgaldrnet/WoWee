@@ -2090,8 +2090,7 @@ void InventoryHandler::handleSendMailResult(network::Packet& packet) {
 
 void InventoryHandler::handleReceivedMail(network::Packet& packet) {
     (void)packet;
-    hasNewMail_ = true;
-    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("UPDATE_PENDING_MAIL", {});
+    setHasNewMail(true);
 }
 
 void InventoryHandler::handleQueryNextMailTime(network::Packet& packet) {
@@ -2100,8 +2099,20 @@ void InventoryHandler::handleQueryNextMailTime(network::Packet& packet) {
     // that the previous reinterpret_cast<float*> on raw packet bytes had.
     float nextTime = packet.readFloat();
     uint32_t count = packet.readUInt32();
-    hasNewMail_ = (nextTime >= 0.0f && count > 0);
+    setHasNewMail(nextTime >= 0.0f && count > 0);
     packet.skipAll();
+}
+
+void InventoryHandler::setHasNewMail(bool value) {
+    // Announce a chat line + sound only on the rising edge (no unread -> unread), so the
+    // periodic next-mail-time poll doesn't repeat the notification while mail sits unread.
+    if (value && !hasNewMail_) {
+        owner_.addSystemChatMessage("You have new mail.");
+        if (auto* ac = owner_.services().audioCoordinator)
+            if (auto* sfx = ac->getUiSoundManager()) sfx->playMailReceived();
+    }
+    hasNewMail_ = value;
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("UPDATE_PENDING_MAIL", {});
 }
 
 // ============================================================
@@ -2131,6 +2142,22 @@ void InventoryHandler::buyBankSlot() {
     if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || bankerGuid_ == 0) return;
     auto packet = BuyBankSlotPacket::build(bankerGuid_);
     owner_.getSocket()->send(packet);
+}
+
+uint32_t InventoryHandler::getBankBagSlotPrice(int slotIndex) {
+    // BankBagSlotPrices.dbc — copper cost for each successive bank bag slot.
+    // These values are stable across Classic 1.12, TBC 2.4.3, and WotLK 3.3.5a.
+    static constexpr uint32_t kPrices[Inventory::BANK_BAG_SLOTS] = {
+        10000,    //   1g  — 1st slot
+        100000,   //  10g  — 2nd slot
+        250000,   //  25g  — 3rd slot
+        600000,   //  60g  — 4th slot
+        1000000,  // 100g  — 5th slot
+        2500000,  // 250g  — 6th slot
+        5000000,  // 500g  — 7th slot
+    };
+    if (slotIndex < 0 || slotIndex >= Inventory::BANK_BAG_SLOTS) return 0;
+    return kPrices[slotIndex];
 }
 
 void InventoryHandler::depositItem(uint8_t srcBag, uint8_t srcSlot) {
@@ -2290,6 +2317,19 @@ void InventoryHandler::auctionSellItem(int backpackIndex, uint32_t bid,
     }
 
     uint32_t stackCount = slot.item.stackCount;
+    auto packet = AuctionSellItemPacket::build(auctioneerGuid_, itemGuid, stackCount, bid, buyout, duration,
+                                                isPreWotlk());
+    owner_.getSocket()->send(packet);
+}
+
+void InventoryHandler::auctionSellItemByGuid(uint64_t itemGuid, uint32_t stackCount, uint32_t bid,
+                                             uint32_t buyout, uint32_t duration) {
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || auctioneerGuid_ == 0) return;
+    if (itemGuid == 0) {
+        LOG_ERROR("auctionSellItemByGuid: refusing to post with a null item GUID");
+        return;
+    }
+    if (stackCount == 0) stackCount = 1;
     auto packet = AuctionSellItemPacket::build(auctioneerGuid_, itemGuid, stackCount, bid, buyout, duration,
                                                 isPreWotlk());
     owner_.getSocket()->send(packet);

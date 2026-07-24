@@ -2189,6 +2189,8 @@ public:
     void openBank(uint64_t guid);
     void closeBank();
     void buyBankSlot();
+    // Copper cost of the bank bag slot at the given 0-based index (BankBagSlotPrices.dbc).
+    uint32_t getBankBagSlotPrice(int slotIndex) const;
     void depositItem(uint8_t srcBag, uint8_t srcSlot);
     void withdrawItem(uint8_t srcBag, uint8_t srcSlot);
     bool isBankOpen() const;
@@ -2218,6 +2220,8 @@ public:
                        uint32_t invTypeMask, uint8_t usableOnly, uint32_t offset = 0);
     void auctionSellItem(int backpackIndex, uint32_t bid,
                          uint32_t buyout, uint32_t duration);
+    void auctionSellItemByGuid(uint64_t itemGuid, uint32_t stackCount, uint32_t bid,
+                               uint32_t buyout, uint32_t duration);
     void auctionPlaceBid(uint32_t auctionId, uint32_t amount);
     void auctionBuyout(uint32_t auctionId, uint32_t buyoutPrice);
     void auctionCancelItem(uint32_t auctionId);

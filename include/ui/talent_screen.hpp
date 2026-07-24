@@ -5,6 +5,8 @@
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <string>
+#include <array>
+#include <cstdint>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -42,8 +44,18 @@ private:
     std::unordered_map<uint32_t, uint32_t> spellIconIds;       // spellId -> iconId
     std::unordered_map<uint32_t, std::string> spellIconPaths;  // iconId -> path
     std::unordered_map<uint32_t, VkDescriptorSet> spellIconCache;  // iconId -> texture
-    std::unordered_map<uint32_t, std::string> spellTooltips;   // spellId -> description
+    std::unordered_map<uint32_t, std::string> spellTooltips;   // spellId -> short tooltip text
+    std::unordered_map<uint32_t, std::string> spellDescriptions;  // spellId -> full effect description
     std::unordered_map<uint32_t, VkDescriptorSet> bgTextureCache_;  // tabId -> bg texture
+
+    // Resolve a rank spell's description into display-ready text: prefers the full
+    // Description, falls back to the short tooltip, then substitutes WoW's $-tokens.
+    std::string describeRankSpell(game::GameHandler& gameHandler, uint32_t spellId) const;
+    // Substitute WoW description tokens ($s/$o/$m/$M base points, $d durations — including
+    // cross-spell $<id> references — plus $l/$g plural/gender forms) using live spell data;
+    // unresolved tokens ($h proc chance, $t period, ...) are stripped cleanly.
+    std::string formatSpellDescription(game::GameHandler& gameHandler, uint32_t selfSpellId,
+                                       const std::string& raw) const;
 
     // Talent learn confirmation
     bool talentConfirmOpen_ = false;

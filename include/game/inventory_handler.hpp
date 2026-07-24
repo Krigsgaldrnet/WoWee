@@ -192,6 +192,9 @@ public:
     void openBank(uint64_t guid);
     void closeBank();
     void buyBankSlot();
+    // Cost in copper to purchase the bank bag slot at the given 0-based index
+    // (BankBagSlotPrices.dbc; identical values across Classic/TBC/WotLK). 0 = free/invalid.
+    static uint32_t getBankBagSlotPrice(int slotIndex);
     void depositItem(uint8_t srcBag, uint8_t srcSlot);
     void withdrawItem(uint8_t srcBag, uint8_t srcSlot);
     bool isBankOpen() const { return bankOpen_; }
@@ -221,6 +224,10 @@ public:
                        uint32_t invTypeMask, uint8_t usableOnly, uint32_t offset = 0);
     void auctionSellItem(int backpackIndex, uint32_t bid,
                          uint32_t buyout, uint32_t duration);
+    // Post an auction for an item identified by its server GUID, so items in any
+    // container (backpack or equipped bags) can be listed, not just the backpack.
+    void auctionSellItemByGuid(uint64_t itemGuid, uint32_t stackCount, uint32_t bid,
+                               uint32_t buyout, uint32_t duration);
     void auctionPlaceBid(uint32_t auctionId, uint32_t amount);
     void auctionBuyout(uint32_t auctionId, uint32_t buyoutPrice);
     void auctionCancelItem(uint32_t auctionId);
@@ -302,6 +309,8 @@ private:
     void handleSendMailResult(network::Packet& packet);
     void handleReceivedMail(network::Packet& packet);
     void handleQueryNextMailTime(network::Packet& packet);
+    // Update the unread-mail flag, announcing (chat + sound) once on the rising edge.
+    void setHasNewMail(bool value);
     void handleEquipmentSetList(network::Packet& packet);
 
     void categorizeTrainerSpells();

@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <deque>
 #include <numeric>
 #include <string>
 #include <fstream>
@@ -3293,19 +3294,105 @@ void WindowManager::renderBankWindow(game::GameHandler& gameHandler,
     // Main bank slots (24 for Classic, 28 for TBC/WotLK)
     int bankSlotCount = gameHandler.getEffectiveBankSlots();
     int bankBagCount = gameHandler.getEffectiveBankBagSlots();
-    ImGui::Text("Bank Slots");
-    ImGui::Separator();
-    for (int i = 0; i < bankSlotCount; i++) {
-        if (i % 7 != 0) ImGui::SameLine();
-        ImGui::PushID(i + 1000);
-        renderBankItemSlot(inv.getBankSlot(i), 0, i, -1, -1, 0xFF, static_cast<uint8_t>(39 + i));
-        ImGui::PopID();
+
+    // Persistent view options + client-driven sort queue (mirrors the backpack Sort Bags flow).
+    static bool bankCombineBags = false;
+    static std::deque<game::Inventory::SwapOp> bankSortQueue;
+
+    // Toolbar: Sort button + contiguous-view toggle
+    bool sorting = !bankSortQueue.empty();
+    if (sorting) ImGui::BeginDisabled();
+    if (ImGui::SmallButton(sorting ? "Sorting..." : "Sort")) {
+        // Compute swaps before mutating local state, apply the local preview, then queue packets.
+        auto swaps = inv.computeBankSortSwaps(bankSlotCount);
+        inv.sortBank(bankSlotCount);
+        for (auto& s : swaps) bankSortQueue.push_back(s);
+    }
+    if (sorting) ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Sort the bank (main slots + bank bags) by quality (highest first),\nthen by item ID, then by stack size.");
     }
 
-    // Bank bag equip slots — show bag icon with pickup/drop, or "Buy Slot"
+    ImGui::SameLine();
+    ImGui::Checkbox("Combine bags", &bankCombineBags);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Show every bank slot as one continuous grid\ninstead of splitting bank bags into separate sections.");
+    }
+
+    // Process one queued sort swap per frame (server enforces one CMSG_SWAP_ITEM at a time).
+    if (!bankSortQueue.empty()) {
+        auto op = bankSortQueue.front();
+        bankSortQueue.pop_front();
+        gameHandler.swapContainerItems(op.srcBag, op.srcSlot, op.dstBag, op.dstSlot);
+    }
+
+    ImGui::Separator();
+
+    constexpr int kBankCols = 7;
+    if (bankCombineBags) {
+        // Contiguous view: main bank slots followed by every bank bag's contents in one grid.
+        ImGui::Text("Bank Slots");
+        ImGui::Spacing();
+        int col = 0;
+        int uid = 0;
+        auto placeCell = [&]() {
+            if (col % kBankCols != 0) ImGui::SameLine();
+            col++;
+        };
+        for (int i = 0; i < bankSlotCount; i++) {
+            placeCell();
+            ImGui::PushID(10000 + uid++);
+            renderBankItemSlot(inv.getBankSlot(i), 0, i, -1, -1, 0xFF,
+                               static_cast<uint8_t>(game::Inventory::BANK_SLOT_START + i));
+            ImGui::PopID();
+        }
+        for (int bagIdx = 0; bagIdx < bankBagCount; bagIdx++) {
+            int bagSize = inv.getBankBagSize(bagIdx);
+            for (int s = 0; s < bagSize; s++) {
+                placeCell();
+                ImGui::PushID(10000 + uid++);
+                renderBankItemSlot(inv.getBankBagSlot(bagIdx, s), 1, -1, bagIdx, s,
+                                   static_cast<uint8_t>(game::Inventory::BANK_BAG_CONTAINER_START + bagIdx),
+                                   static_cast<uint8_t>(s));
+                ImGui::PopID();
+            }
+        }
+    } else {
+        // Grouped view: main bank slots, then one labeled section per bank bag.
+        ImGui::Text("Bank Slots");
+        ImGui::Spacing();
+        for (int i = 0; i < bankSlotCount; i++) {
+            if (i % kBankCols != 0) ImGui::SameLine();
+            ImGui::PushID(i + 1000);
+            renderBankItemSlot(inv.getBankSlot(i), 0, i, -1, -1, 0xFF,
+                               static_cast<uint8_t>(game::Inventory::BANK_SLOT_START + i));
+            ImGui::PopID();
+        }
+        for (int bagIdx = 0; bagIdx < bankBagCount; bagIdx++) {
+            int bagSize = inv.getBankBagSize(bagIdx);
+            if (bagSize <= 0) continue;
+
+            ImGui::Spacing();
+            ImGui::Text("Bank Bag %d (%d slots)", bagIdx + 1, bagSize);
+            for (int s = 0; s < bagSize; s++) {
+                if (s % kBankCols != 0) ImGui::SameLine();
+                ImGui::PushID(3000 + bagIdx * 100 + s);
+                renderBankItemSlot(inv.getBankBagSlot(bagIdx, s), 1, -1, bagIdx, s,
+                                   static_cast<uint8_t>(game::Inventory::BANK_BAG_CONTAINER_START + bagIdx),
+                                   static_cast<uint8_t>(s));
+                ImGui::PopID();
+            }
+        }
+    }
+
+    // Bank bag equip slots — show bag icon with pickup/drop, or a "Buy" button with its price.
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Text("Bank Bags");
+    // Deferred confirmation for a bank-bag-slot purchase (opened after the row is drawn).
+    static bool bankBuyConfirmOpen = false;
+    static uint32_t bankBuyConfirmPrice = 0;
+    static int bankBuyConfirmSlot = -1;
     uint8_t purchased = inv.getPurchasedBankBagSlots();
     for (int i = 0; i < bankBagCount; i++) {
         if (i > 0) ImGui::SameLine();
@@ -3315,29 +3402,54 @@ void WindowManager::renderBankWindow(game::GameHandler& gameHandler,
         if (i < purchased || bagSize > 0) {
             const auto& bagSlot = inv.getBankBagItem(i);
             // Render as an item slot: icon with pickup/drop (pickType=2 for bag equip)
-            renderBankItemSlot(bagSlot, 2, i, -1, -1, 0xFF, static_cast<uint8_t>(67 + i));
+            renderBankItemSlot(bagSlot, 2, i, -1, -1, 0xFF,
+                               static_cast<uint8_t>(game::Inventory::BANK_BAG_CONTAINER_START + i));
         } else {
-            if (ImGui::Button("Buy Slot", ImVec2(50, 30))) {
-                gameHandler.buyBankSlot();
+            // Unpurchased slot: show the price, but only allow buying the next one in sequence.
+            uint32_t price = gameHandler.getBankBagSlotPrice(i);
+            bool isNext = (i == purchased);
+            ImGui::BeginGroup();
+            if (!isNext) ImGui::BeginDisabled();
+            if (ImGui::Button(isNext ? "Buy" : "Locked", ImVec2(50, 26)) && isNext) {
+                // Ask for confirmation rather than spending gold on a single click.
+                bankBuyConfirmOpen = true;
+                bankBuyConfirmPrice = price;
+                bankBuyConfirmSlot = i;
+            }
+            if (!isNext) ImGui::EndDisabled();
+            // Price line under the button
+            ui::renderCoinsFromCopper(price);
+            ImGui::EndGroup();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (isNext) ImGui::SetTooltip("Purchase this bank bag slot.");
+                else ImGui::SetTooltip("Purchase the earlier bank bag slots first.");
             }
         }
         ImGui::PopID();
     }
 
-    // Show expanded bank bag contents
-    for (int bagIdx = 0; bagIdx < bankBagCount; bagIdx++) {
-        int bagSize = inv.getBankBagSize(bagIdx);
-        if (bagSize <= 0) continue;
-
+    // "Are you sure?" dialog for a bank-bag-slot purchase.
+    if (bankBuyConfirmOpen) {
+        ImGui::OpenPopup("Confirm Bank Slot Purchase##bank");
+        bankBuyConfirmOpen = false;
+    }
+    if (ImGui::BeginPopupModal("Confirm Bank Slot Purchase##bank", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+        ImGui::Text("Purchase bank bag slot %d?", bankBuyConfirmSlot + 1);
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Cost:");
+        ImGui::SameLine();
+        ui::renderCoinsFromCopper(bankBuyConfirmPrice);
         ImGui::Spacing();
-        ImGui::Text("Bank Bag %d (%d slots)", bagIdx + 1, bagSize);
-        for (int s = 0; s < bagSize; s++) {
-            if (s % 7 != 0) ImGui::SameLine();
-            ImGui::PushID(3000 + bagIdx * 100 + s);
-            renderBankItemSlot(inv.getBankBagSlot(bagIdx, s), 1, -1, bagIdx, s,
-                               static_cast<uint8_t>(67 + bagIdx), static_cast<uint8_t>(s));
-            ImGui::PopID();
+        if (ImGui::Button("Buy", ImVec2(80, 0))) {
+            gameHandler.buyBankSlot();
+            ImGui::CloseCurrentPopup();
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 
     ImGui::End();
@@ -3974,45 +4086,58 @@ void WindowManager::renderAuctionHouseWindow(game::GameHandler& gameHandler,
         ImGui::Separator();
         ImGui::Text("Sell Item:");
 
-        // Item picker from backpack
+        // Item picker: every non-empty slot across the backpack and all equipped bags.
         {
             auto& inv = gameHandler.getInventory();
-            // Build list of non-empty backpack slots
-            std::string preview = (auctionSellSlotIndex_ >= 0)
-                ? ([&]() -> std::string {
-                    const auto& slot = inv.getBackpackSlot(auctionSellSlotIndex_);
-                    if (!slot.empty()) {
-                        std::string s = slot.item.name;
-                        if (slot.item.stackCount > 1) s += " x" + std::to_string(slot.item.stackCount);
-                        return s;
+            // Resolve the ItemSlot for a (bagIndex, slotIndex) pair. bagIndex -1 is the backpack.
+            auto slotAt = [&](int bagIndex, int slotIndex) -> const game::ItemSlot& {
+                return (bagIndex < 0) ? inv.getBackpackSlot(slotIndex)
+                                      : inv.getBagSlot(bagIndex, slotIndex);
+            };
+
+            std::string preview = "Select item...";
+            if (auctionSellSlotIndex_ >= 0) {
+                const auto& slot = slotAt(auctionSellBagIndex_, auctionSellSlotIndex_);
+                if (!slot.empty()) {
+                    preview = slot.item.name;
+                    if (slot.item.stackCount > 1) preview += " x" + std::to_string(slot.item.stackCount);
+                }
+            }
+
+            // Render one selectable row for a slot; centralised so backpack and bag loops share it.
+            int comboUid = 0;
+            auto renderItemRow = [&](int bagIndex, int slotIndex) {
+                const auto& slot = slotAt(bagIndex, slotIndex);
+                if (slot.empty()) return;
+                ImGui::PushID(9000 + comboUid++);
+                if (slot.item.displayInfoId != 0) {
+                    VkDescriptorSet sIcon = inventoryScreen.getItemIcon(slot.item.displayInfoId);
+                    if (sIcon) {
+                        ImGui::Image((void*)(intptr_t)sIcon, ImVec2(16, 16));
+                        ImGui::SameLine();
                     }
-                    return "Select item...";
-                })()
-                : "Select item...";
+                }
+                std::string label = slot.item.name;
+                if (slot.item.stackCount > 1) label += " x" + std::to_string(slot.item.stackCount);
+                ImVec4 iqc = InventoryScreen::getQualityColor(slot.item.quality);
+                ImGui::PushStyleColor(ImGuiCol_Text, iqc);
+                bool selected = (auctionSellBagIndex_ == bagIndex && auctionSellSlotIndex_ == slotIndex);
+                if (ImGui::Selectable(label.c_str(), selected)) {
+                    auctionSellBagIndex_ = bagIndex;
+                    auctionSellSlotIndex_ = slotIndex;
+                }
+                ImGui::PopStyleColor();
+                ImGui::PopID();
+            };
 
             ImGui::SetNextItemWidth(250);
             if (ImGui::BeginCombo("##sellitem", preview.c_str())) {
-                for (int i = 0; i < game::Inventory::BACKPACK_SLOTS; i++) {
-                    const auto& slot = inv.getBackpackSlot(i);
-                    if (slot.empty()) continue;
-                    ImGui::PushID(i + 9000);
-                    // Item icon
-                    if (slot.item.displayInfoId != 0) {
-                        VkDescriptorSet sIcon = inventoryScreen.getItemIcon(slot.item.displayInfoId);
-                        if (sIcon) {
-                            ImGui::Image((void*)(intptr_t)sIcon, ImVec2(16, 16));
-                            ImGui::SameLine();
-                        }
-                    }
-                    std::string label = slot.item.name;
-                    if (slot.item.stackCount > 1) label += " x" + std::to_string(slot.item.stackCount);
-                    ImVec4 iqc = InventoryScreen::getQualityColor(slot.item.quality);
-                    ImGui::PushStyleColor(ImGuiCol_Text, iqc);
-                    if (ImGui::Selectable(label.c_str(), auctionSellSlotIndex_ == i)) {
-                        auctionSellSlotIndex_ = i;
-                    }
-                    ImGui::PopStyleColor();
-                    ImGui::PopID();
+                for (int i = 0; i < game::Inventory::BACKPACK_SLOTS; i++)
+                    renderItemRow(-1, i);
+                for (int b = 0; b < game::Inventory::NUM_BAG_SLOTS; b++) {
+                    int bagSize = inv.getBagSize(b);
+                    for (int s = 0; s < bagSize; s++)
+                        renderItemRow(b, s);
                 }
                 ImGui::EndCombo();
             }
@@ -4047,8 +4172,15 @@ void WindowManager::renderAuctionHouseWindow(game::GameHandler& gameHandler,
         ImGui::SameLine();
 
         // Create Auction button
-        bool canCreate = auctionSellSlotIndex_ >= 0 &&
-                         !gameHandler.getInventory().getBackpackSlot(auctionSellSlotIndex_).empty() &&
+        // Resolve the currently selected slot (backpack or an equipped bag) for validation + posting.
+        const game::ItemSlot* sellSlot = nullptr;
+        if (auctionSellSlotIndex_ >= 0) {
+            auto& inv = gameHandler.getInventory();
+            sellSlot = (auctionSellBagIndex_ < 0)
+                ? &inv.getBackpackSlot(auctionSellSlotIndex_)
+                : &inv.getBagSlot(auctionSellBagIndex_, auctionSellSlotIndex_);
+        }
+        bool canCreate = sellSlot && !sellSlot->empty() && sellSlot->item.guid != 0 &&
                          (auctionSellBid_[0] > 0 || auctionSellBid_[1] > 0 || auctionSellBid_[2] > 0);
         if (!canCreate) ImGui::BeginDisabled();
         if (ImGui::Button("Create Auction")) {
@@ -4060,9 +4192,11 @@ void WindowManager::renderAuctionHouseWindow(game::GameHandler& gameHandler,
                                   + static_cast<uint32_t>(auctionSellBuyout_[2]);
             const uint32_t durationMins[] = {720, 1440, 2880};
             uint32_t dur = durationMins[auctionSellDuration_];
-            gameHandler.auctionSellItem(auctionSellSlotIndex_, bidCopper, buyoutCopper, dur);
+            gameHandler.auctionSellItemByGuid(sellSlot->item.guid, sellSlot->item.stackCount,
+                                              bidCopper, buyoutCopper, dur);
             // Clear sell inputs
             auctionSellSlotIndex_ = -1;
+            auctionSellBagIndex_ = -1;
             auctionSellBid_[0] = auctionSellBid_[1] = auctionSellBid_[2] = 0;
             auctionSellBuyout_[0] = auctionSellBuyout_[1] = auctionSellBuyout_[2] = 0;
         }
