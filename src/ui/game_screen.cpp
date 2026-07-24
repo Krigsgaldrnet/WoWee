@@ -494,8 +494,10 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     }
     windowManager_.renderMailWindow(gameHandler, inventoryScreen, chatPanel_);
     windowManager_.renderMailComposeWindow(gameHandler, inventoryScreen);
-    windowManager_.renderBankWindow(gameHandler, inventoryScreen, chatPanel_);
+    if (windowManager_.renderBankWindow(gameHandler, inventoryScreen, chatPanel_))
+        saveSettings();
     windowManager_.renderGuildBankWindow(gameHandler, inventoryScreen, chatPanel_);
+    windowManager_.renderGmCommandScreen(gameHandler);
     windowManager_.renderAuctionHouseWindow(gameHandler, inventoryScreen, chatPanel_);
     socialPanel_.renderDungeonFinderWindow(gameHandler, chatPanel_);
     windowManager_.renderInstanceLockouts(gameHandler);
@@ -577,6 +579,21 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         }
     } else {
         windowManager_.vendorBagsOpened_ = false;
+    }
+
+    // Auto-open bags once when the guild bank first opens, so items can be
+    // right-clicked to deposit into the vault.
+    if (gameHandler.isGuildBankOpen()) {
+        if (!windowManager_.guildBankBagsOpened_) {
+            windowManager_.guildBankBagsOpened_ = true;
+            if (inventoryScreen.isSeparateBags()) {
+                inventoryScreen.openAllBags();
+            } else if (!inventoryScreen.isOpen()) {
+                inventoryScreen.setOpen(true);
+            }
+        }
+    } else {
+        windowManager_.guildBankBagsOpened_ = false;
     }
 
     inventoryScreen.setGameHandler(&gameHandler);
@@ -902,6 +919,10 @@ void GameScreen::renderMicroMenu(game::GameHandler& gameHandler) {
             showWorldMap_ = !showWorldMap_;
         }
         ImGui::SameLine();
+        if (button("GM##MicroGM", "GM Commands", windowManager_.showGmCommandScreen_)) {
+            windowManager_.showGmCommandScreen_ = !windowManager_.showGmCommandScreen_;
+        }
+        ImGui::SameLine();
         if (button("*##MicroSettings", "Settings", settingsPanel_.showSettingsWindow)) {
             settingsPanel_.showSettingsWindow = !settingsPanel_.showSettingsWindow;
         }
@@ -1105,6 +1126,8 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 gameHandler.closeBarberShop();
             } else if (gameHandler.isBankOpen()) {
                 gameHandler.closeBank();
+            } else if (gameHandler.isGuildBankOpen()) {
+                gameHandler.closeGuildBank();
             } else if (gameHandler.isTrainerWindowOpen()) {
                 gameHandler.closeTrainer();
             } else if (gameHandler.isMailboxOpen()) {

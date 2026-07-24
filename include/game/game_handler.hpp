@@ -2087,6 +2087,12 @@ public:
                                  static_cast<uint32_t>(MovementFlags::FLYING);
         return (movementInfo.flags & flyMask) == flyMask;
     }
+    // The player is *allowed* to fly (CAN_FLY set by a flying mount or .gm fly).
+    // Drives flight-mode physics: FLYING is only set once actually airborne, so
+    // gating flight on isPlayerFlying() left .gm fly unable to take off.
+    bool canFly() const {
+        return (movementInfo.flags & static_cast<uint32_t>(MovementFlags::CAN_FLY)) != 0;
+    }
     bool isHovering() const {
         return (movementInfo.flags & static_cast<uint32_t>(MovementFlags::HOVER)) != 0;
     }
@@ -2231,6 +2237,7 @@ public:
     void withdrawGuildBankMoney(uint32_t amount);
     void guildBankWithdrawItem(uint8_t tabId, uint8_t bankSlot, uint8_t destBag, uint8_t destSlot);
     void guildBankDepositItem(uint8_t tabId, uint8_t bankSlot, uint8_t srcBag, uint8_t srcSlot);
+    void guildBankDepositFromInventory(uint8_t srcBag, uint8_t srcSlot);
     bool isGuildBankOpen() const;
     const GuildBankData& getGuildBankData() const;
     uint8_t getGuildBankActiveTab() const;

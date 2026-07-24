@@ -279,9 +279,17 @@ bool VkContext::createInstance(SDL_Window* window) {
         builder.enable_extension(ext);
     }
 
-    if (enableValidation) {
+    // Allow turning validation on in a release build via env var, so the
+    // Khronos validation layer's messages (e.g. the exact VK error behind an
+    // FSR3 pipeline-creation failure) get routed to our log via debugCallback.
+    bool enableValidationEffective = enableValidation;
+    if (const char* v = std::getenv("WOWEE_VULKAN_VALIDATION")) {
+        if (v[0] && v[0] != '0') enableValidationEffective = true;
+    }
+    if (enableValidationEffective) {
         builder.request_validation_layers(true)
                .set_debug_callback(debugCallback);
+        LOG_INFO("Vulkan validation layers requested");
     }
 
     auto instRet = builder.build();
@@ -394,20 +402,51 @@ bool VkContext::selectPhysicalDevice() {
 bool VkContext::createLogicalDevice() {
     vkb::DeviceBuilder deviceBuilder{vkbPhysicalDevice_};
 
-    // Enable optional Vulkan 1.2 features for FSR2 compute shaders (shaderFloat16)
+    // Enable optional Vulkan 1.1/1.2 features for FSR2/FSR3 compute shaders.
+    // shaderFloat16 covers fp16 *arithmetic*; the AMD FSR3 SDK shaders also pack
+    // fp16 into storage buffers, which needs the 16-bit *storage* features
+    // (storageBuffer16BitAccess / uniformAndStorageBuffer16BitAccess). Without
+    // them the FFX Vulkan backend fails to build its compute pipelines and
+    // ffxCreateContext returns rc=3 (RUNTIME_ERROR) — "Path C upscale failed".
+    VkPhysicalDeviceVulkan11Features enabled11{};
+    enabled11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
     VkPhysicalDeviceVulkan12Features enabled12{};
     enabled12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     if (instanceApiVersion_ >= VK_API_VERSION_1_2) {
+        VkPhysicalDeviceVulkan11Features supported11{};
+        supported11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
         VkPhysicalDeviceVulkan12Features supported12{};
         supported12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        supported11.pNext = &supported12;
         VkPhysicalDeviceFeatures2 features2{};
         features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        features2.pNext = &supported12;
+        features2.pNext = &supported11;
         vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
         if (supported12.shaderFloat16) {
             enabled12.shaderFloat16 = VK_TRUE;
-            LOG_INFO("Enabling shaderFloat16 for FSR2 compute shaders");
+            LOG_INFO("Enabling shaderFloat16 for FSR2/FSR3 compute shaders");
         }
+        if (supported12.shaderInt8) {
+            enabled12.shaderInt8 = VK_TRUE;
+        }
+        // The AMD FSR3 SDK backend hardcodes fp16Supported=true and always
+        // selects the fp16 shader permutations, whose wave/subgroup reductions
+        // operate on 16-bit types — that needs shaderSubgroupExtendedTypes.
+        // Without it, ffxCreateContext fails building those pipelines (rc=3).
+        if (supported12.shaderSubgroupExtendedTypes) {
+            enabled12.shaderSubgroupExtendedTypes = VK_TRUE;
+            LOG_INFO("Enabling shaderSubgroupExtendedTypes for FSR3 fp16 wave ops");
+        }
+        if (supported11.storageBuffer16BitAccess) {
+            enabled11.storageBuffer16BitAccess = VK_TRUE;
+            LOG_INFO("Enabling 16-bit storage for FSR3 SDK compute shaders");
+        }
+        if (supported11.uniformAndStorageBuffer16BitAccess) {
+            enabled11.uniformAndStorageBuffer16BitAccess = VK_TRUE;
+        }
+        // Add each struct separately — vk-bootstrap owns the pNext chaining;
+        // manually linking them would be overwritten when it appends the next.
+        deviceBuilder.add_pNext(&enabled11);
         deviceBuilder.add_pNext(&enabled12);
     }
 

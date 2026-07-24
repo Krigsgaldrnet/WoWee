@@ -2158,28 +2158,22 @@ uint32_t InventoryHandler::getBankBagSlotPrice(int slotIndex) {
 
 void InventoryHandler::depositItem(uint8_t srcBag, uint8_t srcSlot) {
     if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
-    int freeBankSlot = -1;
-    for (int i = 0; i < effectiveBankSlots_; ++i) {
-        if (bankSlotGuids_[i] == 0) { freeBankSlot = i; break; }
-    }
-    if (freeBankSlot < 0) {
-        owner_.addSystemChatMessage("Bank is full.");
-        return;
-    }
-    uint8_t dstSlot = static_cast<uint8_t>(39 + freeBankSlot);
-    auto packet = SwapItemPacket::build(0xFF, dstSlot, srcBag, srcSlot);
+    // CMSG_AUTOBANK_ITEM lets the server place the item into the first free slot
+    // across the whole bank — the main slots AND the purchased bank bags. The
+    // old code scanned only the main bank slots and reported "Bank is full" the
+    // moment those filled, ignoring free space in the bank bags. The server
+    // replies with a bank-full error if there is genuinely no room.
+    auto packet = AutoBankItemPacket::build(srcBag, srcSlot);
     owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::withdrawItem(uint8_t srcBag, uint8_t srcSlot) {
     if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
-    int freeSlot = owner_.inventoryRef().findFreeBackpackSlot();
-    if (freeSlot < 0) {
-        owner_.addSystemChatMessage("Inventory is full.");
-        return;
-    }
-    uint8_t dstSlot = static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + freeSlot);
-    auto packet = SwapItemPacket::build(0xFF, dstSlot, srcBag, srcSlot);
+    // CMSG_AUTOSTORE_BANK_ITEM lets the server place the item into the first
+    // free slot across ALL bags (retail right-click-to-withdraw), not just the
+    // backpack. The server replies with an inventory-full error if there's no
+    // room, so no client-side capacity check is needed here.
+    auto packet = AutoStoreBankItemPacket::build(srcBag, srcSlot);
     owner_.getSocket()->send(packet);
 }
 
@@ -2209,6 +2203,14 @@ void InventoryHandler::openGuildBank(uint64_t guid) {
     guildBankOpen_ = true;
     guildBankActiveTab_ = 0;
     if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GUILDBANKFRAME_OPENED", {});
+    // CMSG_GUILD_BANKER_ACTIVATE registers this session with the guild banker so
+    // the server sends the tab list + contents (SMSG_GUILD_BANK_LIST). Without it
+    // the follow-up query-tab is rejected and no bank list ever arrives, so the
+    // window opened empty (or not at all).
+    if (owner_.getState() == WorldState::IN_WORLD && owner_.getSocket() && guid != 0) {
+        auto activate = GuildBankerActivatePacket::build(guid);
+        owner_.getSocket()->send(activate);
+    }
     queryGuildBankTab(0);
 }
 
@@ -2255,8 +2257,44 @@ void InventoryHandler::guildBankDepositItem(uint8_t tabId, uint8_t bankSlot, uin
     owner_.getSocket()->send(packet);
 }
 
+void InventoryHandler::guildBankDepositFromInventory(uint8_t srcBag, uint8_t srcSlot) {
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() ||
+        guildBankerGuid_ == 0 || !guildBankOpen_) return;
+    // CMSG_GUILD_BANK_SWAP_ITEMS has no server-side auto-store for the deposit
+    // direction (that path forces bank→character), so the client picks the
+    // target slot — the first empty one in the tab the player is viewing, which
+    // is what the retail client does on a right-click deposit.
+    constexpr int kTabSlots = 98; // GUILD_BANK_MAX_SLOTS
+    std::array<bool, kTabSlots> occupied{};
+    for (const auto& slot : guildBankData_.tabItems) {
+        if (slot.itemEntry != 0 && slot.slotId < kTabSlots)
+            occupied[slot.slotId] = true;
+    }
+    int freeSlot = -1;
+    for (int s = 0; s < kTabSlots; ++s) {
+        if (!occupied[s]) { freeSlot = s; break; }
+    }
+    if (freeSlot < 0) {
+        owner_.addSystemChatMessage("This guild bank tab is full.");
+        return;
+    }
+    guildBankDepositItem(guildBankActiveTab_, static_cast<uint8_t>(freeSlot), srcBag, srcSlot);
+}
+
 void InventoryHandler::handleGuildBankList(network::Packet& packet) {
     if (!GuildBankListParser::parse(packet, guildBankData_)) return;
+    // Receiving the bank list means the banker accepted us — make sure the
+    // window is shown even if the open path didn't (e.g. a server-initiated
+    // refresh, or the banker guid arrived only with the list).
+    if (guildBankerGuid_ != 0 && !guildBankOpen_) {
+        guildBankOpen_ = true;
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GUILDBANKFRAME_OPENED", {});
+    }
+    // Each list is tagged with the tab it describes. Track it so the UI
+    // highlights the right tab and item withdraw/deposit target the tab the
+    // player is actually viewing (clicking a tab only sends a query — it never
+    // updated the active tab, so operations defaulted to tab 0).
+    guildBankActiveTab_ = guildBankData_.tabId;
     if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GUILDBANKBAGSLOTS_CHANGED", {});
     for (const auto& tab : guildBankData_.tabs) {
         for (const auto& item : tab.items) {
