@@ -668,29 +668,25 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
     table[Opcode::SMSG_AUCTION_COMMAND_RESULT] = [this](network::Packet& packet) { handleAuctionCommandResult(packet); };
 
     table[Opcode::SMSG_AUCTION_OWNER_NOTIFICATION] = [this](network::Packet& packet) {
-        if (packet.hasRemaining(16)) {
+        // WotLK format: auctionId(4) + bid(4) + unk(4) + unk2(4) + unk3(4) +
+        // item_template(4) + item_count(4) = 28 bytes. This packet is only sent when
+        // an owned auction SELLS — expiry and outbids arrive via their own opcodes
+        // (SMSG_AUCTION_REMOVED_NOTIFICATION / SMSG_AUCTION_BIDDER_NOTIFICATION).
+        // The item entry lives at offset 20, not 12; reading field 3 (a zero unk)
+        // made every "sold" line say "Item #0".
+        if (packet.hasRemaining(24)) {
             /*uint32_t auctionId =*/ packet.readUInt32();
-            uint32_t action    = packet.readUInt32();
-            /*uint32_t error   =*/ packet.readUInt32();
+            /*uint32_t bid       =*/ packet.readUInt32();
+            /*uint32_t unk       =*/ packet.readUInt32();
+            /*uint32_t unk2      =*/ packet.readUInt32();
+            /*uint32_t unk3      =*/ packet.readUInt32();
             uint32_t itemEntry = packet.readUInt32();
-            int32_t ownerRandProp = 0;
-            if (packet.hasRemaining(4))
-                ownerRandProp = static_cast<int32_t>(packet.readUInt32());
             owner_.ensureItemInfo(itemEntry);
             auto* info = owner_.getItemInfo(itemEntry);
             std::string rawName = info && !info->name.empty() ? info->name : ("Item #" + std::to_string(itemEntry));
-            if (ownerRandProp != 0) {
-                std::string suffix = owner_.getRandomPropertyName(ownerRandProp);
-                if (!suffix.empty()) rawName += " " + suffix;
-            }
             uint32_t aucQuality = info ? info->quality : 1u;
             std::string itemLink = buildItemLink(itemEntry, aucQuality, rawName);
-            if (action == 1)
-                owner_.addSystemChatMessage("Your auction of " + itemLink + " has expired.");
-            else if (action == 2)
-                owner_.addSystemChatMessage("A bid has been placed on your auction of " + itemLink + ".");
-            else
-                owner_.addSystemChatMessage("Your auction of " + itemLink + " has sold!");
+            owner_.addSystemChatMessage("Your auction of " + itemLink + " has sold!");
         }
         packet.skipAll();
     };
@@ -3488,6 +3484,29 @@ void InventoryHandler::rebuildOnlineInventory() {
     }(), " keyring=", [&](){
         int c = 0; for (auto g : owner_.keyringSlotGuidsRef()) if (g) c++; return c;
     }());
+
+    // Reconcile collect-item quest objectives against what the player is
+    // actually carrying. In 3.3.5a the server never pushes item objective
+    // counts, so this bag-count pass is the only thing that advances "collect
+    // N of item" progress when quest items are looted (or removed). Count
+    // backpack + the four equipped bags — the same set the server checks at
+    // turn-in — summing stacks per item id.
+    std::unordered_map<uint32_t, uint32_t> carriedCounts;
+    const auto& inv = owner_.inventoryRef();
+    for (int i = 0; i < inv.getBackpackSize(); i++) {
+        const auto& slot = inv.getBackpackSlot(i);
+        if (!slot.empty())
+            carriedCounts[slot.item.itemId] += std::max<uint32_t>(1, slot.item.stackCount);
+    }
+    for (int bagIdx = 0; bagIdx < 4; bagIdx++) {
+        int numSlots = inv.getBagSize(bagIdx);
+        for (int s = 0; s < numSlots; s++) {
+            const auto& slot = inv.getBagSlot(bagIdx, s);
+            if (!slot.empty())
+                carriedCounts[slot.item.itemId] += std::max<uint32_t>(1, slot.item.stackCount);
+        }
+    }
+    owner_.reconcileQuestItemObjectives(carriedCounts);
 }
 
 void InventoryHandler::maybeDetectVisibleItemLayout() {

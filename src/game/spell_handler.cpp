@@ -118,6 +118,21 @@ std::string castFailureMessage(const GameHandler& owner, uint32_t spellId,
         return "Requires a crafting tool you don't have (blacksmith hammer, mining pick, ...).";
     }
 
+    // "Target aurastate" (111) means the target isn't in the state the ability needs.
+    // Translate the spell's required Spell.dbc TargetAuraState into actionable text —
+    // Execute and Hammer of Wrath want a low-health target, etc.
+    if (result == 111) {
+        switch (owner.getSpellTargetAuraState(spellId)) {
+            case 2:  return "Target must be below 20% health.";
+            case 13: return "Target must be below 35% health.";
+            case 14: return "Target must be affected by Immolate or Shadowflame.";
+            case 16: return "Target must be afflicted by your Deadly Poison.";
+            case 17: return "Target must be enraged.";
+            case 18: return "Target must be bleeding.";
+            default: return "The target isn't in the required state for this ability.";
+        }
+    }
+
     const char* reason = getSpellCastResultString(result, powerType);
     return reason ? reason
                   : ("Spell cast failed (error " + std::to_string(result) + ")");
@@ -620,10 +635,18 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
         return;
     }
 
-    // Casting any spell while mounted → dismount instead
+    // Casting any spell while mounted → dismount first, then cast (retail
+    // behavior: the mount is a cancellable aura that a cast removes). Exception:
+    // while actively flying (airborne on a flying mount) retail blocks the cast
+    // entirely rather than dropping the player out of the sky, so bail there.
+    // dismount() clears the local mount state synchronously, so control falls
+    // through and the cast is sent from the ground in the same action.
     if (owner_.isMounted()) {
+        if (owner_.isPlayerFlying()) {
+            owner_.addUIError("You can't do that while flying.");
+            return;
+        }
         owner_.dismount();
-        return;
     }
 
     if (casting_) {
@@ -833,6 +856,15 @@ void SpellHandler::cancelCast() {
 }
 
 void SpellHandler::startCraftQueue(uint32_t spellId, int count) {
+    // castSpell() dismounts a ground mount and then casts, so crafting while
+    // mounted just works. But while airborne on a flying mount it blocks the
+    // cast — guard that here too so we don't populate the queue with a cast
+    // that will never fire (which would freeze the crafting UI on
+    // "Crafting... N remaining").
+    if (owner_.isMounted() && owner_.isPlayerFlying()) {
+        owner_.addUIError("You can't do that while flying.");
+        return;
+    }
     craftQueueSpellId_ = spellId;
     craftQueueRemaining_ = count;
     castSpell(spellId, 0);
@@ -2583,6 +2615,13 @@ void SpellHandler::loadSpellNameCache() const {
         uint32_t f = spellL->field("Tooltip");
         if (f != 0xFFFFFFFF && f < dbc->getFieldCount()) tooltipField = f;
     }
+    // The full effect Description (e.g. "Restores X health over Y sec. ...become well
+    // fed...") is richer than the short Tooltip; prefer it and fall back to Tooltip.
+    uint32_t descriptionField = 0xFFFFFFFF;
+    if (spellL) {
+        uint32_t f = spellL->field("Description");
+        if (f != 0xFFFFFFFF && f < dbc->getFieldCount()) descriptionField = f;
+    }
 
     // Targets: SpellCastTargets mask the spell demands. Item-enhancement spells
     // (sharpening stones, weightstones, weapon oils) set TARGET_FLAG_ITEM here.
@@ -2607,6 +2646,7 @@ void SpellHandler::loadSpellNameCache() const {
     const uint32_t effect2Field = spellL ? spellL->field("Effect2") : 0xFFFFFFFF;
     const uint32_t durIdxField = spellL ? spellL->field("DurationIndex") : 0xFFFFFFFF;
     const uint32_t rangeIdxField = spellL ? spellL->field("RangeIndex") : 0xFFFFFFFF;
+    const uint32_t targetAuraStateField = spellL ? spellL->field("TargetAuraState") : 0xFFFFFFFF;
     const uint32_t spellVisualIdField = spellL ? spellL->field("SpellVisualID") : 0xFFFFFFFF;
     const uint32_t recoveryField = spellL ? spellL->field("RecoveryTime") : 0xFFFFFFFF;
     const uint32_t categoryRecoveryField = spellL ? spellL->field("CategoryRecoveryTime") : 0xFFFFFFFF;
@@ -2621,7 +2661,10 @@ void SpellHandler::loadSpellNameCache() const {
             GameHandler::SpellNameEntry entry;
             entry.name = std::move(name);
             entry.rank = std::move(rank);
-            if (tooltipField != 0xFFFFFFFF) {
+            if (descriptionField != 0xFFFFFFFF) {
+                entry.description = dbc->getString(i, descriptionField);
+            }
+            if (entry.description.empty() && tooltipField != 0xFFFFFFFF) {
                 entry.description = dbc->getString(i, tooltipField);
             }
             if (hasSchoolMask) {
@@ -2639,6 +2682,9 @@ void SpellHandler::loadSpellNameCache() const {
             }
             if (targetsField != 0xFFFFFFFF) {
                 entry.targetFlags = dbc->getUInt32(i, targetsField);
+            }
+            if (targetAuraStateField != 0xFFFFFFFF && targetAuraStateField < fieldCount) {
+                entry.targetAuraState = dbc->getUInt32(i, targetAuraStateField);
             }
             // Load effect base points for $s1/$s2/$s3 tooltip substitution
             if (ebp0Field != 0xFFFFFFFF) entry.effectBasePoints[0] = static_cast<int32_t>(dbc->getUInt32(i, ebp0Field));
@@ -2981,6 +3027,13 @@ uint32_t SpellHandler::getSpellTargetFlags(uint32_t spellId) const {
     loadSpellNameCache();
     auto it = owner_.spellNameCacheRef().find(spellId);
     return (it != owner_.spellNameCacheRef().end()) ? it->second.targetFlags : 0;
+}
+
+uint32_t SpellHandler::getSpellTargetAuraState(uint32_t spellId) const {
+    if (spellId == 0) return 0;
+    loadSpellNameCache();
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.targetAuraState : 0;
 }
 
 uint32_t SpellHandler::resolveHighestKnownRank(uint32_t spellId) const {

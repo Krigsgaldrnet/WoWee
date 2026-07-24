@@ -1610,6 +1610,9 @@ public:
     // Quest log
     using QuestLogEntry = QuestHandler::QuestLogEntry;
     const std::vector<QuestLogEntry>& getQuestLog() const;
+    // Reconcile collect-item quest objectives against current bag contents.
+    // Forwards to QuestHandler; called by InventoryHandler after each rebuild.
+    void reconcileQuestItemObjectives(const std::unordered_map<uint32_t, uint32_t>& carriedCounts);
     int getMaxQuestLogSlots() const;
     // QuestSort.dbc name for negative ZoneOrSort values (class/profession/seasonal)
     const std::string& getQuestSortName(uint32_t sortId) const;
@@ -1788,6 +1791,7 @@ public:
     static constexpr uint8_t FACTION_FLAG_HIDDEN      = 0x04; // never shown
     static constexpr uint8_t FACTION_FLAG_INVISIBLE_FORCED = 0x08;
     static constexpr uint8_t FACTION_FLAG_PEACE_FORCED     = 0x10;
+    static constexpr uint8_t FACTION_FLAG_INACTIVE         = 0x20; // moved to the inactive list
 
     const std::vector<FactionStandingInit>& getInitialFactions() const { return initialFactions_; }
     const std::unordered_map<uint32_t, int32_t>& getFactionStandings() const { return factionStandings_; }
@@ -1804,6 +1808,16 @@ public:
         if (f & FACTION_FLAG_HIDDEN) return false;
         if (f & FACTION_FLAG_INVISIBLE_FORCED) return false;
         return (f & FACTION_FLAG_VISIBLE) != 0;
+    }
+    // Returns true if the faction has been set inactive (hidden from the active list)
+    bool isFactionInactive(uint32_t repListId) const {
+        if (repListId >= initialFactions_.size()) return false;
+        return (initialFactions_[repListId].flags & FACTION_FLAG_INACTIVE) != 0;
+    }
+    // Returns true if war cannot be declared on this faction (peace forced by the server)
+    bool isFactionPeaceForced(uint32_t repListId) const {
+        if (repListId >= initialFactions_.size()) return false;
+        return (initialFactions_[repListId].flags & FACTION_FLAG_PEACE_FORCED) != 0;
     }
     // Returns the faction ID for a given repListId (0 if unknown)
     uint32_t getFactionIdByRepListId(uint32_t repListId) const;
@@ -1832,6 +1846,11 @@ public:
     const std::string& getFactionNamePublic(uint32_t factionId) const;
     uint32_t getWatchedFactionId() const { return watchedFactionId_; }
     void setWatchedFactionId(uint32_t factionId);
+    // Declare war / make peace with a faction (CMSG_SET_FACTION_ATWAR). No-op on
+    // peace-forced factions. Updates the local flag optimistically.
+    void setFactionAtWar(uint32_t repListId, bool atWar);
+    // Move a faction to / from the inactive list (CMSG_SET_FACTION_INACTIVE).
+    void setFactionInactive(uint32_t repListId, bool inactive);
     uint32_t getLastContactListMask() const { return lastContactListMask_; }
     uint32_t getLastContactListCount() const { return lastContactListCount_; }
     bool isServerMovementAllowed() const;
@@ -1927,6 +1946,11 @@ public:
     uint32_t getAchievementPoints(uint32_t id) const {
         auto it = achievementPointsCache_.find(id);
         return (it != achievementPointsCache_.end()) ? it->second : 0u;
+    }
+    /// Returns the SpellIcon.dbc ID for an achievement's icon, or 0 if unknown.
+    uint32_t getAchievementIconId(uint32_t id) const {
+        auto it = achievementIconCache_.find(id);
+        return (it != achievementIconCache_.end()) ? it->second : 0u;
     }
     /// Returns the set of achievement IDs earned by an inspected player (via SMSG_RESPOND_INSPECT_ACHIEVEMENTS).
     /// Returns nullptr if no inspect data is available for the given GUID.
@@ -2245,6 +2269,11 @@ public:
     const std::string& getSpellRank(uint32_t spellId) const;
     /// Returns the tooltip/description text from Spell.dbc (empty if unknown or has no text).
     const std::string& getSpellDescription(uint32_t spellId) const;
+    /// Substitute WoW description tokens in `raw` using live spell data: $s/$o/$m/$M base
+    /// points and $d durations (incl. cross-spell $<spellId> references), plus $l/$g
+    /// plural/gender forms. Unresolvable tokens ($h proc chance, $t period) are stripped
+    /// cleanly. `selfSpellId` supplies the default source for index-only tokens like $s1.
+    std::string formatSpellDescription(uint32_t selfSpellId, const std::string& raw) const;
     // SpellFocusObject.dbc name ("Anvil", "Cooking Fire", ...) for
     // requires-spell-focus cast failures; empty if unknown.
     const std::string& getSpellFocusName(uint32_t focusId) const;
@@ -2267,6 +2296,8 @@ public:
     /// Returns the Spell.dbc Targets bitmask (SpellCastTargetFlags) for the spell.
     /// 0x10 = TARGET_FLAG_ITEM, meaning the spell must be cast onto another item.
     uint32_t getSpellTargetFlags(uint32_t spellId) const;
+    // Spell.dbc TargetAuraState (aura state the target must be in; 0 = no requirement).
+    uint32_t getSpellTargetAuraState(uint32_t spellId) const;
 
     struct TrainerTab {
         std::string name;
@@ -2705,6 +2736,9 @@ public:
         uint32_t trivialSkillHigh = 0;
         uint32_t trivialSkillLow = 0;
         uint32_t minSkillRank = 0;
+        // Spell.dbc TargetAuraState: the aura state the target must be in for the spell
+        // to be castable (e.g. Execute → AURA_STATE_HEALTHLESS_20_PERCENT). 0 = none.
+        uint32_t targetAuraState = 0;
     };
     static constexpr size_t PLAYER_EXPLORED_ZONES_COUNT = 128;
     std::string getAreaName(uint32_t areaId) const;
@@ -3524,6 +3558,7 @@ private:
     std::unordered_map<uint32_t, std::string> achievementNameCache_;
     std::unordered_map<uint32_t, std::string> achievementDescCache_;
     std::unordered_map<uint32_t, uint32_t>    achievementPointsCache_;
+    std::unordered_map<uint32_t, uint32_t>    achievementIconCache_;  // achievementId → SpellIcon.dbc ID
     bool achievementNameCacheLoaded_ = false;
     // Set of achievement IDs earned by the player (populated from SMSG_ALL_ACHIEVEMENT_DATA)
     std::unordered_set<uint32_t> earnedAchievements_;

@@ -2026,6 +2026,10 @@ void GameHandler::loadAchievementNameCache() {
     if (titleField == 0xFFFFFFFF) titleField = 4;
     uint32_t descField = achL ? achL->field("Description") : 0xFFFFFFFF;
     uint32_t ptsField  = achL ? achL->field("Points")      : 0xFFFFFFFF;
+    // IconID references SpellIcon.dbc for the achievement's artwork. Field 42 in the
+    // stock 3.3.5a Achievement.dbc when the layout doesn't name it.
+    uint32_t iconField = achL ? achL->field("IconID") : 0xFFFFFFFF;
+    if (iconField == 0xFFFFFFFF && dbc->getFieldCount() > 42) iconField = 42;
 
     uint32_t fieldCount = dbc->getFieldCount();
     for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
@@ -2040,6 +2044,10 @@ void GameHandler::loadAchievementNameCache() {
         if (ptsField != 0xFFFFFFFF && ptsField < fieldCount) {
             uint32_t pts = dbc->getUInt32(i, ptsField);
             if (pts > 0) achievementPointsCache_[id] = pts;
+        }
+        if (iconField != 0xFFFFFFFF && iconField < fieldCount) {
+            uint32_t iconId = dbc->getUInt32(i, iconField);
+            if (iconId > 0) achievementIconCache_[id] = iconId;
         }
     }
     LOG_INFO("Achievement: loaded ", achievementNameCache_.size(), " names from Achievement.dbc");
@@ -2176,6 +2184,36 @@ void GameHandler::setWatchedFactionId(uint32_t factionId) {
     pkt.writeUInt32(static_cast<uint32_t>(repListId));
     socket->send(pkt);
     LOG_DEBUG("CMSG_SET_WATCHED_FACTION: repListId=", repListId, " (factionId=", factionId, ")");
+}
+
+void GameHandler::setFactionAtWar(uint32_t repListId, bool atWar) {
+    if (repListId >= initialFactions_.size()) return;
+    // The server forbids declaring war on some factions; don't fight the flag.
+    if (atWar && isFactionPeaceForced(repListId)) return;
+    // Optimistic local update; the server echoes SMSG_SET_FACTION_ATWAR to confirm.
+    if (atWar) initialFactions_[repListId].flags |=  FACTION_FLAG_AT_WAR;
+    else       initialFactions_[repListId].flags &= ~FACTION_FLAG_AT_WAR;
+    if (!isInWorld() || !socket) return;
+    // CMSG_SET_FACTION_ATWAR: uint32 repListId + uint8 flag
+    network::Packet pkt(wireOpcode(Opcode::CMSG_SET_FACTION_ATWAR));
+    pkt.writeUInt32(repListId);
+    pkt.writeUInt8(atWar ? 1u : 0u);
+    socket->send(pkt);
+    LOG_DEBUG("CMSG_SET_FACTION_ATWAR: repListId=", repListId, " atWar=", atWar);
+}
+
+void GameHandler::setFactionInactive(uint32_t repListId, bool inactive) {
+    if (repListId >= initialFactions_.size()) return;
+    // No SMSG confirmation is sent for inactive, so update the local flag directly.
+    if (inactive) initialFactions_[repListId].flags |=  FACTION_FLAG_INACTIVE;
+    else          initialFactions_[repListId].flags &= ~FACTION_FLAG_INACTIVE;
+    if (!isInWorld() || !socket) return;
+    // CMSG_SET_FACTION_INACTIVE: uint32 repListId + uint8 flag
+    network::Packet pkt(wireOpcode(Opcode::CMSG_SET_FACTION_INACTIVE));
+    pkt.writeUInt32(repListId);
+    pkt.writeUInt8(inactive ? 1u : 0u);
+    socket->send(pkt);
+    LOG_DEBUG("CMSG_SET_FACTION_INACTIVE: repListId=", repListId, " inactive=", inactive);
 }
 
 std::string GameHandler::getFactionName(uint32_t factionId) const {
@@ -2697,6 +2735,11 @@ const std::vector<GameHandler::QuestLogEntry>& GameHandler::getQuestLog() const 
     if (questHandler_) return questHandler_->getQuestLog();
     static const std::vector<QuestLogEntry> empty;
     return empty;
+}
+
+void GameHandler::reconcileQuestItemObjectives(
+    const std::unordered_map<uint32_t, uint32_t>& carriedCounts) {
+    if (questHandler_) questHandler_->reconcileItemObjectivesFromInventory(carriedCounts);
 }
 int GameHandler::getMaxQuestLogSlots() const {
     return questHandler_ ? questHandler_->maxQuestLogSlots() : 25;

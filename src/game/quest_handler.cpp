@@ -27,6 +27,54 @@ QuestGiverStatus QuestHandler::getQuestGiverStatus(uint64_t guid) const {
     return (it != npcQuestStatus_.end()) ? it->second : QuestGiverStatus::NONE;
 }
 
+void QuestHandler::reconcileItemObjectivesFromInventory(
+    const std::unordered_map<uint32_t, uint32_t>& carriedCounts) {
+    bool changedAny = false;
+    bool maybeCompletedObjective = false;
+    for (auto& quest : questLog_) {
+        if (quest.complete) continue;
+        for (const auto& obj : quest.itemObjectives) {
+            if (obj.itemId == 0 || obj.required == 0) continue;
+            // Keep the derived required-count map in sync so the
+            // SMSG_QUESTUPDATE_ADD_ITEM path and this one agree.
+            quest.requiredItemCounts[obj.itemId] = obj.required;
+
+            auto cit = carriedCounts.find(obj.itemId);
+            const uint32_t held = (cit != carriedCounts.end()) ? cit->second : 0;
+            const uint32_t newCount = std::min(held, obj.required);
+            uint32_t& tracked = quest.itemCounts[obj.itemId];
+            if (tracked == newCount) continue;
+
+            const bool wasComplete = tracked >= obj.required;
+            tracked = newCount;
+            changedAny = true;
+            if (!wasComplete && newCount >= obj.required)
+                maybeCompletedObjective = true;
+
+            // Push the per-objective progress to the on-screen tracker.
+            std::string itemLabel = "item #" + std::to_string(obj.itemId);
+            if (const ItemQueryResponseData* info = owner_.getItemInfo(obj.itemId)) {
+                if (!info->name.empty()) itemLabel = info->name;
+            } else {
+                // Name not cached yet — request it so the next refresh labels
+                // the objective properly.
+                owner_.queryItemInfo(obj.itemId, 0);
+            }
+            if (owner_.questProgressCallbackRef())
+                owner_.questProgressCallbackRef()(quest.title, itemLabel, newCount, obj.required);
+        }
+    }
+
+    if (changedAny && owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("QUEST_WATCH_UPDATE", {});
+        owner_.addonEventCallbackRef()("QUEST_LOG_UPDATE", {});
+        owner_.addonEventCallbackRef()("UNIT_QUEST_LOG_CHANGED", {"player"});
+    }
+    // Collecting the last item may have made a quest turn-in-able (! → ?),
+    // so refresh nearby giver markers immediately.
+    if (maybeCompletedObjective) requeryNearbyQuestGiverStatus();
+}
+
 void QuestHandler::requeryNearbyQuestGiverStatus() {
     if (questGiverRequeryCooldown_ > 0.0f) {
         questGiverRequeryPending_ = true;
@@ -1264,6 +1312,13 @@ void QuestHandler::acceptQuest() {
     // Immediately add to local quest log using available details
     addQuestToLocalLogIfMissing(questId, currentQuestDetails_.title, currentQuestDetails_.objectives);
 
+    // Auto-track newly accepted quests so their objectives appear in the
+    // on-screen tracker right away (matches retail behavior). Only the
+    // player-driven accept path lands here — quests loaded on login/resync go
+    // through addQuestToLocalLogIfMissing without tracking, so the tracker's
+    // "show all when nothing tracked" fallback still applies to those.
+    owner_.setQuestTracked(questId, true);
+
     // Play quest-accept sound
     if (auto* ac = owner_.services().audioCoordinator) {
         if (auto* sfx = ac->getUiSoundManager())
@@ -1444,6 +1499,8 @@ void QuestHandler::acceptSharedQuest() {
     network::Packet pkt(wireOpcode(Opcode::CMSG_QUEST_CONFIRM_ACCEPT));
     pkt.writeUInt32(sharedQuestId_);
     owner_.getSocket()->send(pkt);
+    // Auto-track the accepted shared quest, same as a normal accept.
+    owner_.setQuestTracked(sharedQuestId_, true);
     owner_.addSystemChatMessage("Accepted: " + sharedQuestTitle_);
 }
 
