@@ -146,6 +146,37 @@ VkExtent2D PostProcessPipeline::getSceneRenderExtent() const {
     return vkCtx_->getSwapchainExtent();
 }
 
+bool PostProcessPipeline::usesFxaaScenePath() const {
+    return !(fsr2_.enabled && fsr2_.sceneFramebuffer)
+        && needsFXAAPass() && fxaa_.sceneFramebuffer != VK_NULL_HANDLE;
+}
+
+VkImage PostProcessPipeline::getSceneColorImage() const {
+    if (fsr2_.enabled && fsr2_.sceneFramebuffer) return fsr2_.sceneColor.image;
+    if (needsFXAAPass() && fxaa_.sceneFramebuffer) return fxaa_.sceneColor.image;
+    if (fsr_.enabled && fsr_.sceneFramebuffer) return fsr_.sceneColor.image;
+    return VK_NULL_HANDLE;
+}
+
+VkImage PostProcessPipeline::getSceneDepthImage() const {
+    // Prefer the resolved depth where MSAA produced one: it is single-sampled and
+    // can be copied directly.
+    if (fsr2_.enabled && fsr2_.sceneFramebuffer) return fsr2_.sceneDepth.image;
+    if (needsFXAAPass() && fxaa_.sceneFramebuffer)
+        return fxaa_.sceneDepthResolve.image ? fxaa_.sceneDepthResolve.image : fxaa_.sceneDepth.image;
+    if (fsr_.enabled && fsr_.sceneFramebuffer)
+        return fsr_.sceneDepthResolve.image ? fsr_.sceneDepthResolve.image : fsr_.sceneDepth.image;
+    return VK_NULL_HANDLE;
+}
+
+bool PostProcessPipeline::sceneDepthIsMsaa() const {
+    if (!vkCtx_ || vkCtx_->getMsaaSamples() == VK_SAMPLE_COUNT_1_BIT) return false;
+    if (fsr2_.enabled && fsr2_.sceneFramebuffer) return true;  // FSR2 keeps only the sampled depth
+    if (needsFXAAPass() && fxaa_.sceneFramebuffer) return fxaa_.sceneDepthResolve.image == VK_NULL_HANDLE;
+    if (fsr_.enabled && fsr_.sceneFramebuffer) return fsr_.sceneDepthResolve.image == VK_NULL_HANDLE;
+    return true;
+}
+
 bool PostProcessPipeline::hasActivePostProcess() const {
     return (fsr2_.enabled && fsr2_.sceneFramebuffer)
         || (needsFXAAPass() && fxaa_.sceneFramebuffer)
@@ -230,18 +261,17 @@ bool PostProcessPipeline::executePostProcessing(VkCommandBuffer cmd, uint32_t im
         // Begin swapchain render pass at full resolution for sharpening + ImGui
         VkRenderPassBeginInfo rpInfo{};
         rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpInfo.renderPass = vkCtx_->getImGuiRenderPass();
-        rpInfo.framebuffer = vkCtx_->getSwapchainFramebuffers()[imageIndex];
+        // Output goes through the single-sampled overlay pass. The scene pass
+        // carries the scene's sample count, and these quads are 1x.
+        rpInfo.renderPass = vkCtx_->getOverlayClearRenderPass();
+        rpInfo.framebuffer = vkCtx_->getOverlayFramebuffers()[imageIndex];
         rpInfo.renderArea.offset = {0, 0};
         rpInfo.renderArea.extent = vkCtx_->getSwapchainExtent();
 
-        bool msaaOn = (vkCtx_->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT);
-        VkClearValue clearValues[4]{};
+        // The overlay pass has one attachment whatever the scene's MSAA is.
+        VkClearValue clearValues[1]{};
         clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        clearValues[1].depthStencil = {1.0f, 0};
-        clearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        clearValues[3].depthStencil = {1.0f, 0};
-        rpInfo.clearValueCount = msaaOn ? (vkCtx_->getDepthResolveImageView() ? 4u : 3u) : 2u;
+        rpInfo.clearValueCount = 1;
         rpInfo.pClearValues = clearValues;
 
         inlineMode = true; vkCmdBeginRenderPass(currentCmd_, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -307,16 +337,15 @@ bool PostProcessPipeline::executePostProcessing(VkCommandBuffer cmd, uint32_t im
         // Begin swapchain render pass (1x — no MSAA on the output pass)
         VkRenderPassBeginInfo rpInfo{};
         rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpInfo.renderPass = vkCtx_->getImGuiRenderPass();
-        rpInfo.framebuffer = vkCtx_->getSwapchainFramebuffers()[imageIndex];
+        // Output goes through the single-sampled overlay pass. The scene pass
+        // carries the scene's sample count, and these quads are 1x.
+        rpInfo.renderPass = vkCtx_->getOverlayClearRenderPass();
+        rpInfo.framebuffer = vkCtx_->getOverlayFramebuffers()[imageIndex];
         rpInfo.renderArea.offset = {0, 0};
         rpInfo.renderArea.extent = vkCtx_->getSwapchainExtent();
-        // The swapchain render pass always has 2 attachments when MSAA is off;
-        // FXAA output goes to the non-MSAA swapchain directly.
-        VkClearValue fxaaClear[2]{};
+        VkClearValue fxaaClear[1]{};
         fxaaClear[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        fxaaClear[1].depthStencil = {1.0f, 0};
-        rpInfo.clearValueCount = 2;
+        rpInfo.clearValueCount = 1;
         rpInfo.pClearValues = fxaaClear;
 
         vkCmdBeginRenderPass(currentCmd_, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -349,23 +378,16 @@ bool PostProcessPipeline::executePostProcessing(VkCommandBuffer cmd, uint32_t im
         // Begin swapchain render pass at full resolution
         VkRenderPassBeginInfo fsrRpInfo{};
         fsrRpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        fsrRpInfo.renderPass = vkCtx_->getImGuiRenderPass();
-        fsrRpInfo.framebuffer = vkCtx_->getSwapchainFramebuffers()[imageIndex];
+        // Output goes through the single-sampled overlay pass. The scene pass
+        // carries the scene's sample count, and these quads are 1x.
+        fsrRpInfo.renderPass = vkCtx_->getOverlayClearRenderPass();
+        fsrRpInfo.framebuffer = vkCtx_->getOverlayFramebuffers()[imageIndex];
         fsrRpInfo.renderArea.offset = {0, 0};
         fsrRpInfo.renderArea.extent = vkCtx_->getSwapchainExtent();
 
-        bool fsrMsaaOn = (vkCtx_->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT);
-        VkClearValue fsrClearValues[4]{};
+        VkClearValue fsrClearValues[1]{};
         fsrClearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        fsrClearValues[1].depthStencil = {1.0f, 0};
-        fsrClearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        fsrClearValues[3].depthStencil = {1.0f, 0};
-        if (fsrMsaaOn) {
-            bool depthRes = (vkCtx_->getDepthResolveImageView() != VK_NULL_HANDLE);
-            fsrRpInfo.clearValueCount = depthRes ? 4 : 3;
-        } else {
-            fsrRpInfo.clearValueCount = 2;
-        }
+        fsrRpInfo.clearValueCount = 1;
         fsrRpInfo.pClearValues = fsrClearValues;
 
         vkCmdBeginRenderPass(currentCmd_, &fsrRpInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -557,7 +579,8 @@ bool PostProcessPipeline::initFSRResources() {
     // sceneColor: always 1x, always sampled — this is what FSR reads
     // Non-MSAA: direct render target. MSAA: resolve target.
     fsr_.sceneColor = createImage(device, alloc, fsr_.internalWidth, fsr_.internalHeight,
-        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     if (!fsr_.sceneColor.image) {
         LOG_ERROR("FSR: failed to create scene color image");
         return false;
@@ -565,7 +588,8 @@ bool PostProcessPipeline::initFSRResources() {
 
     // sceneDepth: matches current MSAA sample count
     fsr_.sceneDepth = createImage(device, alloc, fsr_.internalWidth, fsr_.internalHeight,
-        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, msaa);
+        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, msaa);
     if (!fsr_.sceneDepth.image) {
         LOG_ERROR("FSR: failed to create scene depth image");
         destroyFSRResources();
@@ -584,7 +608,8 @@ bool PostProcessPipeline::initFSRResources() {
 
         if (useDepthResolve) {
             fsr_.sceneDepthResolve = createImage(device, alloc, fsr_.internalWidth, fsr_.internalHeight,
-                depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+                depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                        | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
             if (!fsr_.sceneDepthResolve.image) {
                 LOG_ERROR("FSR: failed to create depth resolve image");
                 destroyFSRResources();
@@ -722,9 +747,9 @@ bool PostProcessPipeline::initFSRResources() {
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setNoDepthTest()
         .setColorBlendAttachment(PipelineBuilder::blendDisabled())
-        .setMultisample(msaa)
+        .setMultisample(VK_SAMPLE_COUNT_1_BIT)
         .setLayout(fsr_.pipelineLayout)
-        .setRenderPass(vkCtx_->getImGuiRenderPass())
+        .setRenderPass(vkCtx_->getOverlayRenderPass())
         .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
         .build(device, vkCtx_->getPipelineCache());
 
@@ -845,12 +870,14 @@ bool PostProcessPipeline::initFSR2Resources() {
 
     // Scene color (internal resolution, 1x — FSR2 replaces MSAA)
     fsr2_.sceneColor = createImage(device, alloc, fsr2_.internalWidth, fsr2_.internalHeight,
-        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     if (!fsr2_.sceneColor.image) { LOG_ERROR("FSR2: failed to create scene color"); return false; }
 
     // Scene depth (internal resolution, 1x, sampled for motion vectors)
     fsr2_.sceneDepth = createImage(device, alloc, fsr2_.internalWidth, fsr2_.internalHeight,
-        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     if (!fsr2_.sceneDepth.image) { LOG_ERROR("FSR2: failed to create scene depth"); destroyFSR2Resources(); return false; }
 
     // Motion vector buffer (internal resolution)
@@ -1214,7 +1241,10 @@ bool PostProcessPipeline::initFSR2Resources() {
             .setColorBlendAttachment(PipelineBuilder::blendDisabled())
             .setMultisample(VK_SAMPLE_COUNT_1_BIT)
             .setLayout(fsr2_.sharpenPipelineLayout)
-            .setRenderPass(vkCtx_->getImGuiRenderPass())
+            // The output quad is single-sampled, so it belongs to the overlay
+            // pass. getImGuiRenderPass() is the scene pass, which carries the
+            // scene's sample count — an 8x pass for a 1x pipeline.
+            .setRenderPass(vkCtx_->getOverlayRenderPass())
             .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
             .build(device, vkCtx_->getPipelineCache());
 
@@ -1665,7 +1695,8 @@ bool PostProcessPipeline::initFXAAResources() {
 
     // sceneColor: 1x resolved color target — FXAA reads from here
     fxaa_.sceneColor = createImage(device, alloc, ext.width, ext.height,
-        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     if (!fxaa_.sceneColor.image) {
         LOG_ERROR("FXAA: failed to create scene color image");
         return false;
@@ -1673,7 +1704,8 @@ bool PostProcessPipeline::initFXAAResources() {
 
     // sceneDepth: depth buffer at current MSAA sample count
     fxaa_.sceneDepth = createImage(device, alloc, ext.width, ext.height,
-        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, msaa);
+        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, msaa);
     if (!fxaa_.sceneDepth.image) {
         LOG_ERROR("FXAA: failed to create scene depth image");
         destroyFXAAResources();
@@ -1690,7 +1722,8 @@ bool PostProcessPipeline::initFXAAResources() {
         }
         if (useDepthResolve) {
             fxaa_.sceneDepthResolve = createImage(device, alloc, ext.width, ext.height,
-                depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+                depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                        | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
             if (!fxaa_.sceneDepthResolve.image) {
                 LOG_ERROR("FXAA: failed to create depth resolve image");
                 destroyFXAAResources();
@@ -1826,9 +1859,9 @@ bool PostProcessPipeline::initFXAAResources() {
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
         .setNoDepthTest()
         .setColorBlendAttachment(PipelineBuilder::blendDisabled())
-        .setMultisample(VK_SAMPLE_COUNT_1_BIT)  // swapchain pass is always 1x
+        .setMultisample(VK_SAMPLE_COUNT_1_BIT)  // the overlay pass is always 1x
         .setLayout(fxaa_.pipelineLayout)
-        .setRenderPass(vkCtx_->getImGuiRenderPass())
+        .setRenderPass(vkCtx_->getOverlayRenderPass())
         .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
         .build(device, vkCtx_->getPipelineCache());
 

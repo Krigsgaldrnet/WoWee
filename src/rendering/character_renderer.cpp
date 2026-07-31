@@ -14,6 +14,7 @@
  * positions on the 512x512 body skin atlas. Region coordinates sourced from
  * the original WoW Model Viewer (charcontrol.h, REGION_FAC=2).
  */
+#include <atomic>
 #include "rendering/character_renderer.hpp"
 #include "rendering/m2_track_sampler.hpp"
 #include "rendering/animation/animation_ids.hpp"
@@ -485,6 +486,10 @@ void CharacterRenderer::shutdown() {
     for (auto& pair : instances) {
         destroyInstanceBones(pair.second);
     }
+
+    // Model and bone destruction above is deferred; drain it now while the
+    // descriptor pools are still alive, since no further frames will run.
+    vkCtx_->flushDeferredCleanup();
 
     // Clean up texture cache (VkTexture unique_ptrs auto-destroy)
     textureCache.clear();

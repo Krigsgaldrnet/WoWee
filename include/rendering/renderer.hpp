@@ -194,6 +194,10 @@ public:
     const std::vector<pipeline::CustomZoneInfo>& getCustomZones() const { return customZones_; }
 
 private:
+    // True when water is drawn in the scene continuation pass rather than in
+    // the scene pass itself (see renderWorld).
+    bool waterDrawsInContinuePass() const;
+
     void runDeferredWorldInitStep(float deltaTime);
 
     core::Window* window = nullptr;
@@ -358,7 +362,6 @@ private:
     VkCommandBuffer secondaryCmds_[NUM_SECONDARIES][MAX_FRAMES] = {};
 
     bool parallelRecordingEnabled_ = false;  // set true after pools/buffers created
-    bool endFrameInlineMode_ = false;       // true when endFrame switched to INLINE render pass
     float lastDeltaTime_ = 0.0f;           // cached for post-process pipeline
     bool createSecondaryCommandResources();
     void destroySecondaryCommandResources();

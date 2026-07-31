@@ -199,6 +199,33 @@ void TerrainManager::update(const Camera& camera, float deltaTime) {
         return;
     }
 
+    // Phase timing: this call stalls for ~180ms when tiles arrive, and the
+    // caller only sees one number. Both processReadyTiles and
+    // processPendingUnloads claim to be time-budgeted internally, so knowing
+    // which phase actually runs long says whether a budget is being exceeded or
+    // whether the cost is in streamTiles enumerating the world.
+    using clock = std::chrono::steady_clock;
+    const auto tStart = clock::now();
+    auto elapsedMs = [](clock::time_point a, clock::time_point b) {
+        return std::chrono::duration<float, std::milli>(b - a).count();
+    };
+    float reconcileMs = 0.0f, readyMs = 0.0f, unloadMs = 0.0f, streamMs = 0.0f;
+    // Reports the breakdown on the way out of any long call, whichever return
+    // path is taken.
+    struct PhaseReport {
+        clock::time_point start;
+        const float *reconcile, *ready, *unload, *stream;
+        ~PhaseReport() {
+            const float total = std::chrono::duration<float, std::milli>(
+                clock::now() - start).count();
+            if (total > 50.0f) {
+                LOG_WARNING("SLOW terrain update ", total, "ms: reconcile=", *reconcile,
+                            " readyTiles=", *ready, " unloads=", *unload,
+                            " streamTiles=", *stream);
+            }
+        }
+    } report{tStart, &reconcileMs, &readyMs, &unloadMs, &streamMs};
+
     // Reconcile the "already uploaded" cache against models the renderer reaped
     // for being instanceless. Without this, a model freed after leaving an area
     // stays marked uploaded, so the next tile prep skips its load and pushes an
@@ -214,11 +241,16 @@ void TerrainManager::update(const Camera& camera, float deltaTime) {
 
     // Always process ready tiles each frame (GPU uploads from background thread)
     // Time-budgeted internally to prevent frame spikes.
+    const auto tReconcile = clock::now();
+    reconcileMs = elapsedMs(tStart, tReconcile);
     processReadyTiles();
+    readyMs = elapsedMs(tReconcile, clock::now());
 
     // Always drain a bounded batch of pending unloads each frame — same
     // frame-spike rationale as processReadyTiles() above.
+    const auto tUnloadStart = clock::now();
     processPendingUnloads();
+    unloadMs = elapsedMs(tUnloadStart, clock::now());
 
     timeSinceLastUpdate += deltaTime;
 
@@ -244,7 +276,9 @@ void TerrainManager::update(const Camera& camera, float deltaTime) {
         LOG_DEBUG("Streaming: cam=(", camPos.x, ",", camPos.y, ",", camPos.z,
                  ") tile=[", newTile.x, ",", newTile.y,
                  "] loaded=", loadedTiles.size());
+        const auto tStream = clock::now();
         streamTiles();
+        streamMs = elapsedMs(tStream, clock::now());
         lastStreamTile = newTile;
     } else {
         // Proactive loading: when workers are idle, periodically re-check for
@@ -259,7 +293,9 @@ void TerrainManager::update(const Camera& camera, float deltaTime) {
                 workersIdle = loadQueue.empty();
             }
             if (workersIdle) {
+                const auto tStream = clock::now();
                 streamTiles();
+                streamMs = elapsedMs(tStream, clock::now());
             }
         }
     }
@@ -1097,9 +1133,20 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
         // createInstance includes an O(n) bone-sibling scan that becomes expensive
         // on dense tiles with many placements and a large existing instance list.
         if (m2Renderer && ft.m2InstanceIndex < pending->m2Placements.size()) {
+            // A fixed count was overshooting: 32 instances measured at 19ms
+            // against this phase's 8ms budget, because createInstance carries an
+            // O(n) bone-sibling scan whose cost grows with the instances already
+            // present. Bound by time instead, which holds regardless of how
+            // heavy each one turns out to be.
             constexpr size_t kInstancesPerStep = 32;
+            constexpr float kInstanceBudgetMs = 4.0f;
+            const auto instanceStart = std::chrono::steady_clock::now();
             size_t created = 0;
             while (ft.m2InstanceIndex < pending->m2Placements.size() && created < kInstancesPerStep) {
+                if (created > 0 && std::chrono::duration<float, std::milli>(
+                        std::chrono::steady_clock::now() - instanceStart).count() >= kInstanceBudgetMs) {
+                    break;
+                }
                 const auto& p = pending->m2Placements[ft.m2InstanceIndex++];
                 if (p.uniqueId != 0 && placedDoodadIds.count(p.uniqueId)) {
                     continue;
@@ -1140,22 +1187,24 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
                 &pending->preloadedWMONormalMapVariances);
             wmoRenderer->setDeferNormalMaps(true);
 
-            bool wmoWorkersIdle;
-            {
-                std::lock_guard<std::mutex> lk(queueMutex);
-                wmoWorkersIdle = loadQueue.empty() && readyQueue.empty();
-            }
-            const size_t kWmosPerStep = wmoWorkersIdle ? 2 : 1;
-            size_t uploaded = 0;
-            while (ft.wmoModelIndex < pending->wmoModels.size() && uploaded < kWmosPerStep) {
+            // One model per step, and a large model spread across several
+            // steps: a 286-group WMO took 131ms to upload in one go, against
+            // this phase's 8ms budget. Uploading two per step when the workers
+            // were idle only doubled that worst case.
+            constexpr float kWmoGroupBudgetMs = 6.0f;
+            while (ft.wmoModelIndex < pending->wmoModels.size()) {
                 auto& wmoReady = pending->wmoModels[ft.wmoModelIndex];
                 if (wmoReady.uniqueId != 0 && placedWmoIds.count(wmoReady.uniqueId)) {
                     ft.wmoModelIndex++;
-                } else {
-                    wmoRenderer->loadModel(wmoReady.model, wmoReady.modelId);
-                    ft.wmoModelIndex++;
-                    uploaded++;
+                    continue;
                 }
+                const auto result = wmoRenderer->loadModelIncremental(
+                    wmoReady.model, wmoReady.modelId, kWmoGroupBudgetMs);
+                if (result == WMORenderer::ModelLoadResult::InProgress) {
+                    break;  // same model resumes on the next call
+                }
+                ft.wmoModelIndex++;  // Complete or Failed — either way, move on
+                break;               // one model per step
             }
             wmoRenderer->setDeferNormalMaps(false);
             wmoRenderer->setPredecodedBLPCache(nullptr);
@@ -1463,9 +1512,39 @@ void TerrainManager::processReadyTiles() {
 
     if (vkCtx) vkCtx->beginUploadBatch();
 
+    // The budget is checked between steps, so it bounds how many run — not how
+    // long one takes. Most phases handle a single model per call, but TERRAIN
+    // uploads a whole tile's chunks and textures, and the INSTANCES phases build
+    // every instance at once, so one step can overrun the whole budget on its
+    // own. Name the phase when it does, rather than leaving one opaque number.
+    auto phaseName = [](FinalizationPhase p) {
+        switch (p) {
+            case FinalizationPhase::TERRAIN:       return "TERRAIN";
+            case FinalizationPhase::M2_MODELS:     return "M2_MODELS";
+            case FinalizationPhase::M2_INSTANCES:  return "M2_INSTANCES";
+            case FinalizationPhase::WMO_MODELS:    return "WMO_MODELS";
+            case FinalizationPhase::WMO_INSTANCES: return "WMO_INSTANCES";
+            case FinalizationPhase::WMO_DOODADS:   return "WMO_DOODADS";
+            case FinalizationPhase::WATER:         return "WATER";
+            case FinalizationPhase::AMBIENT:       return "AMBIENT";
+            case FinalizationPhase::DONE:          return "DONE";
+        }
+        return "?";
+    };
+
     while (!finalizingTiles_.empty()) {
         auto& ft = finalizingTiles_.front();
+        const auto phaseBefore = ft.phase;
+        const auto stepStart = std::chrono::steady_clock::now();
         bool done = advanceFinalization(ft);
+        const float stepMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - stepStart).count();
+        if (stepMs > budgetMs) {
+            LOG_WARNING("Terrain finalize step overran: ", phaseName(phaseBefore),
+                        " took ", stepMs, "ms (budget ", budgetMs, "ms) tile=[",
+                        ft.pending ? ft.pending->coord.x : -1, ",",
+                        ft.pending ? ft.pending->coord.y : -1, "]");
+        }
         if (done) {
             finalizingTiles_.pop_front();
         }

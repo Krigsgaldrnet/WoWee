@@ -287,6 +287,9 @@ void WMORenderer::shutdown() {
 
     if (!vkCtx_) {
         loadedModels.clear();
+    // Group destruction above is deferred; drain it now while the descriptor
+    // pools are still alive, since no further frames will run to drain it.
+    vkCtx_->flushDeferredCleanup();
         instances.clear();
         spatialGrid.clear();
         instanceIndexById.clear();
@@ -350,9 +353,20 @@ void WMORenderer::shutdown() {
 }
 
 bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
+    // No budget: run to completion, which is what callers outside terrain
+    // streaming expect.
+    for (;;) {
+        const ModelLoadResult r = loadModelIncremental(model, id, 0.0f);
+        if (r == ModelLoadResult::InProgress) continue;
+        return r == ModelLoadResult::Complete;
+    }
+}
+
+WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
+        const pipeline::WMOModel& model, uint32_t id, float budgetMs) {
     if (!model.isValid()) {
         core::Logger::getInstance().error("Cannot load invalid WMO model");
-        return false;
+        return ModelLoadResult::Failed;
     }
 
     // Check if already loaded
@@ -389,10 +403,10 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                     " has only fallback textures; forcing one-time reload");
                 unloadModel(id);
             } else {
-                return true;
+                return ModelLoadResult::Complete;
             }
         } else {
-            return true;
+            return ModelLoadResult::Complete;
         }
     }
     if (loadedModels.size() >= modelCacheLimit_) {
@@ -402,13 +416,15 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                                                 "), skipping model load: id=", id);
         }
         ++modelLimitRejectWarnings_;
-        return false;
+        return ModelLoadResult::Failed;
     }
 
     core::Logger::getInstance().debug("Loading WMO model ", id, " with ", model.groups.size(), " groups, ",
                                       model.textures.size(), " textures...");
 
-    ModelData modelData;
+    // The accumulating model lives across calls, so a resumed load picks up its
+    // textures, materials and the groups already uploaded.
+    ModelData& modelData = loadingModels_[id];
     modelData.id = id;
     modelData.boundingBoxMin = model.boundingBoxMin;
     modelData.boundingBoxMax = model.boundingBoxMax;
@@ -433,10 +449,24 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
     // submission with one fence wait, instead of one per upload.
     vkCtx_->beginUploadBatch();
 
+    // Textures and materials are model-level and done once; a resumed call has
+    // them already and goes straight to the remaining groups.
+    if (!modelData.setupDone) {
+
     // Load textures for this model
     core::Logger::getInstance().debug("  WMO has ", model.textures.size(), " texture paths, ", model.materials.size(), " materials");
     if (assetManager && !model.textures.empty()) {
-        for (size_t i = 0; i < model.textures.size(); i++) {
+        const auto texStart = std::chrono::steady_clock::now();
+        for (size_t i = modelData.nextTextureIndex; i < model.textures.size(); i++) {
+            if (budgetMs > 0.0f && i > modelData.nextTextureIndex) {
+                const float spent = std::chrono::duration<float, std::milli>(
+                    std::chrono::steady_clock::now() - texStart).count();
+                if (spent >= budgetMs) {
+                    modelData.nextTextureIndex = i;
+                    vkCtx_->endUploadBatch();
+                    return ModelLoadResult::InProgress;  // resume at this texture
+                }
+            }
             const auto& texPath = model.textures[i];
             core::Logger::getInstance().debug("    Loading texture ", i, ": ", texPath);
             VkTexture* tex = loadTexture(texPath);
@@ -503,6 +533,13 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
 
     }
 
+
+    modelData.nextTextureIndex = model.textures.size();
+    modelData.setupDone = true;
+    }  // end one-time setup
+
+    // Reads only the model, so it is rebuilt cheaply on every resumed call
+    // rather than kept alive across them.
     // Helper: look up group name from MOGN raw data via MOGI nameOffset
     auto getGroupName = [&](uint32_t groupIdx) -> std::string {
         if (groupIdx < model.groupInfo.size()) {
@@ -516,9 +553,20 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
         return {};
     };
 
-    // Create GPU resources for each group
-    uint32_t loadedGroups = 0;
-    for (size_t gi = 0; gi < model.groups.size(); gi++) {
+    // Create GPU resources for each group, a bounded number per call. A model
+    // with hundreds of groups would otherwise upload them all in one step: the
+    // worst measured was 286 groups at 131ms, against an 8ms budget.
+    const auto groupStart = std::chrono::steady_clock::now();
+    for (size_t gi = modelData.nextGroupIndex; gi < model.groups.size(); gi++) {
+        modelData.nextGroupIndex = gi + 1;
+        if (budgetMs > 0.0f) {
+            const float spent = std::chrono::duration<float, std::milli>(
+                std::chrono::steady_clock::now() - groupStart).count();
+            if (spent >= budgetMs && gi + 1 < model.groups.size()) {
+                vkCtx_->endUploadBatch();
+                return ModelLoadResult::InProgress;  // resume here next call
+            }
+        }
         const auto& wmoGroup = model.groups[gi];
         // Skip empty groups
         if (wmoGroup.vertices.empty() || wmoGroup.indices.empty()) {
@@ -558,13 +606,15 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                 resources.isLOD = true;
             }
             modelData.groups.push_back(resources);
-            loadedGroups++;
+            modelData.loadedGroups++;
         }
     }
 
-    if (loadedGroups == 0) {
+    if (modelData.loadedGroups == 0) {
         core::Logger::getInstance().warning("No valid groups loaded for WMO ", id);
-        return false;
+        vkCtx_->endUploadBatch();
+        loadingModels_.erase(id);
+        return ModelLoadResult::Failed;
     }
 
     // Build pre-merged batches for each group (texture-sorted for efficient rendering)
@@ -887,9 +937,11 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
         }
     }
 
+    modelData.setupDone = true;
     loadedModels[id] = std::move(modelData);
-    core::Logger::getInstance().debug("WMO model ", id, " loaded successfully (", loadedGroups, " groups)");
-    return true;
+    loadingModels_.erase(id);
+    core::Logger::getInstance().debug("WMO model ", id, " loaded successfully (", modelData.loadedGroups, " groups)");
+    return ModelLoadResult::Complete;
 }
 
 bool WMORenderer::isModelLoaded(uint32_t id) const {

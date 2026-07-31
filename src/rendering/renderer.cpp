@@ -819,7 +819,12 @@ void Renderer::applyMsaaChange() {
     if (terrainRenderer) terrainRenderer->recreatePipelines();
     if (waterRenderer) {
         waterRenderer->recreatePipelines();
-        waterRenderer->destroyWater1xResources();  // no longer used
+        // Under MSAA the water draws single-sampled in its own pass, after the
+        // scene has resolved — it is a large alpha-blended surface whose edges
+        // MSAA does nothing for, and drawing it there also keeps it out of its
+        // own refraction copy.
+        waterRenderer->destroyWater1xResources();
+        setupWater1xPass();
     }
     if (wmoRenderer) wmoRenderer->recreatePipelines();
     if (m2Renderer) m2Renderer->recreatePipelines();
@@ -871,8 +876,11 @@ void Renderer::applyMsaaChange() {
     initInfo.DescriptorPool = vkCtx->getImGuiDescriptorPool();
     initInfo.MinImageCount = 2;
     initInfo.ImageCount = vkCtx->getSwapchainImageCount();
-    initInfo.PipelineInfoMain.RenderPass = vkCtx->getImGuiRenderPass();
-    initInfo.PipelineInfoMain.MSAASamples = vkCtx->getMsaaSamples();
+    // The UI renders in the overlay pass, which is single-sampled on purpose:
+    // ImGui draws axis-aligned rects and pre-antialiased glyphs, so MSAA buys
+    // almost nothing there and costs fill rate at the sample count the scene uses.
+    initInfo.PipelineInfoMain.RenderPass = vkCtx->getOverlayRenderPass();
+    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     initInfo.CheckVkResultFn = [](VkResult err) {
         if (err != VK_SUCCESS)
             LOG_ERROR("ImGui Vulkan error: ", static_cast<int>(err));
@@ -902,6 +910,8 @@ void Renderer::beginFrame() {
         // Rebuild water resources that reference swapchain extent/views
         if (waterRenderer) {
             waterRenderer->recreatePipelines();
+            waterRenderer->destroyWater1xResources();
+            setupWater1xPass();
         }
         // Recreate post-process resources for new swapchain dimensions
         if (postProcessPipeline_) postProcessPipeline_->handleSwapchainResize();
@@ -1016,29 +1026,29 @@ void Renderer::endFrame() {
     ZoneScopedN("Renderer::endFrame");
     if (!vkCtx || currentCmd == VK_NULL_HANDLE) return;
 
-    // Track whether a post-processing path switched to an INLINE render pass.
-    // beginFrame() may have started the scene pass with SECONDARY_COMMAND_BUFFERS;
-    // post-proc paths end it and begin a new INLINE pass for the swapchain output.
-    endFrameInlineMode_ = false;
-
-    // Post-process execution (§4.3 — delegates to PostProcessPipeline)
+    // Post-process execution (§4.3 — delegates to PostProcessPipeline). Whether
+    // it swapped the scene pass for an INLINE one no longer matters to the
+    // caller: the UI is drawn in the overlay pass, which this function opens
+    // itself once whichever pass is current has been closed.
     if (postProcessPipeline_) {
-        endFrameInlineMode_ = postProcessPipeline_->executePostProcessing(
+        postProcessPipeline_->executePostProcessing(
             currentCmd, currentImageIndex, camera.get(), lastDeltaTime_);
     }
 
-    // Water refraction samples the scene as it looked before the UI was drawn.
-    // The copy cannot happen inside a render pass, so close the scene pass here,
-    // take the capture, and reopen a compatible pass that loads the swapchain
-    // for the UI. Doing this after the UI instead would refract the UI into the
-    // water. The overlay pass is null under MSAA (a second pass there would have
-    // to resolve again), in which case the capture stays where it was.
-    bool capturedSceneHistory = false;
-    if (waterRenderer && waterRenderer->isRefractionEnabled() && waterRenderer->hasSurfaces()
-        && currentImageIndex < vkCtx->getSwapchainImages().size()
-        && vkCtx->getOverlayRenderPass() != VK_NULL_HANDLE) {
-        vkCmdEndRenderPass(currentCmd);
+    // The scene is complete: close its pass so the water refraction copy can run
+    // (a copy is illegal inside a render pass), then draw the UI in the overlay
+    // pass. Capturing after the UI instead is what refracted the interface into
+    // the water. The overlay pass is single-sampled and colour-only, which is
+    // also why the UI costs the same here whatever MSAA the scene uses.
+    vkCmdEndRenderPass(currentCmd);
 
+    // Only when water could not be moved out of the scene pass (MSAA). Otherwise
+    // renderWorld already took the copy at the one point in the frame where the
+    // scene is finished but the water is not yet over it; copying again here
+    // would replace that with an image containing the water.
+    if (!waterDrawsInContinuePass()
+        && waterRenderer && waterRenderer->isRefractionEnabled() && waterRenderer->hasSurfaces()
+        && currentImageIndex < vkCtx->getSwapchainImages().size()) {
         waterRenderer->captureSceneHistory(
             currentCmd,
             vkCtx->getSwapchainImages()[currentImageIndex],
@@ -1046,12 +1056,14 @@ void Renderer::endFrame() {
             vkCtx->getSwapchainExtent(),
             vkCtx->isDepthCopySourceMsaa(),
             vkCtx->getCurrentFrame());
-        capturedSceneHistory = true;
+    }
 
+    const auto& overlayFbs = vkCtx->getOverlayFramebuffers();
+    if (vkCtx->getOverlayRenderPass() != VK_NULL_HANDLE && currentImageIndex < overlayFbs.size()) {
         VkRenderPassBeginInfo overlayRp{};
         overlayRp.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         overlayRp.renderPass = vkCtx->getOverlayRenderPass();
-        overlayRp.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
+        overlayRp.framebuffer = overlayFbs[currentImageIndex];
         overlayRp.renderArea.extent = vkCtx->getSwapchainExtent();
         vkCmdBeginRenderPass(currentCmd, &overlayRp, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1065,59 +1077,12 @@ void Renderer::endFrame() {
         sc.extent = ext;
         vkCmdSetScissor(currentCmd, 0, 1, &sc);
 
-        // The UI now draws into an INLINE pass regardless of what came before.
-        endFrameInlineMode_ = true;
-
-        static bool loggedSplit = false;
-        if (!loggedSplit) {
-            loggedSplit = true;
-            LOG_INFO("Water refraction: capturing scene before the UI (split frame)");
-        }
-    }
-
-    // ImGui rendering — must respect the subpass contents mode of the
-    // CURRENT render pass. Post-processing paths (FSR/FXAA) end the scene
-    // pass and begin a new INLINE pass; if none ran, we're still inside the
-    // scene pass which may be SECONDARY_COMMAND_BUFFERS when parallel recording
-    // is active. Track this via endFrameInlineMode_ (set true by any post-proc
-    // path that started an INLINE render pass).
-    if (parallelRecordingEnabled_ && !endFrameInlineMode_) {
-        // Still in the scene pass with SECONDARY_COMMAND_BUFFERS — record
-        // ImGui into a secondary command buffer.
-        VkCommandBuffer imguiCmd = beginSecondary(SEC_IMGUI);
-        setSecondaryViewportScissor(imguiCmd);
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), imguiCmd);
-        vkEndCommandBuffer(imguiCmd);
-        vkCmdExecuteCommands(currentCmd, 1, &imguiCmd);
-    } else {
-        // INLINE render pass (post-process pass or non-parallel mode).
+        // ImGui's pipelines are built against the overlay pass, so it always
+        // records inline here rather than into a scene-pass secondary buffer.
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCmd);
-    }
-
-    vkCmdEndRenderPass(currentCmd);
-
-    uint32_t frame = vkCtx->getCurrentFrame();
-
-    // Fallback capture for the MSAA path, where the frame could not be split and
-    // the UI is unavoidably part of the captured image.
-    if (!capturedSceneHistory && waterRenderer && waterRenderer->isRefractionEnabled()
-        && waterRenderer->hasSurfaces() && vkCtx->getOverlayRenderPass() == VK_NULL_HANDLE) {
-        static bool loggedFallback = false;
-        if (!loggedFallback) {
-            loggedFallback = true;
-            LOG_WARNING("Water refraction: no overlay render pass — capture includes the UI");
-        }
-    }
-    if (!capturedSceneHistory
-        && waterRenderer && waterRenderer->isRefractionEnabled() && waterRenderer->hasSurfaces()
-        && currentImageIndex < vkCtx->getSwapchainImages().size()) {
-        waterRenderer->captureSceneHistory(
-            currentCmd,
-            vkCtx->getSwapchainImages()[currentImageIndex],
-            vkCtx->getDepthCopySourceImage(),
-            vkCtx->getSwapchainExtent(),
-            vkCtx->isDepthCopySourceMsaa(),
-            frame);
+        vkCmdEndRenderPass(currentCmd);
+    } else {
+        LOG_ERROR("Overlay render pass missing — UI not drawn this frame");
     }
 
     // Water now renders in the main pass (renderWorld), no separate 1x pass needed.
@@ -1897,8 +1862,8 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             auto t0 = std::chrono::steady_clock::now();
             VkCommandBuffer cmd = beginSecondary(SEC_POST);
             setSecondaryViewportScissor(cmd);
-            if (waterRenderer && camera) {
-                waterRenderer->setBrightness(postProcessPipeline_ ? postProcessPipeline_->getBrightness() : 1.0f);
+            if (waterRenderer && camera && !waterDrawsInContinuePass()) {
+                waterRenderer->setRenderExtent(activeRenderExtent_);
                 waterRenderer->render(cmd, perFrameSet, *camera, globalTime, false, frameIdx);
             }
             if (weather && camera) weather->render(cmd, perFrameSet);
@@ -1911,20 +1876,75 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
 
             if (overlaySystem_ && waterRenderer && camera) {
                 glm::vec3 camPos = camera->getPosition();
-                auto waterH = waterRenderer->getNearestWaterHeightAt(camPos.x, camPos.y, camPos.z);
-                constexpr float MIN_SUBMERSION_OVERLAY = 1.5f;
-                if (waterH && camPos.z < (*waterH - MIN_SUBMERSION_OVERLAY)
+                // The default vertical reach of this query is 15 units, meant to
+                // stop water on a cliff above being mistaken for water the camera
+                // is in. For the underwater tint that cap is the wrong end of the
+                // problem: past 15 units down the query found nothing, the
+                // overlay stopped, and the scene snapped bright at a fixed depth.
+                // Deep ocean is far deeper than that, so reach much further here.
+                constexpr float kUnderwaterReach = 400.0f;
+                auto waterH = waterRenderer->getNearestWaterHeightAt(
+                    camPos.x, camPos.y, camPos.z, kUnderwaterReach);
+                // How far the eye is under the surface. The tint used to wait
+                // until 1.5 units down and then apply to the whole screen at
+                // once, so crossing the surface was a step: no tint, no tint,
+                // fully tinted. Start it at the surface and let a waterline
+                // sweep up the view over the crossing instead.
+                constexpr float kCrossingBand = 0.55f;  // half-height of the sweep, in units
+                const float eyeDepth = waterH ? (*waterH - camPos.z) : -1.0f;
+                if (waterH && eyeDepth > -kCrossingBand
                            && !waterRenderer->isWmoWaterAt(camPos.x, camPos.y)) {
-                    float depth = *waterH - camPos.z - MIN_SUBMERSION_OVERLAY;
                     bool canal = false;
                     if (auto lt = waterRenderer->getWaterTypeAt(camPos.x, camPos.y))
                         canal = (*lt == 5 || *lt == 13 || *lt == 17);
-                    float fogStrength = 1.0f - std::exp(-depth * (canal ? 0.25f : 0.12f));
-                    fogStrength = glm::clamp(fogStrength, 0.0f, 0.75f);
+                    // Until the eye passes the surface the view is darkened by
+                    // looking through the water plane itself, which is strong —
+                    // its alpha runs up towards 0.9 with depth. Once the eye is
+                    // under, that plane is behind the camera and contributes
+                    // nothing, so this overlay is all that is left. Starting it
+                    // near zero made submerging brighten the scene sharply, which
+                    // is backwards. Begin at a strength comparable to what the
+                    // surface was contributing and deepen from there.
+                    const float depth = std::max(eyeDepth, 0.0f);
+                    constexpr float kSurfaceHandoff = 0.38f;  // matches the plane's own darkening
+                    const float depthFog = 1.0f - std::exp(-depth * (canal ? 0.25f : 0.12f));
+                    float fogStrength = kSurfaceHandoff + depthFog * (0.75f - kSurfaceHandoff);
+                    fogStrength = glm::clamp(fogStrength, kSurfaceHandoff, 0.75f);
                     glm::vec4 tint = canal
                         ? glm::vec4(0.01f, 0.04f, 0.10f, fogStrength)
                         : glm::vec4(0.03f, 0.09f, 0.18f, fogStrength);
-                    overlaySystem_->renderOverlay(tint, cmd);
+
+                    // Anchor the line to where the water plane actually meets the
+                    // view — its horizon — not to the middle of the screen. An
+                    // infinite horizontal plane projects to the horizon whichever
+                    // side of it the eye is on, and the horizon sits above centre
+                    // whenever the camera looks down, which is most of the time in
+                    // third person. Mapping to screen centre put the darkening
+                    // well below the visible waterline.
+                    float horizonNdc = 0.0f;
+                    {
+                        const glm::vec3 fwd = camera->getForward();
+                        glm::vec3 level(fwd.x, fwd.y, 0.0f);
+                        if (glm::dot(level, level) > 1e-6f) {
+                            level = glm::normalize(level);
+                            const glm::vec4 clip =
+                                camera->getViewProjectionMatrix() * glm::vec4(level, 0.0f);
+                            if (std::abs(clip.w) > 1e-6f)
+                                horizonNdc = glm::clamp(clip.y / clip.w, -1.0f, 1.0f);
+                        }
+                    }
+                    // At the surface the line sits on the horizon; going under
+                    // sweeps it off the top, coming up sweeps it off the bottom.
+                    const float t = glm::clamp(eyeDepth / kCrossingBand, -1.0f, 1.0f);
+                    const float lineNdc = (t >= 0.0f)
+                        ? glm::mix(horizonNdc, -1.15f, t)
+                        : glm::mix(horizonNdc, 1.15f, -t);
+                    const bool crossing = eyeDepth < kCrossingBand;
+                    overlaySystem_->renderWaterline(
+                        tint, lineNdc,
+                        crossing ? 0.05f : 0.0f,   // meniscus softness
+                        crossing ? 0.03f : 0.0f,   // ripple on the edge
+                        globalTime, cmd);
                 }
             }
             if (ghostMode_ && overlaySystem_) {
@@ -1988,7 +2008,17 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             LOG_WARNING("SLOW renderWorld breakdown: prepare=", prepTotalMs,
                         "ms (wmo=", prepWmoMs, " m2=", prepM2Ms, " char=", prepCharMs,
                         ") workers: terrain=", lastTerrainRenderMs,
-                        " wmo=", lastWMORenderMs, " m2=", lastM2RenderMs);
+                        " wmo=", lastWMORenderMs, " m2=", lastM2RenderMs,
+                        // Terrain is usually the critical path here, and its cost
+                        // is one descriptor bind plus one draw per surviving
+                        // chunk — so the counts say whether a slow frame is draw
+                        // volume or something else entirely.
+                        " | terrain chunks drawn=",
+                        terrainRenderer ? terrainRenderer->getRenderedChunkCount() : 0,
+                        " culled=",
+                        terrainRenderer ? terrainRenderer->getCulledChunkCount() : 0,
+                        " resident=",
+                        terrainRenderer ? terrainRenderer->getChunkCount() : 0);
         }
 
         // --- Execute all secondary buffers in correct draw order ---
@@ -2080,8 +2110,8 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                 std::chrono::steady_clock::now() - m2Start).count();
         }
 
-        if (waterRenderer && camera) {
-            waterRenderer->setBrightness(postProcessPipeline_ ? postProcessPipeline_->getBrightness() : 1.0f);
+        if (waterRenderer && camera && !waterDrawsInContinuePass()) {
+            waterRenderer->setRenderExtent(activeRenderExtent_);
             waterRenderer->render(currentCmd, perFrameSet, *camera, globalTime, false, frameIdx);
         }
         if (weather && camera) weather->render(currentCmd, perFrameSet);
@@ -2154,8 +2184,81 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         }
     }
 
+    // Water is drawn last, in a continuation of the scene pass, so that the
+    // refraction copy taken just before it holds the scene WITHOUT water. Taking
+    // that copy from the finished frame instead fed the water its own output:
+    // a moving object left one sharp copy per frame (a train of ghosts) and the
+    // brightness applied to the water compounded through the loop and pumped.
+    if (waterDrawsInContinuePass() && camera) {
+        vkCmdEndRenderPass(currentCmd);
+
+        VkImage sceneColor = VK_NULL_HANDLE;
+        VkImage sceneDepth = VK_NULL_HANDLE;
+        VkExtent2D sceneExtent = vkCtx->getSwapchainExtent();
+        bool depthIsMsaa = vkCtx->isDepthCopySourceMsaa();
+        if (postProcessPipeline_ && postProcessPipeline_->getSceneFramebuffer() != VK_NULL_HANDLE) {
+            sceneColor = postProcessPipeline_->getSceneColorImage();
+            sceneDepth = postProcessPipeline_->getSceneDepthImage();
+            sceneExtent = postProcessPipeline_->getSceneRenderExtent();
+            depthIsMsaa = postProcessPipeline_->sceneDepthIsMsaa();
+        } else if (currentImageIndex < vkCtx->getSwapchainImages().size()) {
+            sceneColor = vkCtx->getSwapchainImages()[currentImageIndex];
+            sceneDepth = vkCtx->getDepthCopySourceImage();
+        }
+
+        if (sceneColor != VK_NULL_HANDLE && waterRenderer->isRefractionEnabled()) {
+            waterRenderer->captureSceneHistory(currentCmd, sceneColor, sceneDepth,
+                                               sceneExtent, depthIsMsaa,
+                                               vkCtx->getCurrentFrame());
+        }
+
+        // Without MSAA the water continues into the scene's own framebuffer. With
+        // MSAA it draws single-sampled into the resolved image instead, which is
+        // both cheaper and what lets it leave the multisampled pass at all.
+        const bool msaaOn = vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT;
+        VkRenderPassBeginInfo contRp{};
+        contRp.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        VkExtent2D waterExtent = activeRenderExtent_;
+        if (msaaOn) {
+            contRp.renderPass = waterRenderer->getWater1xRenderPass();
+            contRp.framebuffer = waterRenderer->getWater1xFramebuffer(currentImageIndex);
+            waterExtent = vkCtx->getSwapchainExtent();
+        } else {
+            contRp.renderPass = vkCtx->getSceneContinueRenderPass();
+            contRp.framebuffer = activeFramebuffer_;
+        }
+        contRp.renderArea.extent = waterExtent;
+        vkCmdBeginRenderPass(currentCmd, &contRp, VK_SUBPASS_CONTENTS_INLINE);
+
+        VkViewport vp{};
+        vp.width = static_cast<float>(waterExtent.width);
+        vp.height = static_cast<float>(waterExtent.height);
+        vp.maxDepth = 1.0f;
+        vkCmdSetViewport(currentCmd, 0, 1, &vp);
+        VkRect2D sc{};
+        sc.extent = waterExtent;
+        vkCmdSetScissor(currentCmd, 0, 1, &sc);
+
+        waterRenderer->setRenderExtent(waterExtent);
+        waterRenderer->render(currentCmd, perFrameSet, *camera, globalTime, msaaOn, frameIdx);
+    }
+
     auto renderEnd = std::chrono::steady_clock::now();
     lastRenderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+}
+
+// Water can leave the scene pass only when there is a continuation pass to draw
+// it in, which excludes MSAA. Everything else in the frame is unaffected.
+bool Renderer::waterDrawsInContinuePass() const {
+    if (!waterRenderer || !vkCtx) return false;
+    if (vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT) {
+        // The 1x water pass targets the swapchain directly, so it cannot serve a
+        // frame whose scene went to an off-screen post-processing target.
+        const bool offscreenScene =
+            postProcessPipeline_ && postProcessPipeline_->getSceneFramebuffer() != VK_NULL_HANDLE;
+        return !offscreenScene && waterRenderer->hasWater1xPass();
+    }
+    return vkCtx->getSceneContinueRenderPass() != VK_NULL_HANDLE;
 }
 
 // initPostProcess(), resizePostProcess(), shutdownPostProcess() removed —
@@ -2738,9 +2841,12 @@ glm::mat4 Renderer::computeLightSpaceMatrix() {
 
 void Renderer::setupWater1xPass() {
     if (!waterRenderer || !vkCtx) return;
+    if (vkCtx->getMsaaSamples() == VK_SAMPLE_COUNT_1_BIT) return;  // scene continuation pass covers this
     VkImageView depthView = vkCtx->getDepthResolveImageView();
     if (!depthView) {
-        LOG_WARNING("No depth resolve image available - cannot create 1x water pass");
+        // Without a resolved depth buffer the single-sampled water has nothing
+        // to depth test against, so it has to stay in the multisampled pass.
+        LOG_WARNING("No depth resolve image available - water stays in the MSAA scene pass");
         return;
     }
 

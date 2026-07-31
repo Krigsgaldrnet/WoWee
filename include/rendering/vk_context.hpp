@@ -97,10 +97,18 @@ public:
 
     // For ImGui
     VkRenderPass getImGuiRenderPass() const { return imguiRenderPass; }
-    // Compatible with getImGuiRenderPass() but loads the swapchain rather than
-    // clearing it. Null under MSAA, where a second pass would have to resolve
-    // again and could not preserve the already-resolved image.
+    // Single-sampled, colour-only pass that loads the swapchain. The UI draws
+    // here, after the scene has resolved and after water refraction has copied
+    // it, so the capture never contains the UI.
     VkRenderPass getOverlayRenderPass() const { return overlayRenderPass; }
+    // The same pass but clearing, for screens that draw the UI with no scene
+    // behind it. Shares getOverlayFramebuffers().
+    VkRenderPass getOverlayClearRenderPass() const { return overlayClearRenderPass; }
+    const std::vector<VkFramebuffer>& getOverlayFramebuffers() const { return overlayFramebuffers; }
+    // Compatible with getImGuiRenderPass(), but loads the scene instead of
+    // clearing it, so drawing can continue into the same framebuffer after the
+    // pass has been closed for a copy. Null under MSAA.
+    VkRenderPass getSceneContinueRenderPass() const { return sceneContinueRenderPass; }
     VkDescriptorPool getImGuiDescriptorPool() const { return imguiDescriptorPool; }
     const std::vector<VkFramebuffer>& getSwapchainFramebuffers() const { return swapchainFramebuffers; }
 
@@ -233,6 +241,11 @@ private:
     std::vector<InFlightBatch> inFlightBatches_;
 
     void runDeferredCleanup(uint32_t frameIndex);
+public:
+    // Execute all deferred destruction immediately. For shutdown paths, where no
+    // further frames will run to drain the queues naturally.
+    void flushDeferredCleanup();
+private:
     std::vector<std::function<void()>> deferredCleanup_[MAX_FRAMES_IN_FLIGHT];
 
     // Depth buffer (shared across all framebuffers)
@@ -268,6 +281,12 @@ private:
     // ImGui resources
     VkRenderPass imguiRenderPass = VK_NULL_HANDLE;
     VkRenderPass overlayRenderPass = VK_NULL_HANDLE;
+    VkRenderPass overlayClearRenderPass = VK_NULL_HANDLE;
+    std::vector<VkFramebuffer> overlayFramebuffers;
+    VkRenderPass sceneContinueRenderPass = VK_NULL_HANDLE;
+    bool createOverlayRenderPass();
+    bool createSceneContinueRenderPass();
+    void destroyOverlayRenderPass();
     VkDescriptorPool imguiDescriptorPool = VK_NULL_HANDLE;
 
     // Shared sampler for UI textures (created on first uploadImGuiTexture call)
@@ -293,6 +312,8 @@ private:
 #else
     bool enableValidation = false;
 #endif
+    // Whether the layers actually came up this run, including via the env var.
+    bool validationActive_ = false;
 };
 
 } // namespace rendering

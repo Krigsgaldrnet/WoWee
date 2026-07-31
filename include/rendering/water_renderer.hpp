@@ -92,6 +92,9 @@ public:
     void endWater1xPass(VkCommandBuffer cmd);
     bool hasWater1xPass() const { return water1xRenderPass != VK_NULL_HANDLE; }
     VkRenderPass getWater1xRenderPass() const { return water1xRenderPass; }
+    VkFramebuffer getWater1xFramebuffer(uint32_t index) const {
+        return index < water1xFramebuffers.size() ? water1xFramebuffers[index] : VK_NULL_HANDLE;
+    }
 
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera, float time, bool use1x = false, uint32_t frameIndex = 0);
     void captureSceneHistory(VkCommandBuffer cmd,
@@ -129,7 +132,10 @@ public:
     bool isRefractionEnabled() const { return refractionEnabled; }
     // Display brightness (1.0 = neutral). The scene-history capture used for
     // refraction bakes this in, so the shader divides it back out.
-    void setBrightness(float b) { brightness_ = b; }
+    // Size of the target the water is drawn into. Screen-space lookups derive
+    // their UVs from this rather than from the refraction texture's own size,
+    // which is deliberately smaller than the frame.
+    void setRenderExtent(VkExtent2D e) { renderExtent_ = e; }
 
     std::optional<float> getWaterHeightAt(float glX, float glY) const;
     /// Like getWaterHeightAt but only returns water surfaces whose height is
@@ -150,6 +156,7 @@ private:
 
     void updateMaterialUBO(WaterSurface& surface);
     VkDescriptorSet allocateMaterialSet();
+    VkExtent2D refractionCaptureExtent() const;
     void createSceneHistoryResources(VkExtent2D extent, VkFormat colorFormat, VkFormat depthFormat);
     void destroySceneHistoryResources();
 
@@ -213,7 +220,7 @@ private:
     std::vector<WaterSurface> surfaces;
     bool renderingEnabled = true;
     bool refractionEnabled = false;
-    float brightness_ = 1.0f;
+    VkExtent2D renderExtent_{0, 0};
 };
 
 } // namespace rendering

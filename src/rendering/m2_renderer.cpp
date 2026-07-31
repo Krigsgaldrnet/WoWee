@@ -1,3 +1,4 @@
+#include <atomic>
 #include "rendering/m2_renderer.hpp"
 #include "rendering/m2_renderer_internal.h"
 #include "rendering/render_constants.hpp"
@@ -268,6 +269,12 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
              " ribbons=", envFlagEnabled("WOWEE_M2_NO_RIBBONS") ? "OFF" : "on",
              " skinning=", envFlagEnabled("WOWEE_M2_NO_SKINNING") ? "OFF" : "on",
              " maxBonesPerInstance=", kMaxBonesPerInstance);
+
+    // Instance storage grows to tens of thousands as a session explores, and
+    // each doubling reallocates the whole thing mid-frame: measured at 8.9ms
+    // crossing 32k and 18.5ms crossing 64k, doubling again each time. Take that
+    // allocation up front, where a stall is invisible.
+    instances.reserve(65536);
 
     const unsigned hc = std::thread::hardware_concurrency();
     const size_t availableCores = (hc > 1u) ? static_cast<size_t>(hc - 1u) : 1ull;
@@ -1046,6 +1053,9 @@ void M2Renderer::shutdown() {
     spatialGrid.clear();
     instanceIndexById.clear();
     instanceDedupMap_.clear();
+    // Model and bone destruction above is deferred; drain it now while the
+    // descriptor pools are still alive.
+    vkCtx_->flushDeferredCleanup();
 
     // Delete cached textures
     textureCache.clear();
