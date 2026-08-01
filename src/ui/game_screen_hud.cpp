@@ -1,4 +1,5 @@
 #include "ui/game_screen.hpp"
+#include "core/helm_visual.hpp"
 #include "ui/ui_raid_icons.hpp"
 #include "ui/ui_colors.hpp"
 #include "ui/ui_helpers.hpp"
@@ -264,6 +265,43 @@ void GameScreen::updateCharacterGeosets(game::Inventory& inventory) {
     // Tabard: inventoryType 19 → group 12
     if (hasEquippedType({19})) {
         geosets.insert(1201);
+    }
+
+    // Hide hair under a helm: drop the style scalp and put the bald cap on.
+    // Group 0 holds the body plus one scalp; 0 itself is the body and stays.
+    // The other-player path has always done this, so a helm covered their hair
+    // and not yours.
+    if (hasEquippedType({1})) {
+        const uint32_t headDisplayId = findEquippedDisplayId({1});
+        uint8_t genderId = 0;
+        if (auto* gh = app.getGameHandler()) {
+            if (const auto* ch = gh->getActiveCharacter()) {
+                genderId = static_cast<uint8_t>(ch->gender);
+            }
+        }
+        // A circlet, tiara or crown sits over the hair rather than covering it,
+        // and the data says which does what — see core::helmHidesHair.
+        if (auto* assets = app.getAssetManager();
+            assets && core::helmHidesHair(*assets, headDisplayId, genderId)) {
+            for (auto it = geosets.begin(); it != geosets.end();) {
+                if (*it != 0 && (*it / 100) == 0) it = geosets.erase(it);
+                else ++it;
+            }
+            geosets.insert(1);
+        }
+    }
+
+    // Groups 17 and 18 are the Death Knight / Night Elf eye glow. Nothing here
+    // should ever select one, and the renderer only auto-skips them when no
+    // geoset filter is applied — with a filter, whatever is in this set is what
+    // gets drawn. Glowing eyes on a character that should not have them come
+    // from exactly this, so say so rather than leaving it to be spotted.
+    for (uint16_t g : geosets) {
+        const uint16_t group = g / 100;
+        if (group == 17 || group == 18) {
+            LOG_WARNING("Player geosets include eye-glow geoset ", g,
+                        " (group ", group, ") — this will draw glowing eyes");
+        }
     }
 
     charRenderer->setActiveGeosets(instanceId, geosets);

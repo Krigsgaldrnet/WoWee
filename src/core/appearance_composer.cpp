@@ -1,4 +1,5 @@
 #include "core/appearance_composer.hpp"
+#include "core/helm_visual.hpp"
 #include "core/entity_spawner.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
@@ -17,6 +18,9 @@ namespace core {
 namespace {
 
 constexpr uint32_t kAttachShield = 0;
+// M2 attachment 11 is the helm; 0 is the shield mount, which is where head
+// gear was going — attached successfully, on the forearm, invisible on the head.
+constexpr uint32_t kAttachHelm = 11;
 constexpr uint32_t kAttachRightHand = 1;
 constexpr uint32_t kAttachLeftHand = 2;
 constexpr uint32_t kAttachRightHip = 9;
@@ -134,6 +138,13 @@ PlayerTextureInfo AppearanceComposer::resolvePlayerTextures(pipeline::M2Model& m
         bool foundUnderwear = false;
         bool foundFaceLower = false;
         bool foundHair = false;
+        // Nearest usable face if the exact (variation, colour) pair is absent.
+        // Character creation falls back to a synthetic 0..9 range whenever its
+        // DBC scan comes up empty, so a character can be created carrying a face
+        // number that has no row at all — and then has no face for good, because
+        // this lookup used to just not match and say nothing.
+        std::string faceAltLower, faceAltUpper;
+        bool haveFaceAlt = false;
         for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
             uint32_t raceId = charSectionsDbc->getUInt32(r, csF.raceId);
             uint32_t sexId = charSectionsDbc->getUInt32(r, csF.sexId);
@@ -178,6 +189,18 @@ PlayerTextureInfo AppearanceComposer::resolvePlayerTextures(pipeline::M2Model& m
                 }
                 foundFaceLower = true;
             }
+            // Same face variation in another skin colour, or failing that any
+            // face at all in the right colour: either beats a blank head.
+            else if (baseSection == 1 && !foundFaceLower && !haveFaceAlt &&
+                     (variationIndex == charFaceId || colorIndex == charSkinId)) {
+                std::string tex1 = charSectionsDbc->getString(r, csF.texture1);
+                std::string tex2 = charSectionsDbc->getString(r, csF.texture2);
+                if (!tex1.empty()) {
+                    faceAltLower = tex1;
+                    faceAltUpper = tex2;
+                    haveFaceAlt = true;
+                }
+            }
             // Section 4 = underwear
             else if (baseSection == 4 && !foundUnderwear && colorIndex == charSkinId) {
                 for (uint32_t f = csF.texture1; f <= csF.texture1 + 2; f++) {
@@ -191,6 +214,18 @@ PlayerTextureInfo AppearanceComposer::resolvePlayerTextures(pipeline::M2Model& m
             }
 
             if (foundSkin && foundHair && foundFaceLower && foundUnderwear) break;
+        }
+
+        if (!foundFaceLower) {
+            LOG_WARNING("No DBC face match for face=", static_cast<int>(charFaceId),
+                        " skin=", static_cast<int>(charSkinId),
+                        " race=", targetRaceId, " sex=", targetSexId,
+                        haveFaceAlt ? " — using the nearest face instead"
+                                    : " — this character will render with no face");
+            if (haveFaceAlt) {
+                result.faceLowerPath = faceAltLower;
+                result.faceUpperPath = faceAltUpper;
+            }
         }
 
         if (!foundHair) {
@@ -330,9 +365,12 @@ std::unordered_set<uint16_t> AppearanceComposer::buildDefaultPlayerGeosets(uint8
                              static_cast<uint32_t>(facialId);
         auto it = facialMap.find(facialKey);
         if (it != facialMap.end()) {
-            activeGeosets.insert(static_cast<uint16_t>(100 + std::max<uint16_t>(it->second.geoset100, 1)));
-            activeGeosets.insert(static_cast<uint16_t>(200 + std::max<uint16_t>(it->second.geoset200, 1)));
-            activeGeosets.insert(static_cast<uint16_t>(300 + std::max<uint16_t>(it->second.geoset300, 1)));
+            // A zero means this channel has no feature — a night elf female has
+            // none on any of the three. Clamping to 1 handed every character the
+            // first variant of all three channels instead.
+            activeGeosets.insert(static_cast<uint16_t>(100 + it->second.geoset100));
+            activeGeosets.insert(static_cast<uint16_t>(200 + it->second.geoset200));
+            activeGeosets.insert(static_cast<uint16_t>(300 + it->second.geoset300));
         } else {
             activeGeosets.insert(101);
             activeGeosets.insert(201);
@@ -423,6 +461,59 @@ bool AppearanceComposer::loadWeaponM2(const std::string& m2Path, pipeline::M2Mod
     return outModel.isValid();
 }
 
+// Head gear, which only other players used to get. The local character's
+// appearance is assembled here while everyone else's goes through
+// EntitySpawner, and the head slot was simply missing from this side: no
+// helmet model, and hair left showing through where one should be.
+void AppearanceComposer::loadEquippedHelm(game::Inventory& inventory) {
+    auto* charRenderer = renderer_ ? renderer_->getCharacterRenderer() : nullptr;
+    const uint32_t charInstanceId = renderer_ ? renderer_->getCharacterInstanceId() : 0;
+    if (!charRenderer || charInstanceId == 0 || !assetManager_ || !gameHandler_) return;
+
+    // Only the helm point. Detaching 0 as well would drop the shield.
+    charRenderer->detachWeapon(charInstanceId, kAttachHelm);
+
+    // Hiding the helm is a display choice, not an unequip: the item stays on,
+    // the model comes off, and the hair comes back.
+    if (!gameHandler_->isHelmVisible()) return;
+
+    const auto& headSlot = inventory.getEquipSlot(game::EquipSlot::HEAD);
+    if (headSlot.empty()) return;
+    const auto* info = gameHandler_->getItemInfo(headSlot.item.itemId);
+    const uint32_t displayId = info && info->valid ? info->displayInfoId
+                                                   : headSlot.item.displayInfoId;
+    if (displayId == 0) return;
+
+    uint8_t raceId = 0;
+    uint8_t genderId = 0;
+    if (const auto* ch = gameHandler_->getActiveCharacter()) {
+        raceId = static_cast<uint8_t>(ch->race);
+        genderId = static_cast<uint8_t>(ch->gender);
+    }
+
+    const core::HelmVisual helm =
+        core::resolveHelmVisual(*assetManager_, displayId, raceId, genderId);
+    if (!helm.valid()) return;
+
+    pipeline::M2Model helmModel;
+    std::string helmPath;
+    if (!helm.racialModelPath.empty()) {
+        helmPath = helm.racialModelPath;
+        if (!loadWeaponM2(helmPath, helmModel)) helmModel = {};
+    }
+    if (!helmModel.isValid()) {
+        helmPath = helm.baseModelPath;
+        if (!loadWeaponM2(helmPath, helmModel)) return;
+    }
+
+    const uint32_t helmModelId = entitySpawner_ ? entitySpawner_->allocateWeaponModelId() : 0;
+    const bool attached = charRenderer->attachWeapon(charInstanceId, kAttachHelm, helmModel,
+                                                     helmModelId, helm.texturePath);
+    if (attached) {
+        LOG_INFO("Equipped helm: ", helmPath, " tex: ", helm.texturePath);
+    }
+}
+
 void AppearanceComposer::loadEquippedWeapons() {
     // Equipment refreshes can arrive during a gather cast. Keep the temporary
     // tool authoritative until the cast-end callback restores real equipment.
@@ -444,6 +535,8 @@ void AppearanceComposer::loadEquippedWeapons() {
     if (charInstanceId == 0) return;
 
     auto& inventory = gameHandler_->getInventory();
+
+    loadEquippedHelm(inventory);
 
     // Load ItemDisplayInfo.dbc
     auto displayInfoDbc = assetManager_->loadDBC("ItemDisplayInfo.dbc");

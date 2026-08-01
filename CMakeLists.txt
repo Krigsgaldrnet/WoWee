@@ -496,6 +496,7 @@ set(WOWEE_SOURCES
     src/core/entity_spawner_player.cpp
     src/core/entity_spawner_processing.cpp
     src/core/appearance_composer.cpp
+    src/core/helm_visual.cpp
     src/core/world_loader.cpp
     src/core/npc_interaction_callback_handler.cpp
     src/core/audio_callback_handler.cpp
@@ -841,6 +842,7 @@ set(WOWEE_SOURCES
     src/ui/character_create_screen.cpp
     src/ui/character_screen.cpp
     src/ui/game_screen.cpp
+    src/ui/scene_pick.cpp
     src/ui/game_screen_frames.cpp
     src/ui/game_screen_hud.cpp
     src/ui/game_screen_minimap.cpp

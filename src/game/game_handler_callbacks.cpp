@@ -97,6 +97,13 @@ bool containsAnyTerm(const std::string& haystack, const char* const* terms, size
     return false;
 }
 
+// GAMEOBJECT_TYPE_FISHINGHOLE. A fishing school is not a container: retail
+// gives it no interact cursor at all, and the only way to take from it is to
+// fish in it. Clicking one here sent CMSG_GAMEOBJ_USE and, while its metadata
+// was still pending, a CMSG_LOOT as well — which the server answers with the
+// hole's loot, harvesting the school in one right-click.
+constexpr uint32_t kGoTypeFishingHole = 25;
+
 bool isLootContainerName(const std::string& name) {
     const std::string lower = lowerCopy(name);
     static constexpr const char* kContainerTerms[] = {
@@ -1209,6 +1216,10 @@ const std::array<GameHandler::MailAttachSlot, 12>& GameHandler::getMailAttachmen
     return mailAttachments_;
 }
 
+int GameHandler::getMaxMailAttachments() const {
+    return InventoryHandler::maxSendableMailAttachments();
+}
+
 // Bank
 bool GameHandler::isBankOpen() const {
     return inventoryHandler_ ? inventoryHandler_->isBankOpen() : bankOpen_;
@@ -1470,6 +1481,36 @@ void GameHandler::removeIgnore(const std::string& playerName) {
     if (socialHandler_) socialHandler_->removeIgnore(playerName);
 }
 
+void GameHandler::faceCanonicalYaw(float canonicalYaw) {
+    movementInfo.orientation = canonicalYaw;
+
+    // One-shot check that the renderer's facing round-trips to the same
+    // canonical yaw we just computed from positions. If it does not, the
+    // per-frame resync replaces this with a different heading and the server
+    // re-checks the arc against that instead.
+    if (auto* r = services_.renderer) {
+        const float fromRender = core::coords::characterYawDegToCanonical(r->getCharacterYaw());
+        const float delta = core::coords::normalizeAngleRad(fromRender - canonicalYaw);
+        if (std::abs(delta) > 0.2f) {
+            LOG_WARNING("Facing mismatch: computed canonical=", canonicalYaw,
+                        " but the character's ", r->getCharacterYaw(),
+                        " deg maps to ", fromRender, " (off by ",
+                        delta * 57.2957795f, " deg) — the resync will undo this");
+        }
+    }
+
+    // The renderer owns facing; the game side is downstream of it every frame.
+    if (auto* renderer = services_.renderer) {
+        const float facingDeg = core::coords::canonicalToCharacterYawDeg(canonicalYaw);
+        renderer->setCharacterYaw(facingDeg);
+        if (auto* cc = renderer->getCameraController()) {
+            cc->setFacingYaw(facingDeg);
+        }
+    }
+
+    sendMovement(Opcode::MSG_MOVE_SET_FACING);
+}
+
 void GameHandler::requestLogout(bool exitAfterLogout) {
     if (socialHandler_) socialHandler_->requestLogout(exitAfterLogout);
 }
@@ -1693,6 +1734,44 @@ const std::vector<std::string>& GameHandler::getJoinedChannels() const {
 // ============================================================
 // Name Queries (delegated to EntityController)
 // ============================================================
+
+// Who a piece of mail is from. The wire gives a player GUID for player mail and
+// an entry for everything else, and nothing resolved either — the inbox showed
+// an empty From line for every message.
+//
+// Resolved on demand rather than stored, so a name that arrives after the inbox
+// was parsed shows up on the next frame instead of staying blank.
+std::string GameHandler::getMailSenderName(const MailMessage& mail) const {
+    switch (mail.messageType) {
+        case 0: {  // from another player
+            // The name-query response backfills senderName, and Reply uses that
+            // field, so prefer it and fall back to the cache for the window
+            // between the inbox arriving and the query returning.
+            if (!mail.senderName.empty()) return mail.senderName;
+            if (mail.senderGuid == 0) break;
+            const std::string& name = lookupName(mail.senderGuid);
+            if (!name.empty()) return name;
+            return "Unknown";
+        }
+        case 2:    // the auction house, which has no creature behind it
+            return "Auction House";
+        case 3: {  // a creature
+            std::string name = getCachedCreatureName(mail.senderEntry);
+            if (!name.empty()) return name;
+            break;
+        }
+        case 4: {  // a game object
+            if (const auto* info = getCachedGameObjectInfo(mail.senderEntry);
+                info && !info->name.empty()) {
+                return info->name;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    return "Unknown";
+}
 
 void GameHandler::queryPlayerName(uint64_t guid) {
     if (entityController_) entityController_->queryPlayerName(guid);
@@ -2183,6 +2262,15 @@ void GameHandler::scheduleGameObjectLootOpen(uint64_t guid, float delaySeconds, 
     pendingGameObjectLootOpens_.push_back(pending);
 }
 
+bool GameHandler::isFishingHoleGameObject(uint64_t guid) const {
+    if (guid == 0 || !entityController_) return false;
+    auto entity = entityController_->getEntityManager().getEntity(guid);
+    if (!entity || entity->getType() != ObjectType::GAMEOBJECT) return false;
+    const auto* info = getCachedGameObjectInfo(
+        std::static_pointer_cast<GameObject>(entity)->getEntry());
+    return info && info->type == kGoTypeFishingHole;
+}
+
 void GameHandler::clearPendingGameObjectLootOpen(uint64_t guid) {
     pendingGameObjectLootOpens_.erase(
         std::remove_if(pendingGameObjectLootOpens_.begin(), pendingGameObjectLootOpens_.end(),
@@ -2314,6 +2402,14 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
             goName = go->getName();
             goInfo = getCachedGameObjectInfo(goEntry);
             if (goInfo) goType = goInfo->type;
+            if (goType == kGoTypeFishingHole) {
+                // Nothing sent, and nothing scheduled: the school is fished, not
+                // opened. Silent, because retail does not respond to the click
+                // either.
+                LOG_INFO("GO fishing hole click ignored: guid=0x", std::hex, guid,
+                         std::dec, " entry=", goEntry, " name='", goName, "'");
+                return;
+            }
             if (goType == 5 && !goName.empty()) {
                 std::string lower = lowerCopy(goName);
                 if (lower.rfind("doodad_", 0) != 0) {
@@ -2347,8 +2443,7 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
             sendMovement(Opcode::MSG_MOVE_STOP);
         }
         if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
-            movementInfo.orientation = std::atan2(-dy, dx);
-            sendMovement(Opcode::MSG_MOVE_SET_FACING);
+            faceCanonicalYaw(std::atan2(-dy, dx));
         }
         sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
     }
@@ -2733,6 +2828,10 @@ void GameHandler::useItemInBag(int bagIndex, int slotIndex) {
 
 bool GameHandler::isAwaitingItemTarget() const {
     return inventoryHandler_ && inventoryHandler_->isAwaitingItemTarget();
+}
+
+void GameHandler::beginSpellItemTargeting(uint32_t spellId, const std::string& spellName) {
+    if (inventoryHandler_) inventoryHandler_->beginSpellItemTargeting(spellId, spellName);
 }
 
 uint32_t GameHandler::getPendingItemTargetSourceItemId() const {

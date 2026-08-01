@@ -1498,6 +1498,88 @@ void CameraController::update(float deltaTime) {
                 }
             }
 
+            // Outdoors the heightfield has exactly one surface per column, so feet
+            // below it means the player is inside the hill, which is never a valid
+            // position. Climbing a slope that rises faster than the step-up budget
+            // — a steep hill, or an ordinary one crossed in a long frame — got the
+            // terrain rejected as unreachable by selectReachableFloor3. Once inside,
+            // every later sample was rejected the same way and the gap only widened
+            // as the player fell, so nothing recovered until the void check fired 60
+            // yards down. Push back out to the surface instead.
+            //
+            // Only where there is nothing else the player could be standing in or
+            // under: a cave, a tunnel or Ironforge is legitimately beneath the
+            // heightfield, and must never be yanked up onto the mountain above it.
+            if (!swimming && !flyingActive_ && !hoverActive_ && !externalFollow_ &&
+                !cachedInsideWMO && !nearStructureSpace && centerTerrainH &&
+                verticalVelocity <= 0.0f) {
+                const float penetration = *centerTerrainH - targetPos.z;
+                // Below the shallow bound is ordinary contact and sampling jitter;
+                // above the deep bound is somewhere this heuristic cannot vouch for,
+                // which the void recovery above already handles.
+                constexpr float kMinPenetration = 0.10f;
+                constexpr float kMaxPenetration = 12.0f;
+                if (penetration > kMinPenetration && penetration < kMaxPenetration) {
+                    // Everywhere the player may legitimately stand below the
+                    // heightfield — the Darkshire crypts, the tunnel under the hill
+                    // into Booty Bay, any cave — is a structure sitting under the
+                    // terrain at this column. Probe for one directly instead of
+                    // trusting cachedInsideWMO and centerWmoH: the first lags by
+                    // design, and the second is cleared outright for floors more
+                    // than 12 yards below terrain while containment still reads
+                    // false, which is exactly what descending a tunnel mouth looks
+                    // like. Finding anything at all here means hands off — the
+                    // player belongs under the terrain, and lifting them out would
+                    // put them on the hillside above the entrance they just walked
+                    // into.
+                    // Probed from the player, not from the terrain surface: the
+                    // floor query culls any group whose top sits more than 4 yards
+                    // below the probe height, so probing from up at the heightfield
+                    // would skip the crypt or the tunnel entirely and report clear
+                    // ground — the exact opposite of the truth. From here the
+                    // structure the player is standing in is right above them.
+                    const float probeZ = targetPos.z + 1.5f;
+                    bool structureBelowTerrain = false;
+                    if (wmoRenderer &&
+                        wmoRenderer->getFloorHeight(targetPos.x, targetPos.y, probeZ)) {
+                        structureBelowTerrain = true;
+                    }
+                    if (!structureBelowTerrain && m2Renderer &&
+                        m2Renderer->getFloorHeight(targetPos.x, targetPos.y, probeZ)) {
+                        structureBelowTerrain = true;
+                    }
+                    // A hole-cut chunk is how a cave mouth or a below-ground
+                    // entrance is opened in the first place. getHeightAt
+                    // interpolates straight across the hole, so the surface this
+                    // rescue would push up to is not there at all — and the
+                    // structure underneath may still be too far below to have been
+                    // found by the probes above.
+                    if (!structureBelowTerrain && terrainManager &&
+                        terrainManager->chunkHasHoles(targetPos.x, targetPos.y)) {
+                        structureBelowTerrain = true;
+                    }
+
+                    if (!structureBelowTerrain) {
+                        if (!terrainRescueActive_) {
+                            terrainRescueActive_ = true;
+                            LOG_INFO("Terrain penetration rescue: feet ", penetration,
+                                     " below the heightfield at (", targetPos.x, ", ",
+                                     targetPos.y, ") with no structure under it");
+                        }
+                        targetPos.z = *centerTerrainH;
+                        verticalVelocity = 0.0f;
+                        groundH = centerTerrainH;
+                        lastGroundZ = *centerTerrainH;
+                    } else {
+                        terrainRescueActive_ = false;
+                    }
+                } else {
+                    terrainRescueActive_ = false;
+                }
+            } else {
+                terrainRescueActive_ = false;
+            }
+
             if (groundH) {
                 hasRealGround_ = true;
                 noGroundTimer_ = 0.0f;

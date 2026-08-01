@@ -2791,7 +2791,8 @@ void WindowManager::renderMailWindow(game::GameHandler& gameHandler,
                 }
 
                 // Sub-info line
-                ImGui::TextColored(kColorGray, "  From: %s", mail.senderName.c_str());
+                ImGui::TextColored(kColorGray, "  From: %s",
+                                   gameHandler.getMailSenderName(mail).c_str());
                 if (mail.money > 0) {
                     ImGui::SameLine();
                     ImGui::TextColored(colors::kWarmGold, " [G]");
@@ -2828,7 +2829,7 @@ void WindowManager::renderMailWindow(game::GameHandler& gameHandler,
 
                 ImGui::TextColored(colors::kWarmGold, "%s",
                     displaySubject.empty() ? "(No Subject)" : displaySubject.c_str());
-                ImGui::Text("From: %s", mail.senderName.c_str());
+                ImGui::Text("From: %s", gameHandler.getMailSenderName(mail).c_str());
 
                 if (mail.messageType == 2) {
                     ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "[Auction House]");
@@ -3053,13 +3054,14 @@ void WindowManager::renderMailComposeWindow(game::GameHandler& gameHandler,
 
         // Attachments section
         int attachCount = gameHandler.getMailAttachmentCount();
-        ImGui::Text("Attachments (%d/12):", attachCount);
+        const int attachMax = gameHandler.getMaxMailAttachments();
+        ImGui::Text("Attachments (%d/%d):", attachCount, attachMax);
         ImGui::SameLine();
         ImGui::TextColored(kColorGray, "Right-click items in bags to attach");
 
         const auto& attachments = gameHandler.getMailAttachments();
         // Show attachment slots in a grid (6 per row)
-        for (int i = 0; i < game::GameHandler::MAIL_MAX_ATTACHMENTS; ++i) {
+        for (int i = 0; i < attachMax; ++i) {
             if (i % 6 != 0) ImGui::SameLine();
             ImGui::PushID(i + 5000);
             const auto& att = attachments[i];
@@ -3081,12 +3083,30 @@ void WindowManager::renderMailComposeWindow(game::GameHandler& gameHandler,
                 }
                 ImGui::PopStyleColor(2);
 
+                // Stack size, drawn over the icon the way the inbox and the bags
+                // both do it. Without it an attached stack looked identical to a
+                // single item, so there was no way to tell what was being sent.
+                const uint32_t stack = att.item.stackCount;
+                if (stack > 1) {
+                    char cnt[16];
+                    snprintf(cnt, sizeof(cnt), "%u", stack);
+                    const ImVec2 rmax = ImGui::GetItemRectMax();
+                    const float cw = ImGui::CalcTextSize(cnt).x;
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    const ImVec2 at(rmax.x - cw - 2.0f, rmax.y - 15.0f);
+                    dl->AddText(ImVec2(at.x + 1.0f, at.y + 1.0f), IM_COL32(0, 0, 0, 200), cnt);
+                    dl->AddText(at, IM_COL32(255, 255, 255, 230), cnt);
+                }
+
                 if (clicked) {
                     gameHandler.detachMailAttachment(i);
                 }
                 if (ImGui::IsItemHovered()) {
                     ImGui::BeginTooltip();
                     ImGui::TextColored(qualColor, "%s", att.item.name.c_str());
+                    if (stack > 1) {
+                        ImGui::TextColored(ui::colors::kLightGray, "Stack of %u", stack);
+                    }
                     ImGui::TextColored(ui::colors::kLightGray, "Click to remove");
                     ImGui::EndTooltip();
                 }
@@ -3324,10 +3344,12 @@ bool WindowManager::renderBankWindow(game::GameHandler& gameHandler,
     // Toolbar: Sort button + contiguous-view toggle
     bool sorting = !bankSortQueue.empty();
     if (sorting) ImGui::BeginDisabled();
-    if (ImGui::SmallButton(sorting ? "Sorting..." : "Sort")) {
+    if (ImGui::SmallButton(sorting ? "Sorting..." : "Sort All")) {
         // Compute swaps before mutating local state, apply the local preview, then queue packets.
+        auto merges = inv.mergeBankPartialStacks(bankSlotCount);
         auto swaps = inv.computeBankSortSwaps(bankSlotCount);
         inv.sortBank(bankSlotCount);
+        for (auto& m : merges) bankSortQueue.push_back(m);
         for (auto& s : swaps) bankSortQueue.push_back(s);
     }
     if (sorting) ImGui::EndDisabled();
@@ -3397,6 +3419,21 @@ bool WindowManager::renderBankWindow(game::GameHandler& gameHandler,
 
             ImGui::Spacing();
             ImGui::Text("Bank Bag %d (%d slots)", bagIdx + 1, bagSize);
+            // Sorting the whole bank pools everything into the main slots, so a
+            // bag being kept as a category needs its own button to stay one.
+            ImGui::SameLine();
+            ImGui::PushID(3000 + bagIdx);
+            if (sorting) ImGui::BeginDisabled();
+            if (ImGui::SmallButton("Sort")) {
+                auto bagSwaps = inv.computeBankBagSortSwaps(bagIdx);
+                inv.sortBankBag(bagIdx);
+                for (auto& sw : bagSwaps) bankSortQueue.push_back(sw);
+            }
+            if (sorting) ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Sort just this bag, leaving the rest of the bank alone.");
+            }
+            ImGui::PopID();
             for (int s = 0; s < bagSize; s++) {
                 if (s % kBankCols != 0) ImGui::SameLine();
                 ImGui::PushID(3000 + bagIdx * 100 + s);

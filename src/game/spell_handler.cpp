@@ -5,6 +5,7 @@
 #include "game/packet_parsers.hpp"
 #include "game/entity.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/camera_controller.hpp"
 #include "rendering/character_renderer.hpp"
 #include "rendering/spell_visual_system.hpp"
 #include "audio/audio_coordinator.hpp"
@@ -646,7 +647,16 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
             owner_.addUIError("You can't do that while flying.");
             return;
         }
+        // Pressing the mount you are already riding dismounts you and stops
+        // there. Falling through to the cast would put the player straight back
+        // on the same mount, so the button appeared to do nothing.
+        const bool ridingThisMount =
+            spellId != 0 && spellId == owner_.getMountAuraSpellId();
         owner_.dismount();
+        if (ridingThisMount) {
+            LOG_INFO("Dismount via mount action: spell=", spellId);
+            return;
+        }
     }
 
     if (casting_) {
@@ -669,12 +679,54 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
         owner_.sendMovement(Opcode::MSG_MOVE_STOP);
     }
 
+    // Remembered so that, if this cast turns out to be what mounted the player,
+    // the mount aura can be identified exactly rather than guessed at.
+    if (!owner_.isMounted()) lastGroundCastSpellId_ = spellId;
+
     const bool fishingCast = spellclass::isFishingCast(spellId);
     uint64_t target = targetGuid != 0 ? targetGuid : owner_.getTargetGuid();
     // Self-targeted spells (hearthstone, shouts, self-buffs) always land on the
     // caster, so they must not carry the current target along.
     const bool selfCast = (spellId == 8690) || isSelfCastSpell(spellId);
     if (selfCast || fishingCast) target = 0;
+
+    // Spells cast at an item — Disenchant, Prospecting, Milling, the enchant
+    // formulas — carry TARGET_FLAG_ITEM in Spell.dbc's Targets. Sending one with
+    // no item in SpellCastTargets is what made the server answer "can't be
+    // disenchanted": it evaluated the question against nothing. Arm the same
+    // item-picking cursor an enchanting scroll uses and send the cast once the
+    // player chooses.
+    constexpr uint32_t kSpellTargetFlagItem = 0x10;
+    if ((getSpellTargetFlags(spellId) & kSpellTargetFlagItem) != 0) {
+        if (owner_.isAwaitingItemTarget()) {
+            owner_.addSystemChatMessage("Choose an item first.");
+            return;
+        }
+        owner_.beginSpellItemTargeting(spellId, getSpellName(spellId));
+        return;
+    }
+
+    // Auto self-cast: a spell that has to be aimed at a friendly unit falls back
+    // to the caster when nothing friendly is selected — no target at all, or an
+    // enemy, which is the usual state mid-fight. Without it, healing yourself
+    // while fighting means dropping the target, casting, and picking it back up.
+    if (!selfCast && !fishingCast && getSpellImplicitTargetA(spellId) != 0 &&
+        spellclass::requiresFriendlyTarget(getSpellImplicitTargetA(spellId))) {
+        bool haveFriendlyTarget = false;
+        if (target != 0 && target != owner_.getPlayerGuid()) {
+            if (auto entity = owner_.getEntityManager().getEntity(target)) {
+                // Players and their pets are friendly unless flagged otherwise;
+                // hostility is the faction check the nameplate colour uses.
+                if (entity->isUnit()) {
+                    haveFriendlyTarget =
+                        !static_cast<Unit*>(entity.get())->isHostile();
+                }
+            }
+        }
+        if (!haveFriendlyTarget) {
+            target = owner_.getPlayerGuid();
+        }
+    }
 
     // Track whether a spell-specific block already handled facing so the generic
     // facing block below doesn't send redundant SET_FACING packets.
@@ -774,9 +826,7 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
                     owner_.addSystemChatMessage("Out of range.");
                     return;
                 }
-                float yaw = std::atan2(-dy, dx);
-                owner_.movementInfoRef().orientation = yaw;
-                owner_.sendMovement(Opcode::MSG_MOVE_SET_FACING);
+                owner_.faceCanonicalYaw(std::atan2(-dy, dx));
                 facingHandled = true;
             }
         }
@@ -792,9 +842,7 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
             float dy = entity->getY() - owner_.movementInfoRef().y;
             float lenSq = dx * dx + dy * dy;
             if (lenSq > 0.01f) {
-                float canonYaw = std::atan2(-dy, dx);
-                owner_.movementInfoRef().orientation = canonYaw;
-                owner_.sendMovement(Opcode::MSG_MOVE_SET_FACING);
+                owner_.faceCanonicalYaw(std::atan2(-dy, dx));
             }
         }
     }
@@ -2652,6 +2700,8 @@ void SpellHandler::loadSpellNameCache() const {
     const uint32_t effect0Field = spellL ? spellL->field("Effect0") : 0xFFFFFFFF;
     const uint32_t effect1Field = spellL ? spellL->field("Effect1") : 0xFFFFFFFF;
     const uint32_t effect2Field = spellL ? spellL->field("Effect2") : 0xFFFFFFFF;
+    const uint32_t implicitTargetAField =
+        spellL ? spellL->field("EffectImplicitTargetA") : 0xFFFFFFFF;
     const uint32_t durIdxField = spellL ? spellL->field("DurationIndex") : 0xFFFFFFFF;
     const uint32_t rangeIdxField = spellL ? spellL->field("RangeIndex") : 0xFFFFFFFF;
     const uint32_t targetAuraStateField = spellL ? spellL->field("TargetAuraState") : 0xFFFFFFFF;
@@ -2698,6 +2748,9 @@ void SpellHandler::loadSpellNameCache() const {
             if (ebp0Field != 0xFFFFFFFF) entry.effectBasePoints[0] = static_cast<int32_t>(dbc->getUInt32(i, ebp0Field));
             if (ebp1Field != 0xFFFFFFFF) entry.effectBasePoints[1] = static_cast<int32_t>(dbc->getUInt32(i, ebp1Field));
             if (ebp2Field != 0xFFFFFFFF) entry.effectBasePoints[2] = static_cast<int32_t>(dbc->getUInt32(i, ebp2Field));
+            if (implicitTargetAField != 0xFFFFFFFF && implicitTargetAField < fieldCount) {
+                entry.implicitTargetA = dbc->getUInt32(i, implicitTargetAField);
+            }
             const uint32_t effectFields[3] = {effect0Field, effect1Field, effect2Field};
             for (size_t effect = 0; effect < 3; ++effect) {
                 if (effectFields[effect] != 0xFFFFFFFF && effectFields[effect] < fieldCount) {
@@ -3072,6 +3125,13 @@ float SpellHandler::getSpellMaxRange(uint32_t spellId) const {
     loadSpellNameCache();
     auto it = owner_.spellNameCacheRef().find(spellId);
     return (it != owner_.spellNameCacheRef().end()) ? it->second.maxRange : -1.0f;
+}
+
+uint32_t SpellHandler::getSpellImplicitTargetA(uint32_t spellId) const {
+    if (spellId == 0) return 0;
+    loadSpellNameCache();
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.implicitTargetA : 0;
 }
 
 bool SpellHandler::isSelfCastSpell(uint32_t spellId) const {

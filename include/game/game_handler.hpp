@@ -416,6 +416,9 @@ public:
     Inventory& getInventory() { return inventory; }
     const Inventory& getInventory() const { return inventory; }
     bool consumeOnlineEquipmentDirty() { bool d = onlineEquipDirty_; onlineEquipDirty_ = false; return d; }
+    /// Ask for the equipment visuals to be rebuilt — the helm toggle changes what
+    /// is drawn without any item moving.
+    void markOnlineEquipmentDirty() { onlineEquipDirty_ = true; }
     void resetEquipmentDirtyTracking() { lastEquipDisplayIds_ = {}; onlineEquipDirty_ = true; }
     void unequipToBackpack(EquipSlot equipSlot);
 
@@ -507,6 +510,16 @@ public:
     // Logout commands. exitAfterLogout: /quit and /exit leave the game; /logout and
     // /camp drop back to character select.
     void requestLogout(bool exitAfterLogout = false);
+
+    /// Turn the character to face a canonical yaw, and tell the server.
+    ///
+    /// Setting movementInfo.orientation and sending MSG_MOVE_SET_FACING is not
+    /// enough on its own: the frame loop resyncs orientation from the renderer's
+    /// character facing every frame and re-sends it once it differs by more than
+    /// three degrees, so a facing that exists only in the packet is undone
+    /// before anything with a cast time completes. Turning the character makes
+    /// the two agree, and keeps them agreeing.
+    void faceCanonicalYaw(float canonicalYaw);
     void cancelLogout();
 
     // Instance difficulty
@@ -663,6 +676,10 @@ public:
     void clearUnitCaches();      // clear per-unit cast states and aura caches
 
     void queryPlayerName(uint64_t guid);
+
+    /// Who a piece of mail is from, resolved from its GUID or entry depending on
+    /// the mail type. Resolved on demand so a late name query still shows.
+    std::string getMailSenderName(const MailMessage& mail) const;
     void queryCreatureInfo(uint32_t entry, uint64_t guid);
     void queryGameObjectInfo(uint32_t entry, uint64_t guid);
     const GameObjectQueryResponseData* getCachedGameObjectInfo(uint32_t entry) const {
@@ -1543,6 +1560,12 @@ public:
     void lootItem(uint8_t slotIndex);
     void closeLoot();
     void scheduleGameObjectLootOpen(uint64_t guid, float delaySeconds = 0.35f, uint8_t attempts = 1);
+
+    /// True once the object is known to be a fishing school. A click on one
+    /// before its query response arrives still schedules a loot open, and by the
+    /// time that fires the metadata has usually landed — so the deferred open
+    /// re-checks rather than harvesting a school the player never fished.
+    bool isFishingHoleGameObject(uint64_t guid) const;
     void clearPendingGameObjectLootOpen(uint64_t guid);
     bool hasPendingGameObjectLootOpen(uint64_t guid) const;
     bool isGatherGameObject(uint64_t guid) const;
@@ -2167,6 +2190,8 @@ public:
     // Item-targeted item use: sharpening stones, weightstones and weapon oils enchant
     // another item, so using one arms a targeting cursor instead of casting immediately.
     bool isAwaitingItemTarget() const;
+    /// Arm the item-picking cursor for a spell that must be cast at an item.
+    void beginSpellItemTargeting(uint32_t spellId, const std::string& spellName);
     uint32_t getPendingItemTargetSourceItemId() const;
     void cancelItemTargeting();
     void completeItemUseOnItem(uint64_t targetItemGuid);
@@ -2216,6 +2241,10 @@ public:
     void clearMailAttachments();
     const std::array<MailAttachSlot, 12>& getMailAttachments() const;
     int getMailAttachmentCount() const;
+    /// Attachments this realm's mail packet can actually carry — one on Vanilla,
+    /// twelve from TBC on. The compose window used to offer twelve regardless
+    /// and quietly send the first.
+    int getMaxMailAttachments() const;
     void mailTakeMoney(uint32_t mailId);
     void mailTakeItem(uint32_t mailId, uint32_t itemGuidLow);
     void mailDelete(uint32_t mailId);
@@ -2409,6 +2438,9 @@ public:
     auto& helmVisibleRef() { return helmVisible_; }
     auto& currentMountDisplayIdRef() { return currentMountDisplayId_; }
     auto& mountAuraSpellIdRef() { return mountAuraSpellId_; }
+    /// Spell of the aura currently keeping the player mounted, 0 when on foot.
+    /// Pressing this one again is a dismount, not a second mount.
+    uint32_t getMountAuraSpellId() const { return mountAuraSpellId_; }
     auto& shapeshiftFormIdRef() { return shapeshiftFormId_; }
     auto& playerRaceRef() { return playerRace_; }
     auto& serverPlayerLevelRef() { return serverPlayerLevel_; }
@@ -2742,6 +2774,10 @@ public:
         float maxRange = -1.0f;
         int32_t effectBasePoints[3] = {0, 0, 0};
         uint32_t effectIds[3] = {0, 0, 0};
+        // Spell.dbc EffectImplicitTargetA — what the spell expects to be aimed
+        // at. 21 means a friendly unit, which is how heals and buffs are told
+        // apart from damage that shares the same effect and school.
+        uint32_t implicitTargetA = 0;
         float durationSec = 0.0f;
         uint32_t spellVisualId = 0;
         uint32_t recoveryMs = 0;

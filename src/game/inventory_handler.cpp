@@ -1354,6 +1354,18 @@ void InventoryHandler::dispatchUseItem(uint8_t wowBag, uint8_t wowSlot, uint64_t
     LOG_DEBUG("useItem: bag=", (int)wowBag, " slot=", (int)wowSlot, " entry=", item.itemId,
               " spellId=", useSpellId);
 
+    // Pre-WotLK mounts are items, so the same rule applies to them: using the
+    // one you are riding dismounts you rather than re-summoning it.
+    if (useSpellId != 0 && owner_.isMounted() &&
+        useSpellId == owner_.getMountAuraSpellId()) {
+        owner_.dismount();
+        LOG_INFO("Dismount via mount item: entry=", item.itemId, " spell=", useSpellId);
+        return;
+    }
+    if (useSpellId != 0 && !owner_.isMounted() && owner_.getSpellHandler()) {
+        owner_.getSpellHandler()->noteGroundCastSpell(useSpellId);
+    }
+
     if (useSpellId != 0 &&
         (owner_.getSpellTargetFlags(useSpellId) & kSpellTargetFlagItem) != 0) {
         pendingItemTarget_ = PendingItemTarget{wowBag, wowSlot, itemGuid, useSpellId,
@@ -1398,6 +1410,15 @@ void InventoryHandler::cancelItemTargeting() {
     pendingItemTarget_.reset();
 }
 
+void InventoryHandler::beginSpellItemTargeting(uint32_t spellId, const std::string& spellName) {
+    PendingItemTarget pending;
+    pending.spellId = spellId;
+    pending.itemName = spellName;
+    pending.fromSpell = true;
+    pendingItemTarget_ = pending;
+    owner_.addSystemChatMessage("Choose an item to use " + spellName + " on.");
+}
+
 void InventoryHandler::completeItemUseOnItem(uint64_t targetItemGuid) {
     if (!isAwaitingItemTarget()) return;
     const PendingItemTarget pending = *pendingItemTarget_;
@@ -1405,6 +1426,16 @@ void InventoryHandler::completeItemUseOnItem(uint64_t targetItemGuid) {
 
     if (targetItemGuid == 0 || !owner_.getSocket()) {
         owner_.addSystemChatMessage("That is not a valid target.");
+        return;
+    }
+
+    if (pending.fromSpell) {
+        auto packet = owner_.getPacketParsers()
+            ? owner_.getPacketParsers()->buildCastSpellOnItem(pending.spellId, targetItemGuid)
+            : CastSpellPacket::buildItemTarget(pending.spellId, targetItemGuid, 0);
+        owner_.getSocket()->send(packet);
+        LOG_INFO("Casting ", pending.itemName, " (spell ", pending.spellId, ") on item 0x",
+                 std::hex, targetItemGuid, std::dec);
         return;
     }
     // Applying to itself is never valid and the server would silently drop it.
@@ -1910,11 +1941,26 @@ void InventoryHandler::sendMail(const std::string& recipient, const std::string&
             itemGuids.push_back(att.itemGuid);
         }
     }
+    const int sendable = maxSendableMailAttachments();
+    if (static_cast<int>(itemGuids.size()) > sendable) {
+        // Should be unreachable now that attaching is capped, but dropping
+        // attachments without saying so is how this went unnoticed.
+        LOG_ERROR("sendMail: ", itemGuids.size(), " attachments but this expansion's "
+                  "packet carries ", sendable, " — refusing to send and lose the rest");
+        owner_.addSystemChatMessage("This realm's mail carries one item per letter.");
+        return;
+    }
     auto packet = owner_.getPacketParsers()->buildSendMail(mailboxGuid_, recipient, subject, body, money, cod, itemGuids);
     LOG_INFO("sendMail: to='", recipient, "' subject='", subject, "' money=", money,
              " attachments=", itemGuids.size(), " mailboxGuid=", mailboxGuid_);
     owner_.getSocket()->send(packet);
     clearMailAttachments();
+}
+
+int InventoryHandler::maxSendableMailAttachments() {
+    // Vanilla's packet has one uint64 item GUID where TBC and later have a
+    // count followed by an array.
+    return isClassicLikeExpansion() ? 1 : MAIL_MAX_ATTACHMENTS;
 }
 
 bool InventoryHandler::attachItemFromBackpack(int backpackIndex) {
@@ -1923,7 +1969,7 @@ bool InventoryHandler::attachItemFromBackpack(int backpackIndex) {
     if (slot.empty()) return false;
     uint64_t itemGuid = owner_.backpackSlotGuidsRef()[backpackIndex];
     if (itemGuid == 0) return false;
-    for (int i = 0; i < MAIL_MAX_ATTACHMENTS; ++i) {
+    for (int i = 0; i < maxSendableMailAttachments(); ++i) {
         if (!mailAttachments_[i].occupied()) {
             mailAttachments_[i].itemGuid = itemGuid;
             mailAttachments_[i].item = slot.item;
@@ -1947,7 +1993,7 @@ bool InventoryHandler::attachItemFromBag(int bagIndex, int slotIndex) {
     if (slotIndex >= static_cast<int>(it->second.numSlots)) return false;
     uint64_t itemGuid = it->second.slotGuids[slotIndex];
     if (itemGuid == 0) return false;
-    for (int i = 0; i < MAIL_MAX_ATTACHMENTS; ++i) {
+    for (int i = 0; i < maxSendableMailAttachments(); ++i) {
         if (!mailAttachments_[i].occupied()) {
             mailAttachments_[i].itemGuid = itemGuid;
             mailAttachments_[i].item = slot.item;
@@ -2013,6 +2059,13 @@ void InventoryHandler::handleMailListResult(network::Packet& packet) {
     if (!owner_.getPacketParsers()->parseMailList(packet, mailInbox_)) return;
     if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("MAIL_INBOX_UPDATE", {});
     for (const auto& mail : mailInbox_) {
+        // Player mail carries a GUID, not a name. Ask for it once here; the UI
+        // reads the name through GameHandler::getMailSenderName, so it appears
+        // as soon as the query comes back.
+        if (mail.messageType == 0 && mail.senderGuid != 0 &&
+            owner_.lookupName(mail.senderGuid).empty()) {
+            owner_.queryPlayerName(mail.senderGuid);
+        }
         if (mail.messageType == 2) {
             AuctionMailSubject auction;
             if (parseAuctionMailSubject(mail.subject, auction)) {

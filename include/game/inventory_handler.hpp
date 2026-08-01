@@ -137,6 +137,10 @@ public:
     /// Entry of the item awaiting a target (0 if none) — drives the targeting cursor.
     uint32_t getPendingItemTargetSourceItemId() const;
     void cancelItemTargeting();
+
+    /// Arm item targeting for a spell that must be cast at an item. The cast is
+    /// sent once the player picks one.
+    void beginSpellItemTargeting(uint32_t spellId, const std::string& spellName);
     /// Sends the parked CMSG_USE_ITEM with TARGET_FLAG_ITEM against targetItemGuid.
     void completeItemUseOnItem(uint64_t targetItemGuid);
 
@@ -156,7 +160,14 @@ public:
     uint64_t getVendorGuid() const { return currentVendorItems_.vendorGuid; }
 
     // ---- Mail ----
+    // Slots the UI can hold. What can actually be sent depends on the wire
+    // format — see maxSendableMailAttachments().
     static constexpr int MAIL_MAX_ATTACHMENTS = 12;
+
+    /// How many attachments this expansion's CMSG_SEND_MAIL can carry. Vanilla
+    /// writes a single item GUID, so anything past the first was silently left
+    /// in the player's bags while the UI happily accepted twelve.
+    static int maxSendableMailAttachments();
     struct MailAttachSlot {
         uint64_t itemGuid = 0;
         game::ItemDef item;
@@ -335,6 +346,10 @@ private:
         uint32_t spellId = 0;
         uint32_t itemId = 0;
         std::string itemName;
+        /// True when a spell is waiting for its item, rather than an item being
+        /// applied to another item. Disenchant, Prospecting, Milling and the
+        /// enchant formulas all take an item and are cast, not used.
+        bool fromSpell = false;
     };
     // mutable: isAwaitingItemTarget() drops the pending use when out of world.
     mutable std::optional<PendingItemTarget> pendingItemTarget_;

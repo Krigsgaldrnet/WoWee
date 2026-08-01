@@ -32,8 +32,15 @@ layout(set = 1, binding = 0) uniform WaterMaterial {
 layout(set = 2, binding = 0) uniform sampler2D SceneColor;
 layout(set = 2, binding = 1) uniform sampler2D SceneDepth;
 layout(set = 2, binding = 2) uniform sampler2D ReflectionColor;
-layout(set = 2, binding = 3) uniform ReflectionData {
+// Wake points are laid down behind anything wading through the shallows. Each
+// is a churn site that spreads and dies, so a running character leaves a trail
+// of froth rather than a disc stuck under its feet.
+const int MAX_WAKE_POINTS = 32;
+
+layout(set = 2, binding = 3) uniform WaterFrameData {
     mat4 reflViewProj;
+    vec4 wakeBounds;                  // xy = centre, z = cull radius, w = count
+    vec4 wakePoints[MAX_WAKE_POINTS]; // xy = world pos, z = age 0..1, w = strength
 };
 
 layout(location = 0) in vec3 FragPos;
@@ -522,6 +529,63 @@ void main() {
     }
 
     // ============================================================
+    // Wake froth — water churned up by something moving through it
+    // Not gated on shoreDepth: wading happens wherever the water is shallow
+    // enough to stand in, which is not only at the beach.
+    // ============================================================
+    float wakeFoam = 0.0;
+    if (wakeBounds.w > 0.5) {
+        // One cheap reject for the whole trail keeps this off every other water
+        // pixel on screen — the trail covers a few yards, the sheet covers miles.
+        vec2 toWake = FragPos.xy - wakeBounds.xy;
+        if (dot(toWake, toWake) < wakeBounds.z * wakeBounds.z) {
+            // Clamped, not trusted: an unmapped UBO would leave a garbage count
+            // here and run this loop off the end of the array.
+            int wakeCount = clamp(int(wakeBounds.w), 0, MAX_WAKE_POINTS);
+            for (int i = 0; i < wakeCount; ++i) {
+                vec4 wp = wakePoints[i];
+                // Churn spreads as it dies, the way a disturbed patch does.
+                float radius = mix(0.40, 1.45, wp.z);
+                float d = length(FragPos.xy - wp.xy);
+                // Falls off from the centre out, with no plateau. A flat middle
+                // is what made these read as painted discs rather than froth.
+                float disc = 1.0 - smoothstep(0.0, radius, d);
+                wakeFoam += disc * disc * wp.w * (1.0 - wp.z);
+            }
+            wakeFoam = clamp(wakeFoam, 0.0, 1.0);
+
+            if (wakeFoam > 0.002) {
+                vec2 churnWarp = vec2(
+                    noiseValue(FragPos.xy * 3.4 + time * 0.5) - 0.5,
+                    noiseValue(FragPos.xy * 3.4 + vec2(23.0) - time * 0.44) - 0.5
+                ) * 0.9;
+                vec2 churnUV = FragPos.xy + churnWarp;
+
+                // cellularFoam returns distance to the nearest cell point, so a
+                // low threshold marks only the few pixels sitting on a point —
+                // specks, which left the patch between them to be filled solid.
+                // Thresholding across the middle of the range inverts that: most
+                // of the patch is foam and the gaps between cells are the
+                // texture, which is what aerated water actually looks like.
+                float cells = cellularFoam(churnUV * 12.0 + time * vec2(0.25, -0.18));
+                float cover = 1.0 - smoothstep(0.08, 0.38, cells);
+
+                float fine = cellularFoam(churnUV * 29.0 - time * vec2(0.14, 0.30));
+                cover = max(cover * 0.85, (1.0 - smoothstep(0.05, 0.22, fine)) * 0.5);
+
+                // Clumping, so the trail thins and thickens along its length.
+                cover *= 0.55 + 0.45 * noiseValue(churnUV * 2.2 + time * 0.35);
+
+                wakeFoam *= cover;
+                // Aerated water is lighter than the surface around it but it is
+                // still water. Near-opaque white read as paint lying on top.
+                wakeFoam = min(wakeFoam, 0.60);
+                color = mix(color, vec3(0.86, 0.91, 0.95), wakeFoam);
+            }
+        }
+    }
+
+    // ============================================================
     // Wave crest foam (ocean only) — particle-based
     // ============================================================
     if (basicType > 0.5 && basicType < 1.5 && push.waveAmp > 0.0) {
@@ -548,6 +612,7 @@ void main() {
     // does not read at all.
     alpha = max(alpha, wetBand * 0.42 * smoothstep(0.0, 0.05, shoreDepth));
     alpha = max(alpha, shorelineFoam * 0.90);
+    alpha = max(alpha, wakeFoam * 0.55);
     // Dissolve the sheet before the water geometry runs out, so the ocean fades
     // into the horizon haze instead of ending on a hard line. This has to come
     // after the clamp — clamping afterwards restored the 0.15 floor and put the

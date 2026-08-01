@@ -1,4 +1,9 @@
 #include "core/entity_spawner.hpp"
+#include "core/helm_visual.hpp"
+
+// M2 attachment 11 is the helm. 0 is the shield mount, which is where head gear
+// was going: it attached, reported success, and hung off the forearm.
+namespace { constexpr uint32_t kAttachHelm = 11; }
 #include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
@@ -235,6 +240,12 @@ void EntitySpawner::spawnOnlinePlayer(uint64_t guid,
         bool foundUnderwear = false;
         bool foundHair = false;
         bool foundFaceLower = false;
+        // Same nearest-face fallback the local player's composer uses. These two
+        // appearance paths have to stay in step: one is every other player in
+        // the world, the other is you, and a face that resolves for one and not
+        // the other is exactly the kind of difference nobody thinks to check.
+        std::string faceAltLower, faceAltUpper;
+        bool haveFaceAlt = false;
 
         for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
             uint32_t rRace = charSectionsDbc->getUInt32(r, csF.raceId);
@@ -277,9 +288,29 @@ void EntitySpawner::spawnOnlinePlayer(uint64_t guid,
                 if (!tex1.empty()) faceLowerPath = tex1;
                 if (!tex2.empty()) faceUpperPath = tex2;
                 foundFaceLower = true;
+            } else if (baseSection == 1 && !foundFaceLower && !haveFaceAlt &&
+                       (variationIndex == faceId || colorIndex == skinId)) {
+                std::string tex1 = charSectionsDbc->getString(r, csF.texture1);
+                if (!tex1.empty()) {
+                    faceAltLower = tex1;
+                    faceAltUpper = charSectionsDbc->getString(r, csF.texture2);
+                    haveFaceAlt = true;
+                }
             }
 
             if (foundSkin && foundUnderwear && foundHair && foundFaceLower) break;
+        }
+
+        if (!foundFaceLower) {
+            LOG_WARNING("spawnOnlinePlayer: no DBC face match for face=",
+                        static_cast<int>(faceId), " skin=", static_cast<int>(skinId),
+                        " race=", targetRaceId, " sex=", targetSexId,
+                        haveFaceAlt ? " — using the nearest face instead"
+                                    : " — this player will render with no face");
+            if (haveFaceAlt) {
+                faceLowerPath = faceAltLower;
+                faceUpperPath = faceAltUpper;
+            }
         }
     }
 
@@ -328,9 +359,9 @@ void EntitySpawner::spawnOnlinePlayer(uint64_t guid,
                                static_cast<uint32_t>(facialFeatures);
     auto itFacial = facialHairGeosetMap_.find(facialKey);
     if (itFacial != facialHairGeosetMap_.end()) {
-        activeGeosets.insert(static_cast<uint16_t>(100 + std::max<uint16_t>(itFacial->second.geoset100, 1)));
-        activeGeosets.insert(static_cast<uint16_t>(200 + std::max<uint16_t>(itFacial->second.geoset200, 1)));
-        activeGeosets.insert(static_cast<uint16_t>(300 + std::max<uint16_t>(itFacial->second.geoset300, 1)));
+        activeGeosets.insert(static_cast<uint16_t>(100 + itFacial->second.geoset100));
+        activeGeosets.insert(static_cast<uint16_t>(200 + itFacial->second.geoset200));
+        activeGeosets.insert(static_cast<uint16_t>(300 + itFacial->second.geoset300));
     } else {
         activeGeosets.insert(101);
         activeGeosets.insert(201);
@@ -465,9 +496,9 @@ void EntitySpawner::setOnlinePlayerEquipment(uint64_t guid,
                                static_cast<uint32_t>(st.facialFeatures);
     auto itFacial = facialHairGeosetMap_.find(facialKey);
     if (itFacial != facialHairGeosetMap_.end()) {
-        geosets.insert(static_cast<uint16_t>(100 + std::max<uint16_t>(itFacial->second.geoset100, 1)));
-        geosets.insert(static_cast<uint16_t>(200 + std::max<uint16_t>(itFacial->second.geoset200, 1)));
-        geosets.insert(static_cast<uint16_t>(300 + std::max<uint16_t>(itFacial->second.geoset300, 1)));
+        geosets.insert(static_cast<uint16_t>(100 + itFacial->second.geoset100));
+        geosets.insert(static_cast<uint16_t>(200 + itFacial->second.geoset200));
+        geosets.insert(static_cast<uint16_t>(300 + itFacial->second.geoset300));
     } else {
         geosets.insert(101);
         geosets.insert(201);
@@ -588,7 +619,8 @@ void EntitySpawner::setOnlinePlayerEquipment(uint64_t guid,
 
     // Hide hair under helmets: replace style-specific scalp with bald scalp
     // HEAD slot is index 0 in the 19-element equipment array
-    if (displayInfoIds[0] != 0 && hairStyleId > 0) {
+    if (displayInfoIds[0] != 0 && hairStyleId > 0 &&
+        core::helmHidesHair(*assetManager_, displayInfoIds[0], st.genderId)) {
         geosets.erase(selectedHairScalp);                              // Remove style scalp
         geosets.insert(1);    // Bald scalp cap (group 0)
     }
@@ -599,73 +631,36 @@ void EntitySpawner::setOnlinePlayerEquipment(uint64_t guid,
     // HEAD slot is index 0 in the 19-element equipment array.
     // Helmet M2s are race/gender-specific (e.g. Helm_Plate_B_01_HuM.m2 for Human Male).
     if (displayInfoIds[0] != 0) {
-        // Detach any previously attached helmet before attaching a new one
-        charRenderer->detachWeapon(st.instanceId, 0);
-        charRenderer->detachWeapon(st.instanceId, 11);
+        // Only the helm point — detaching 0 as well would drop the shield.
+        charRenderer->detachWeapon(st.instanceId, kAttachHelm);
 
-        int32_t helmIdx = displayInfoDbc->findRecordById(displayInfoIds[0]);
-        if (helmIdx >= 0) {
-            const uint32_t leftModelField = idiL ? (*idiL)["LeftModel"] : 1u;
-            std::string helmModelName = displayInfoDbc->getString(static_cast<uint32_t>(helmIdx), leftModelField);
-            if (!helmModelName.empty()) {
-                // Strip .mdx/.m2 extension
-                size_t dotPos = helmModelName.rfind('.');
-                if (dotPos != std::string::npos) helmModelName = helmModelName.substr(0, dotPos);
+        const core::HelmVisual helm = core::resolveHelmVisual(
+            *assetManager_, displayInfoIds[0], st.raceId, st.genderId);
+        if (helm.valid()) {
+            pipeline::M2Model helmModel;
+            std::string helmPath;
+            if (!helm.racialModelPath.empty()) {
+                helmPath = helm.racialModelPath;
+                if (!loadWeaponM2(helmPath, helmModel)) helmModel = {};
+            }
+            if (!helmModel.isValid()) {
+                helmPath = helm.baseModelPath;
+                loadWeaponM2(helmPath, helmModel);
+            }
 
-                // Race/gender suffix for helmet variants
-                static const std::unordered_map<uint8_t, std::string> racePrefix = {
-                    {1, "Hu"}, {2, "Or"}, {3, "Dw"}, {4, "Ni"}, {5, "Sc"},
-                    {6, "Ta"}, {7, "Gn"}, {8, "Tr"}, {10, "Be"}, {11, "Dr"}
-                };
-                std::string genderSuffix = (st.genderId == 0) ? "M" : "F";
-                std::string raceSuffix;
-                auto itRace = racePrefix.find(st.raceId);
-                if (itRace != racePrefix.end()) {
-                    raceSuffix = "_" + itRace->second + genderSuffix;
-                }
-
-                // Try race/gender-specific variant first, then base name
-                std::string helmPath;
-                pipeline::M2Model helmModel;
-                if (!raceSuffix.empty()) {
-                    helmPath = "Item\\ObjectComponents\\Head\\" + helmModelName + raceSuffix + ".m2";
-                    if (!loadWeaponM2(helmPath, helmModel)) helmModel = {};
-                }
-                if (!helmModel.isValid()) {
-                    helmPath = "Item\\ObjectComponents\\Head\\" + helmModelName + ".m2";
-                    loadWeaponM2(helmPath, helmModel);
-                }
-
-                if (helmModel.isValid()) {
-                    uint32_t helmModelId = nextWeaponModelId_++;
-                    // Get texture from ItemDisplayInfo (LeftModelTexture)
-                    const uint32_t leftTexField = idiL ? (*idiL)["LeftModelTexture"] : 3u;
-                    std::string helmTexName = displayInfoDbc->getString(static_cast<uint32_t>(helmIdx), leftTexField);
-                    std::string helmTexPath;
-                    if (!helmTexName.empty()) {
-                        if (!raceSuffix.empty()) {
-                            std::string suffixedTex = "Item\\ObjectComponents\\Head\\" + helmTexName + raceSuffix + ".blp";
-                            if (assetManager_->fileExists(suffixedTex)) helmTexPath = suffixedTex;
-                        }
-                        if (helmTexPath.empty()) {
-                            helmTexPath = "Item\\ObjectComponents\\Head\\" + helmTexName + ".blp";
-                        }
-                    }
-                    // Attachment point 0 (head bone), fallback to 11 (explicit head attachment)
-                    bool attached = charRenderer->attachWeapon(st.instanceId, 0, helmModel, helmModelId, helmTexPath);
-                    if (!attached) {
-                        attached = charRenderer->attachWeapon(st.instanceId, 11, helmModel, helmModelId, helmTexPath);
-                    }
-                    if (attached) {
-                        LOG_DEBUG("Attached player helmet: ", helmPath, " tex: ", helmTexPath);
-                    }
+            if (helmModel.isValid()) {
+                const uint32_t helmModelId = nextWeaponModelId_++;
+                // Attachment point 0 (head bone), fallback to 11 (explicit head).
+                const bool attached = charRenderer->attachWeapon(
+                    st.instanceId, kAttachHelm, helmModel, helmModelId, helm.texturePath);
+                if (attached) {
+                    LOG_DEBUG("Attached player helmet: ", helmPath, " tex: ", helm.texturePath);
                 }
             }
         }
     } else {
         // No helmet equipped — detach any existing helmet model
-        charRenderer->detachWeapon(st.instanceId, 0);
-        charRenderer->detachWeapon(st.instanceId, 11);
+        charRenderer->detachWeapon(st.instanceId, kAttachHelm);
     }
 
     // --- Shoulder model attachment ---

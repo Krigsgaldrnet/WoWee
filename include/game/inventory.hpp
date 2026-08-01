@@ -186,6 +186,11 @@ public:
     // sorting never spills items into slots the server doesn't have.
     void sortBank(int mainSlotCount);
 
+    // Sort one bank bag's contents in place, leaving the rest of the bank alone.
+    // Sorting the whole bank pools everything into the main slots, which is the
+    // wrong tool when a bag is being kept as a deliberate category.
+    void sortBankBag(int bagIndex);
+
     // A single swap operation using WoW bag/slot addressing (for CMSG_SWAP_ITEM).
     struct SwapOp {
         uint8_t srcBag;
@@ -194,10 +199,21 @@ public:
         uint8_t dstSlot;
     };
 
+    // Pour partial stacks of the same item together, so two half stacks become
+    // one. Dropping a stack onto another of the same item is a swap as far as the
+    // wire is concerned — the server merges what fits and leaves the rest behind —
+    // so the returned ops go through the same queue as a sort.
+    //
+    // Unlike the sort, this both plans and applies: keeping the plan and the local
+    // preview in one pass means the two cannot disagree.
+    std::vector<SwapOp> mergePartialStacks();
+    std::vector<SwapOp> mergeBankPartialStacks(int mainSlotCount);
+
     // Compute the CMSG_SWAP_ITEM operations needed to reach sorted order.
     // Does NOT modify the inventory — caller is responsible for sending packets.
     std::vector<SwapOp> computeSortSwaps() const;
     std::vector<SwapOp> computeBankSortSwaps(int mainSlotCount) const;
+    std::vector<SwapOp> computeBankBagSortSwaps(int bagIndex) const;
 
     // WoW bag/slot addressing for bank storage (used by sort + drag-drop):
     // main bank slots live in bag 0xFF at slot BANK_SLOT_START + index; each bank bag's
