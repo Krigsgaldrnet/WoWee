@@ -836,6 +836,10 @@ set(WOWEE_SOURCES
 
     # UI
     src/ui/ui_manager.cpp
+    src/ui/widget_tree.cpp
+    src/ui/xml_parser.cpp
+    src/ui/framexml_emitter.cpp
+    src/ui/widget_renderer.cpp
     src/ui/ui_raid_icons.cpp
     src/ui/auth_screen.cpp
     src/ui/realm_screen.cpp
@@ -2079,3 +2083,13 @@ chmod +x /usr/local/bin/wowee
 endif()
 
 include(CPack)
+
+# Bundled addons ship next to the executable, so the client finds them without
+# anyone copying files into an extracted game install. AddonManager searches
+# here as well as the game data's own Interface/AddOns.
+add_custom_target(copy_bundled_addons ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/addons $<TARGET_FILE_DIR:wowee>/addons
+    COMMENT "Copying bundled addons")
+add_dependencies(copy_bundled_addons wowee)
+

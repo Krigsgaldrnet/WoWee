@@ -1,6 +1,7 @@
 #pragma once
 
 #include "addons/lua_services.hpp"
+#include "ui/widget_tree.hpp"
 #include <functional>
 #include <string>
 #include <vector>
@@ -40,12 +41,21 @@ public:
     // Call OnUpdate scripts on all frames that have one.
     void dispatchOnUpdate(float elapsed);
 
+    /// Feed the mouse to the widget tree: hover changes fire OnEnter/OnLeave,
+    /// and a press and release on the same frame is a click. Coordinates are
+    /// WoW's, origin bottom-left.
+    void dispatchMouse(float x, float y, bool leftDown);
+
     // SavedVariables: load globals from file, save globals to file
     bool loadSavedVariables(const std::string& path);
     bool saveSavedVariables(const std::string& path, const std::vector<std::string>& varNames);
 
     // Store addon info in registry for GetAddOnInfo/GetNumAddOns
     void setAddonList(const std::vector<TocFile>& addons);
+
+    /// The widget tree CreateFrame and CreateTexture build into. Owned here so
+    /// its lifetime matches the Lua state that holds handles into it.
+    ui::WidgetTree& widgets() { return widgets_; }
 
     lua_State* getState() { return L_; }
     bool isInitialized() const { return L_ != nullptr; }
@@ -56,9 +66,16 @@ public:
 
 private:
     lua_State* L_ = nullptr;
+    ui::WidgetTree widgets_;
     game::GameHandler* gameHandler_ = nullptr;
     LuaServices luaServices_;
     LuaErrorCallback luaErrorCallback_;
+
+    void callFrameScript(uint32_t wid, const char* script, const char* arg = nullptr);
+
+    uint32_t hoverWid_ = 0;
+    uint32_t pressedWid_ = 0;
+    bool leftDown_ = false;
 
     void registerCoreAPI();
     void registerEventAPI();
