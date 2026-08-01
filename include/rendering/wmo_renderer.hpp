@@ -84,6 +84,11 @@ public:
      * @param id WMO model identifier
      */
     bool isModelLoaded(uint32_t id) const;
+    /// Whether this instance's model has finished uploading its groups, and so
+    /// whether a failed floor query means "nothing under you" rather than "not
+    /// loaded yet". The two need telling apart: a rider held in place waiting
+    /// for collision that is already there waits forever.
+    bool instanceHasCollisionGeometry(uint32_t instanceId) const;
 
     /**
      * Check if a WMO instance is still live in the renderer. Owners that cache
@@ -144,6 +149,11 @@ public:
      * @param modelId WMO model ID
      * @return Vector of doodad templates (empty if no doodads or model not found)
      */
+    /// Set an animation on every child doodad of an instance. Returns how many
+    /// doodads were addressed, so a caller streaming them in over several frames
+    /// can tell when the set has grown and re-apply. A doodad lacking the
+    /// sequence is left as it is.
+    size_t setInstanceDoodadAnimation(uint32_t instanceId, uint32_t animationId, bool loop);
     const std::vector<DoodadTemplate>* getDoodadTemplates(uint32_t modelId) const;
 
     /**
@@ -174,6 +184,9 @@ public:
      */
     /** Pre-update mutable state (frame ID, material UBOs) on main thread before parallel render. */
     void prepareRender();
+    /// viewerPos is the character; portal culling seeds from it as well as from
+    /// the camera, because at a doorway the two stand in different groups and
+    /// neither alone is reliably the right place to start.
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera,
                 const glm::vec3* viewerPos = nullptr);
 
@@ -623,8 +636,12 @@ private:
     /**
      * Get visible groups via portal traversal
      */
+    /// Seeds from both the camera's group and the character's: at a doorway the
+    /// two are in different rooms, and walking from only one while judging every
+    /// door against the camera's frustum empties the interior.
     void getVisibleGroupsViaPortals(const ModelData& model,
                                      const glm::vec3& cameraLocalPos,
+                                     const glm::vec3& viewerLocalPos,
                                      const Frustum& frustum,
                                      const glm::mat4& modelMatrix,
                                      std::unordered_set<uint32_t>& outVisibleGroups) const;

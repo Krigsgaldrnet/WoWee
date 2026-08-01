@@ -1299,9 +1299,18 @@ void EntitySpawner::processPendingTransportDoodads() {
             it->nextIndex++;
             budgetLeft--;
 
+            // Every failure below used to be a silent continue, so a transport
+            // that lost a doodad lost it without a trace — the ship rendered,
+            // minus its sails or its paddlewheel, and nothing said why. A v264
+            // model carries no indices of its own, so a .skin that does not
+            // resolve leaves isValid() false and drops the piece; that is the
+            // one worth naming loudly.
             uint32_t doodadModelId = static_cast<uint32_t>(std::hash<std::string>{}(doodadTemplate.m2Path));
             auto m2Data = assetManager_->readFile(doodadTemplate.m2Path);
-            if (m2Data.empty()) continue;
+            if (m2Data.empty()) {
+                LOG_WARNING("Transport doodad missing: ", doodadTemplate.m2Path);
+                continue;
+            }
 
             pipeline::M2Model m2Model = pipeline::M2Loader::load(m2Data);
             if (m2Model.name.empty()) m2Model.name = doodadTemplate.m2Path;
@@ -1309,12 +1318,35 @@ void EntitySpawner::processPendingTransportDoodads() {
             std::vector<uint8_t> skinData = assetManager_->readFile(skinPath);
             if (!skinData.empty() && m2Model.version >= 264) {
                 pipeline::M2Loader::loadSkin(skinData, m2Model);
+            } else if (skinData.empty() && m2Model.version >= 264) {
+                LOG_WARNING("Transport doodad ", doodadTemplate.m2Path, " is version ",
+                            m2Model.version, " and its skin '", skinPath,
+                            "' did not resolve — it has no indices and will be skipped");
             }
-            if (!m2Model.isValid()) continue;
+            if (!m2Model.isValid()) {
+                LOG_WARNING("Transport doodad unusable: ", doodadTemplate.m2Path,
+                            " version=", m2Model.version,
+                            " verts=", m2Model.vertices.size(),
+                            " indices=", m2Model.indices.size());
+                continue;
+            }
 
-            if (!m2Renderer->loadModel(m2Model, doodadModelId)) continue;
-            uint32_t m2InstanceId = m2Renderer->createInstance(doodadModelId, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f);
-            if (m2InstanceId == 0) continue;
+            if (!m2Renderer->loadModel(m2Model, doodadModelId)) {
+                LOG_WARNING("Transport doodad failed to upload: ", doodadTemplate.m2Path);
+                continue;
+            }
+            // Created at the origin and moved into place by the parent WMO's
+            // transform, so its position here is a placeholder and must not be
+            // deduplicated against — otherwise the second ship of a class is
+            // handed the first ship's sails rather than getting its own, and
+            // the thirteen barrels in a hold collapse into one barrel.
+            uint32_t m2InstanceId = m2Renderer->createInstance(
+                doodadModelId, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f,
+                /*allowPositionDedup=*/false);
+            if (m2InstanceId == 0) {
+                LOG_WARNING("Transport doodad got no instance: ", doodadTemplate.m2Path);
+                continue;
+            }
             m2Renderer->setSkipCollision(m2InstanceId, true);
             // Ship WMO children use the dedicated transport animation states:
             // 162=ShipStart, 163=ShipMoving, 164=ShipStop. Leaving them on the
@@ -1324,14 +1356,28 @@ void EntitySpawner::processPendingTransportDoodads() {
             std::string doodadPathLower = doodadTemplate.m2Path;
             std::transform(doodadPathLower.begin(), doodadPathLower.end(), doodadPathLower.begin(),
                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            bool logMachinery = false;
             if (doodadPathLower.find("transportship_sails") != std::string::npos ||
                 doodadPathLower.find("icebreaker_paddlewheel") != std::string::npos) {
-                LOG_WARNING("Transport machinery spawned: ", doodadTemplate.m2Path,
-                            " instance=", m2InstanceId,
-                            " hasShipMoving=", m2Renderer->hasAnimation(m2InstanceId, 163u));
+                logMachinery = true;
             }
 
             wmoRenderer->addDoodadToInstance(it->instanceId, m2InstanceId, doodadTemplate.localTransform);
+            if (logMachinery) {
+                // Report where it actually ended up. "Spawned" only ever meant the
+                // model parsed; it said nothing about whether the thing landed on
+                // the ship or at the world origin.
+                glm::vec3 where(0.0f);
+                float radius = 0.0f;
+                const bool haveBounds = m2Renderer->getInstanceBounds(m2InstanceId, where, radius);
+                LOG_WARNING("Transport machinery spawned: ", doodadTemplate.m2Path,
+                            " instance=", m2InstanceId,
+                            " wmoInstance=", it->instanceId,
+                            " hasShipMoving=", m2Renderer->hasAnimation(m2InstanceId, 163u),
+                            " bounds=", haveBounds,
+                            " worldPos=(", where.x, ",", where.y, ",", where.z, ")",
+                            " radius=", radius);
+            }
             it->spawnedDoodads++;
         }
 

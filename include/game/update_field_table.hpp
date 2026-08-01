@@ -84,9 +84,20 @@ enum class UF : uint16_t {
     PLAYER_FIELD_HONOR_CURRENCY,     // Accumulated honor points (uint32)
     PLAYER_FIELD_ARENA_CURRENCY,     // Accumulated arena points (uint32)
 
+    // The player's active non-combat companion, as a 64-bit guid (low word at
+    // this index, high word at the next). WotLK only — no earlier expansion
+    // published it, and none has CMSG_DISMISS_CRITTER to act on it either.
+    UNIT_FIELD_CRITTER,
+
     // GameObject fields
     GAMEOBJECT_DISPLAYID,
     GAMEOBJECT_BYTES_1,
+    // MO_TRANSPORT route clock. LEVEL carries the route's period in ms; the high
+    // int16 of DYNAMIC carries how far through that period the transport is, as a
+    // fraction of 65535. Both are WotLK-only — nothing before it published a
+    // transport's phase, so those expansions keep animating on their own clock.
+    GAMEOBJECT_DYNAMIC,
+    GAMEOBJECT_LEVEL,
 
     // Item fields
     ITEM_FIELD_STACK_COUNT,

@@ -540,6 +540,20 @@ void EntityController::detectPlayerMountChange(uint32_t newMountDisplayId,
         return;
     }
     uint32_t old = owner_.currentMountDisplayIdRef();
+
+    // A dismount the player just asked for has not reached this field yet: it
+    // keeps its old value for a few frames. Taking that at face value put them
+    // straight back on the mount, and the restored value then made the server's
+    // own SMSG_DISMOUNT read as transient and get discarded — so the mount
+    // blinked off, back on, and off again, with the character left holding the
+    // seated rider pose in between.
+    auto* mh = owner_.getMovementHandler();
+    if (newMountDisplayId != 0 && mh && mh->isDismountPending()) {
+        return;
+    }
+    // The server agrees: nothing left to wait for.
+    if (newMountDisplayId == 0 && mh) mh->clearDismountPending();
+
     if (old != 0 && newMountDisplayId == 0) {
         LOG_WARNING("Authoritative mount field cleared: oldDisplay=", old,
                     " casting=", owner_.isCasting(),
@@ -1932,6 +1946,79 @@ void EntityController::onValuesUpdateGameObject(const UpdateBlock& block, std::s
                 owner_.gameObjectStateCallbackRef()(block.guid, goState);
         }
     }
+
+    applyTransportRouteClock(block);
+}
+
+void EntityController::trackActiveCritter(const UpdateBlock& block) {
+    // A non-combat companion is announced only by this field on the player: it
+    // gets no aura, so there is nothing in the buff bar to cancel and nothing
+    // else to notice it by. Remembering which spell called it is what lets
+    // casting that spell again put it away rather than summon a second one.
+    if (block.guid != owner_.getPlayerGuid()) return;
+    const uint16_t critterIdx = fieldIndex(UF::UNIT_FIELD_CRITTER);
+    if (critterIdx == 0xFFFF) return;   // pre-WotLK: no such field, no dismiss opcode
+
+    auto loIt = block.fields.find(critterIdx);
+    auto hiIt = block.fields.find(static_cast<uint16_t>(critterIdx + 1));
+    if (loIt == block.fields.end() && hiIt == block.fields.end()) return;
+
+    const uint32_t lo = (loIt != block.fields.end()) ? loIt->second
+                                                     : static_cast<uint32_t>(owner_.getActiveCritterGuid());
+    const uint32_t hi = (hiIt != block.fields.end())
+                            ? hiIt->second
+                            : static_cast<uint32_t>(owner_.getActiveCritterGuid() >> 32);
+    const uint64_t critterGuid = (static_cast<uint64_t>(hi) << 32) | lo;
+    if (critterGuid == owner_.getActiveCritterGuid()) return;
+
+    if (critterGuid == 0) {
+        LOG_INFO("Companion dismissed: was guid=0x", std::hex,
+                 owner_.getActiveCritterGuid(), std::dec);
+        owner_.setActiveCritter(0, 0);
+        return;
+    }
+    // Attribute it to the spell just cast from the ground, the same way the
+    // mount aura is identified — a blind guess at "some spell" would make the
+    // toggle fire on the wrong button.
+    uint32_t summonedBy = 0;
+    if (owner_.getSpellHandler()) summonedBy = owner_.getSpellHandler()->getLastGroundCastSpellId();
+    owner_.setActiveCritter(critterGuid, summonedBy);
+    LOG_INFO("Companion summoned: guid=0x", std::hex, critterGuid, std::dec,
+             " by spell=", summonedBy);
+}
+
+void EntityController::applyTransportRouteClock(const UpdateBlock& block) {
+    // A moving transport publishes where it is on its route: LEVEL is the route's
+    // period in milliseconds, and the high int16 of DYNAMIC is how far through
+    // that period it currently is, as a fraction of 65535.
+    //
+    // Without this the client animated on a clock it invented from distance over
+    // speed, which is why a ferry could lap its shore several times while the
+    // server's schedule caught up, and why a rider's world position — which the
+    // client composes from its own idea of where the hull is — could disagree
+    // with the server's.
+    //
+    // Both fields are WotLK-only. Nothing earlier published a transport's phase,
+    // so on those expansions fieldIndex returns 0xFFFF and this does nothing.
+    auto* tm = owner_.getTransportManager();
+    if (!tm || !tm->getTransport(block.guid)) return;
+
+    const uint16_t ufLevel = fieldIndex(UF::GAMEOBJECT_LEVEL);
+    const uint16_t ufDynamic = fieldIndex(UF::GAMEOBJECT_DYNAMIC);
+    if (ufLevel == 0xFFFF || ufDynamic == 0xFFFF) return;
+
+    auto itPeriod = block.fields.find(ufLevel);
+    auto itDynamic = block.fields.find(ufDynamic);
+    if (itPeriod == block.fields.end() || itDynamic == block.fields.end()) return;
+
+    const uint32_t periodMs = itPeriod->second;
+    // Signed on the wire: -1 means "this object has no path progress to report",
+    // which every non-transport GameObject sends.
+    const int16_t rawProgress = static_cast<int16_t>((itDynamic->second >> 16) & 0xFFFF);
+    if (periodMs == 0 || rawProgress < 0) return;
+
+    const float phase = static_cast<float>(rawProgress) / 65535.0f;
+    tm->applyServerRouteClock(block.guid, phase, periodMs);
 }
 
 // ============================================================
@@ -1939,6 +2026,7 @@ void EntityController::onValuesUpdateGameObject(const UpdateBlock& block, std::s
 // ============================================================
 
 void EntityController::handleCreateObject(const UpdateBlock& block, bool& newItemCreated) {
+    trackActiveCritter(block);
     pendingEvents_.clear();
 
     // 3a: Create entity from block type
@@ -1982,6 +2070,7 @@ void EntityController::handleCreateObject(const UpdateBlock& block, bool& newIte
 }
 
 void EntityController::handleValuesUpdate(const UpdateBlock& block) {
+    trackActiveCritter(block);
     auto entity = entityManager.getEntity(block.guid);
     if (!entity) {
         // Item/container entities may be absent from entityManager (e.g. server

@@ -45,7 +45,20 @@ add_executable(test_hill_climbing
     test_movement_limits.cpp
 )
 target_include_directories(test_hill_climbing PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_hill_climbing SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
 target_link_libraries(test_hill_climbing PRIVATE catch2_main)
+# glm is not vendored — it comes from find_package(glm), and its include path
+# arrives with the imported target rather than through any directory this file
+# lists. Adding TEST_SYSTEM_INCLUDE_DIRS above does not supply it, which is why
+# the first attempt at this failed CI unchanged: Linux has a system copy under
+# /usr/include and compiles either way, so only macOS ever reports it.
+# Same two-branch check as the top level, where GLM 1.0 may build glm::glm as a
+# real library and expose the headers as glm::glm-header-only.
+if(TARGET glm::glm-header-only)
+    target_link_libraries(test_hill_climbing PRIVATE glm::glm-header-only)
+elseif(TARGET glm::glm)
+    target_link_libraries(test_hill_climbing PRIVATE glm::glm)
+endif()
 add_test(NAME hill_climbing COMMAND test_hill_climbing)
 register_test_target(test_hill_climbing)
 
@@ -693,6 +706,16 @@ target_compile_definitions(test_dbc_layouts PRIVATE
 target_link_libraries(test_dbc_layouts PRIVATE catch2_main)
 add_test(NAME dbc_layouts COMMAND test_dbc_layouts)
 register_test_target(test_dbc_layouts)
+
+# ── test_pet_action ─────────────────────────────────────────
+add_executable(test_pet_action
+    test_pet_action.cpp
+)
+target_include_directories(test_pet_action PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_pet_action SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_pet_action PRIVATE catch2_main)
+add_test(NAME pet_action COMMAND test_pet_action)
+register_test_target(test_pet_action)
 
 # ── test_spell_classification ───────────────────────────────
 add_executable(test_spell_classification

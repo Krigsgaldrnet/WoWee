@@ -68,6 +68,26 @@ struct ActiveTransport {
     bool allowBootstrapVelocity;   // Disable DBC bootstrap when spawn/path mismatch is clearly invalid
     bool isM2 = false;             // True if rendered as M2 (not WMO), uses M2Renderer for transforms
     bool worldCoords = false;       // TaxiPathNode absolute-world route (client-owned WMO ship)
+
+    // Whether the hull is currently holding at an authored dock stop, and what
+    // was last pushed to its child doodads because of it. A paddlewheel that
+    // keeps turning while its ship sits at the pier is the visible symptom of
+    // never revisiting this: the animation was set once when the doodad spawned.
+    // The count is kept because doodads stream in over several frames, so a
+    // doodad attached after the last push would otherwise keep its spawn state.
+    bool atDockDwell = false;
+    int appliedDoodadAnim = -1;
+    size_t appliedDoodadCount = 0;
+
+    // The server's own route clock, when it publishes one (WotLK MO_TRANSPORT).
+    // routePhase is the fraction of the route period the hull was at as of
+    // routePhaseAtTime; routePeriodMs is that period. Preferred over the client's
+    // invented period, which is what let a ferry lap its shore while the server's
+    // schedule caught up.
+    bool hasServerRouteClock = false;
+    float routePhase = 0.0f;
+    uint32_t routePeriodMs = 0;
+    double routePhaseAtTime = 0.0;
 };
 
 class TransportManager {
@@ -97,30 +117,32 @@ public:
                (transport.pathId >= 176080u && transport.pathId <= 176085u);
     }
 
-    // Single source of truth for a transport hull's fixed orientation offset.
+    // Single source of truth for a transport hull's fixed orientation offset:
+    // its rendered facing is (direction of travel) + this constant. Every
+    // orientation path funnels through here rather than re-listing ships.
+    // Server-position-driven transports (trams, zeppelins) never reach it — they
+    // measure the same offset live from heading-vs-velocity in updateYawAlignment().
     //
-    // A transport's rendered facing is (its direction of travel) + (a constant per-MODEL
-    // bow offset baked into how the art was authored): 0 means the model's bow already
-    // points along route-forward, PI means the bow is modelled pointing aft. This is a
-    // property of the displayId, not of the per-realm GameObject entry, so keying it by
-    // model makes the same correction apply to that hull on every expansion and realm.
+    // Measured from the art rather than guessed: every transport hull in the WoW
+    // data is authored with its bow at model-space -X, so the offset is PI for
+    // all of them and there are no exceptions to list.
     //
-    // Every orientation path funnels through this one function instead of re-listing
-    // ships: the client-animated TaxiPath ships add it to their spline-tangent yaw, and
-    // it also decides whether a docked ship restores its spawn yaw or holds its heading.
-    // Server-position-driven transports (trams, zeppelins) need no table entry — they
-    // measure the same offset live from heading-vs-velocity in updateYawAlignment(). This
-    // table is only the seed for hulls the client animates itself and can never observe
-    // move under server control, so there is nothing to learn the offset from.
-    static float transportModelBowOffset(uint32_t displayId) {
+    // Two independent measurements over every .wmo under World\wmo\transports:
+    // the hull tapers to a point at -X and stays blunt at +X (transportship
+    // 1.0 vs 10.1 half-width at the ends, icebreaker 4.1 vs 14.8, the NE ferry,
+    // the UD and pirate ships, both zeppelins and the battleships all the same
+    // way); and the icebreaker is a paddle steamer whose ICEBREAKER_PADDLEWHEEL
+    // doodad sits at x=+36.3 on a hull spanning -60.7..+50.1, which puts the
+    // stern at +X and so the bow at -X.
+    //
+    // The table this replaces claimed the opposite default and then listed the
+    // icebreaker and the NE ferry as the reversed ones — exactly inverted. It
+    // could never have been right for everything at once, because it was fitted
+    // against a facing that came from a frozen server yaw rather than from the
+    // route, so what it was correcting was not the hull.
+    static float transportModelBowOffset(uint32_t /*displayId*/) {
         constexpr float kBowReversed = 3.14159265358979323846f;  // PI
-        switch (displayId) {
-            case 7087u:  // Auberdine night-elf ferry (The Moonspray, Elune's Blessing)
-            case 7446u:  // Icebreaker (Kraken-class)
-                return kBowReversed;
-            default:     // Bravery-class (3015) and every other hull: bow already forward
-                return 0.0f;
-        }
+        return kBowReversed;
     }
 
     // Round a path duration to the nearest 500ms for seed-modulo purposes only. Deeprun
@@ -174,6 +196,21 @@ public:
     glm::vec3 serverToTransportLocal(uint64_t transportGuid,
                                      const glm::vec3& serverOffset) const;
     glm::mat4 getTransportInvTransform(uint64_t transportGuid);
+    // Adopt the server's published route phase for a transport. phase is a
+    // fraction in [0,1) of periodMs. Cheap and idempotent — safe to call on every
+    // object update that carries the fields.
+    void applyServerRouteClock(uint64_t transportGuid, float phase, uint32_t periodMs);
+
+    // Ship machinery follows the hull: ShipMoving while under way, ShipStop when
+    // holding at a dock. Cheap to call every frame — it only reaches the
+    // renderer when the state or the doodad count actually changes.
+    void applyDoodadMotionState(ActiveTransport& transport, bool moving);
+
+    /// Whether this transport's hull collision has finished loading. Distinguishes
+    /// "the deck query found nothing because there is no deck here" from "because
+    /// the model is still uploading".
+    bool isTransportCollisionReady(uint64_t transportGuid) const;
+
     bool isPointOnTransportDeck(uint64_t transportGuid,
                                 const glm::vec3& canonicalPosition,
                                 float maxFloorDelta = 1.25f) const;

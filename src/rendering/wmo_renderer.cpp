@@ -975,6 +975,15 @@ bool WMORenderer::isModelLoaded(uint32_t id) const {
     return loadedModels.find(id) != loadedModels.end();
 }
 
+bool WMORenderer::instanceHasCollisionGeometry(uint32_t instanceId) const {
+    auto it = std::find_if(instances.begin(), instances.end(),
+                           [instanceId](const WMOInstance& inst) { return inst.id == instanceId; });
+    if (it == instances.end()) return false;
+    auto model = loadedModels.find(it->modelId);
+    return model != loadedModels.end() && model->second.setupDone &&
+           !model->second.groups.empty();
+}
+
 void WMORenderer::unloadModel(uint32_t id) {
     auto it = loadedModels.find(id);
     if (it == loadedModels.end()) {
@@ -1143,12 +1152,40 @@ void WMORenderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& tra
 void WMORenderer::addDoodadToInstance(uint32_t instanceId, uint32_t m2InstanceId, const glm::mat4& localTransform) {
     auto it = std::find_if(instances.begin(), instances.end(),
                           [instanceId](const WMOInstance& inst) { return inst.id == instanceId; });
-    if (it != instances.end()) {
-        WMOInstance::DoodadInfo doodad;
-        doodad.m2InstanceId = m2InstanceId;
-        doodad.localTransform = localTransform;
-        it->doodads.push_back(doodad);
+    if (it == instances.end()) {
+        // Nothing to parent to. The M2 was already created, so silently dropping
+        // it here leaves it stranded at the origin, drawn nowhere and owned by
+        // no one — invisible in a way that looks exactly like a load failure.
+        core::Logger::getInstance().warning(
+            "WMO doodad has no parent instance ", instanceId,
+            " — M2 instance ", m2InstanceId, " left at the origin");
+        return;
     }
+    WMOInstance::DoodadInfo doodad;
+    doodad.m2InstanceId = m2InstanceId;
+    doodad.localTransform = localTransform;
+    it->doodads.push_back(doodad);
+
+    // Place it immediately rather than waiting for the parent's next transform
+    // push, so it is never drawn at the origin for a frame and never sits there
+    // indefinitely if the parent is static.
+    if (m2Renderer_) {
+        m2Renderer_->setInstanceTransform(m2InstanceId, it->modelMatrix * localTransform);
+    }
+}
+
+size_t WMORenderer::setInstanceDoodadAnimation(uint32_t instanceId, uint32_t animationId,
+                                               bool loop) {
+    if (!m2Renderer_) return 0;
+    auto it = std::find_if(instances.begin(), instances.end(),
+                           [instanceId](const WMOInstance& inst) { return inst.id == instanceId; });
+    if (it == instances.end()) return 0;
+    for (const auto& doodad : it->doodads) {
+        // A no-op for a doodad without that sequence, so the barrels and
+        // lanterns sharing the deck are left alone.
+        m2Renderer_->setInstanceAnimation(doodad.m2InstanceId, animationId, loop);
+    }
+    return it->doodads.size();
 }
 
 const std::vector<WMORenderer::DoodadTemplate>* WMORenderer::getDoodadTemplates(uint32_t modelId) const {
@@ -1550,11 +1587,13 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
     }
 
     glm::vec3 camPos = camera.getPosition();
-    // For portal culling, use the character/player position when available.
-    // The 3rd-person camera can orbit outside a WMO while the character is inside,
-    // causing the portal traversal to start from outside and cull interior groups.
-    // Passing the actual character position as the viewer fixes this.
-    glm::vec3 portalViewerPos = viewerPos ? *viewerPos : camPos;
+    // Portal culling seeds from both the camera and the character. Either one
+    // alone has a way to be wrong — a third-person camera can end up inside a
+    // wall or a broom cupboard, and a character can sit in a loose interior AABB
+    // while visually outside — and being wrong here does not mean drawing a
+    // little too much, it means the building vanishes. Seeding from both is a
+    // superset of either, so it can only ever add groups.
+    const glm::vec3 portalViewerPos = viewerPos ? *viewerPos : camPos;
     bool doPortalCull = portalCulling;
     bool doDistanceCull = distanceCulling;
 
@@ -1573,13 +1612,13 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
 
         // Portal-based visibility — reuse member scratch buffer (avoid per-frame alloc)
         bool usePortalCulling = doPortalCull && !model.portals.empty() && !model.portalRefs.empty();
+        const glm::vec3 localRealCam =
+            glm::vec3(instance.invModelMatrix * glm::vec4(camPos, 1.0f));
         if (usePortalCulling) {
-            // If the actual camera is outside all groups, skip portal culling.
-            // The character position (portalViewerPos) may fall inside a group's
-            // loose AABB while visually outside the WMO, causing the BFS to start
-            // from an interior group whose portals aren't in the frustum — hiding
-            // the entire WMO.
-            glm::vec3 localRealCam = glm::vec3(instance.invModelMatrix * glm::vec4(camPos, 1.0f));
+            // If the camera is outside all groups, skip portal culling entirely.
+            // This is what makes it safe for the traversal below to start from
+            // the camera: an orbiting third-person camera that has left the
+            // building never reaches the walk at all.
             int camGroup = findContainingGroup(model, localRealCam);
             if (camGroup < 0) {
                 usePortalCulling = false;
@@ -1616,8 +1655,21 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
         }
         if (usePortalCulling) {
             portalVisibleGroupSet_.clear();
-            glm::vec4 localCamPos = instance.invModelMatrix * glm::vec4(portalViewerPos, 1.0f);
-            getVisibleGroupsViaPortals(model, glm::vec3(localCamPos), frustum,
+            // Both viewpoints seed the walk. The frustum belongs to the camera,
+            // so its group is the principled start — but at a doorway or in a
+            // hallway the camera and the character stand in different groups,
+            // and seeding from one while testing doors against the other's view
+            // is how the interior emptied out. Neither is reliably right on its
+            // own, so take both.
+            //
+            // Ironforge shows this worst because of what rescues everywhere
+            // else: exterior groups are seeded unconditionally below, which in a
+            // city WMO means the streets and facades stay drawn however the walk
+            // goes. Ironforge is interior throughout, that seed contributes
+            // almost nothing, and the entire result rests on the traversal.
+            const glm::vec3 localViewer =
+                glm::vec3(instance.invModelMatrix * glm::vec4(portalViewerPos, 1.0f));
+            getVisibleGroupsViaPortals(model, localRealCam, localViewer, frustum,
                                        instance.modelMatrix, portalVisibleGroupSet_);
             // Use the unordered_set directly — was copying into portalVisibleGroups_,
             // sorting it, and binary-searching per group. The set lookup is O(1)
@@ -2307,6 +2359,7 @@ bool WMORenderer::isPortalVisible(const ModelData& model, uint16_t portalIndex,
 
 void WMORenderer::getVisibleGroupsViaPortals(const ModelData& model,
                                               const glm::vec3& cameraLocalPos,
+                                              const glm::vec3& viewerLocalPos,
                                               const Frustum& frustum,
                                               const glm::mat4& modelMatrix,
                                               std::unordered_set<uint32_t>& outVisibleGroups) const {
@@ -2382,15 +2435,31 @@ void WMORenderer::getVisibleGroupsViaPortals(const ModelData& model,
             outVisibleGroups.insert(static_cast<uint32_t>(gi));
     }
 
-    // BFS through portals from the viewer's group plus every always-visible
-    // exterior group, so interiors seen through open doors still draw even
-    // when the viewer's containing group was misclassified.
+    // BFS through portals from both viewpoints' groups plus every always-visible
+    // exterior group, so interiors seen through open doors still draw even when
+    // one viewpoint's containing group was misclassified.
+    //
+    // The character's group is seeded alongside the camera's because in a
+    // doorway or a hallway the two are in different rooms. Walking from only one
+    // of them, while judging every door against the camera's frustum, is what
+    // emptied Ironforge. A second seed can only add groups, never remove any,
+    // and drawing a room too many is the failure this should have.
     std::vector<bool> visited(model.groups.size(), false);
     std::vector<uint32_t> queue;
     queue.reserve(model.groups.size());
-    queue.push_back(static_cast<uint32_t>(cameraGroup));
-    visited[cameraGroup] = true;
-    outVisibleGroups.insert(static_cast<uint32_t>(cameraGroup));
+
+    auto seed = [&](int gi) {
+        if (gi < 0 || gi >= static_cast<int>(model.groups.size())) return;
+        if (visited[gi]) return;
+        visited[gi] = true;
+        queue.push_back(static_cast<uint32_t>(gi));
+        outVisibleGroups.insert(static_cast<uint32_t>(gi));
+    };
+    seed(cameraGroup);
+    seed(findContainingGroup(model, viewerLocalPos));
+
+    // Exterior groups were inserted above without being queued; they are portals
+    // into the interior too.
     for (uint32_t gi : outVisibleGroups) {
         if (!visited[gi]) {
             visited[gi] = true;

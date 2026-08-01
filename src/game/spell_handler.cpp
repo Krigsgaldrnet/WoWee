@@ -1,5 +1,6 @@
 #include "game/spell_handler.hpp"
 #include "game/spell_classification.hpp"
+#include "game/pet_action.hpp"
 #include "game/game_handler.hpp"
 #include "game/game_utils.hpp"
 #include "game/packet_parsers.hpp"
@@ -633,6 +634,16 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     if (uint32_t craftSkillLine = tradeskillOpenerSkillLine(spellId)) {
         LOG_INFO("castSpell: spell ", spellId, " opens crafting window for skill line ", craftSkillLine);
         openCraftingWindow(craftSkillLine);
+        return;
+    }
+
+    // Pressing the companion you already have out puts it away. A companion has
+    // no aura, so there is nothing in the buff bar to right-click and this is
+    // the only way to send one back — without it the button could only ever
+    // summon, which is why pressing it again just produced the same critter.
+    if (spellId != 0 && spellId == owner_.getActiveCritterSpellId() &&
+        owner_.getActiveCritterGuid() != 0) {
+        owner_.dismissCritter();
         return;
     }
 
@@ -2453,7 +2464,10 @@ void SpellHandler::sendPetAction(uint32_t action, uint64_t targetGuid) {
 
 void SpellHandler::dismissPet() {
     if (owner_.petGuidRef() == 0 || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
-    auto packet = PetActionPacket::build(owner_.petGuidRef(), 0x07000000);
+    // Dismiss is COMMAND_ABANDON. Packing action 0 here sent COMMAND_STAY, so
+    // the pet planted itself instead of leaving.
+    auto packet = PetActionPacket::build(
+        owner_.petGuidRef(), pet::packPetAction(pet::ActionType::Command, pet::kAbandon));
     owner_.getSocket()->send(packet);
 }
 

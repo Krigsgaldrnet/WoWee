@@ -1681,6 +1681,15 @@ public:
     }
     uint32_t getWorldStateMapId() const { return worldStateMapId_; }
     uint32_t getWorldStateZoneId() const { return worldStateZoneId_; }
+    uint64_t getActiveCritterGuid() const { return activeCritterGuid_; }
+    uint32_t getActiveCritterSpellId() const { return activeCritterSpellId_; }
+    void setActiveCritter(uint64_t guid, uint32_t spellId) {
+        activeCritterGuid_ = guid;
+        activeCritterSpellId_ = spellId;
+    }
+    /// Send the active companion away. No-op when none is out or the expansion
+    /// has no opcode for it.
+    void dismissCritter();
 
     // Mirror timers (0=fatigue, 1=breath, 2=feigndeath)
     struct MirrorTimer {
@@ -3099,6 +3108,12 @@ private:
     // ---- World state and faction initialization snapshots ----
     uint32_t worldStateMapId_ = 0;
     uint32_t worldStateZoneId_ = 0;
+    // The active non-combat companion and the spell that called it. Re-casting
+    // that spell dismisses rather than re-summons, which is how a companion is
+    // put away: it has no aura to cancel from the buff bar, so this toggle is
+    // the only way to send it back.
+    uint64_t activeCritterGuid_ = 0;
+    uint32_t activeCritterSpellId_ = 0;
     std::unordered_map<uint32_t, uint32_t> worldStates_;
     std::vector<FactionStandingInit> initialFactions_;
 
@@ -3215,6 +3230,11 @@ private:
     glm::vec3 playerTransportOffset_ = glm::vec3(0.0f); // Player offset on transport
     uint64_t playerTransportStickyGuid_ = 0;       // Last transport player was on (temporary retention)
     float playerTransportStickyTimer_ = 0.0f;      // Seconds to keep sticky transport alive after transient clears
+    // Consecutive frames a ship rider has had no deck beneath them. Walking off
+    // onto the pier leaves the rider well inside the ship's boarding footprint,
+    // so losing the deck is what actually distinguishes "ashore" from "aboard".
+    // Counted rather than tested instantly so a jump is not a disembark.
+    int shipNoDeckSupportFrames_ = 0;
     bool pendingPlayerTransportTransfer_ = false;
     uint64_t pendingPlayerTransportGuid_ = 0;
     uint32_t pendingPlayerTransportEntry_ = 0;
