@@ -1,8 +1,43 @@
 // lua_inventory_api.cpp — Items, containers, merchant, loot, equipment, trading, auction, and mail Lua API bindings.
 // Extracted from lua_engine.cpp as part of §5.1 (Tame LuaEngine).
 #include "addons/lua_api_helpers.hpp"
+#include "core/logger.hpp"
 
 namespace wowee::addons {
+
+/// Money held on the cursor and staked in a trade. Both are genuinely zero
+/// here — this client has neither a money cursor nor an open trade at load —
+/// but they have to answer with a number rather than not exist. MoneyFrame's
+/// very first update reads GetMoney() - GetCursorMoney() - GetPlayerTradeMoney(),
+/// and a missing name comes back from the API fallback as a function whose
+/// call yields nothing, so the subtraction hits nil and takes the whole file
+/// down. Eleven of them, on this one line.
+static int lua_GetZeroMoney(lua_State* L) {
+    lua_pushnumber(L, 0.0);
+    return 1;
+}
+
+/// Prices FrameXML reads straight into a money frame at load, before any
+/// server has told us anything. Nil is not an option there: TabardFrame does
+/// MoneyFrame_Update(frame, GetTabardCreationCost()) in its OnLoad, and the
+/// update divides that by the copper-per-gold constants immediately.
+static int lua_GetTabardCreationCost(lua_State* L) {
+    lua_pushnumber(L, 100000.0);   // ten gold
+    return 1;
+}
+
+static int lua_GetSendMailPrice(lua_State* L) {
+    lua_pushnumber(L, 30.0);
+    return 1;
+}
+
+/// Uncommon, which is the default a fresh group starts on. Concatenated
+/// straight into a global name — "ITEM_QUALITY" .. threshold .. "_DESC" — so
+/// it has to be a number rather than nothing.
+static int lua_GetLootThreshold(lua_State* L) {
+    lua_pushnumber(L, 2.0);
+    return 1;
+}
 
 static int lua_GetMoney(lua_State* L) {
     auto* gh = getGameHandler(L);
@@ -480,6 +515,14 @@ static int lua_GetInventorySlotInfo(lua_State* L) {
         {"SECONDARYHAND",17,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-SecondaryHand"},
         {"RANGED",       18,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ranged"},
         {"TABARD",       19,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Tabard"},
+        // The bag buttons along the main bar ask for these by name at load, and
+        // paperdollframe.lua does it in an OnLoad — so a gap here does not just
+        // lose the bags, it loses the file.
+        {"BAG0",         20,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag"},
+        {"BAG1",         21,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag"},
+        {"BAG2",         22,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag"},
+        {"BAG3",         23,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag"},
+        {"AMMO",          0,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo"},
     };
     for (const auto& m : mapping) {
         if (slot == m.name) {
@@ -489,8 +532,12 @@ static int lua_GetInventorySlotInfo(lua_State* L) {
             return 3;
         }
     }
-    luaL_error(L, "Unknown inventory slot: %s", name);
-    return 0;
+    // nil rather than an error, which is what the real client returns. Raising
+    // here takes down the whole file that asked, and a name we do not know is
+    // a gap in the table above rather than a reason to lose an interface.
+    LOG_WARNING("GetInventorySlotInfo: unknown slot ", name);
+    lua_pushnil(L);
+    return 1;
 }
 
 static int lua_GetInventoryItemLink(lua_State* L) {
@@ -670,6 +717,9 @@ static int lua_GetItemLink(lua_State* L) {
 void registerInventoryLuaAPI(lua_State* L) {
     static const struct { const char* name; lua_CFunction func; } api[] = {
                 {"GetMoney",      lua_GetMoney},
+                {"GetCursorMoney",      lua_GetZeroMoney},
+                {"GetPlayerTradeMoney", lua_GetZeroMoney},
+                {"GetTargetTradeMoney", lua_GetZeroMoney},
                 {"GetMerchantNumItems",  lua_GetMerchantNumItems},
                 {"GetMerchantItemInfo",  lua_GetMerchantItemInfo},
                 {"GetMerchantItemLink",  lua_GetMerchantItemLink},
@@ -694,6 +744,9 @@ void registerInventoryLuaAPI(lua_State* L) {
                 {"LootSlot",            lua_LootSlot},
                 {"CloseLoot",           lua_CloseLoot},
                 {"GetLootMethod",       lua_GetLootMethod},
+                {"GetLootThreshold",    lua_GetLootThreshold},
+                {"GetTabardCreationCost", lua_GetTabardCreationCost},
+                {"GetSendMailPrice",    lua_GetSendMailPrice},
                 {"BuyMerchantItem", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);
             int index = static_cast<int>(luaL_checknumber(L, 1));

@@ -91,12 +91,19 @@ static int lua_IsAddonMessagePrefixRegistered(lua_State* L) {
 
 static int lua_GetNumFriends(lua_State* L) {
     auto* gh = getGameHandler(L);
-    if (!gh) { return luaReturnZero(L); }
-    int count = 0;
-    for (const auto& c : gh->getContacts())
-        if (c.isFriend()) count++;
+    if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
+    // Two values. FrameXML reads the second and adds it to another count on
+    // the same line — local _, numWoWOnline = GetNumFriends() — so returning
+    // only the total leaves that arithmetic against nil.
+    int count = 0, online = 0;
+    for (const auto& c : gh->getContacts()) {
+        if (!c.isFriend()) continue;
+        ++count;
+        if (c.status != 0) ++online;   // 0 is offline; 1/2/3 are on, AFK, DND
+    }
     lua_pushnumber(L, count);
-    return 1;
+    lua_pushnumber(L, online);
+    return 2;
 }
 
 // GetFriendInfo(index) → name, level, class, area, connected, status, note
@@ -238,8 +245,18 @@ static int lua_GetIgnoreName(lua_State* L) {
 
 // GetNumTalentTabs() → count (usually 3)
 
+/// Battle.net friends: none, and none online. Two values, because FriendsFrame
+/// reads them together and does arithmetic on the second the line it is read —
+/// numBNetTotal - numBNetOnline.
+static int lua_BNGetNumFriends(lua_State* L) {
+    lua_pushnumber(L, 0.0);
+    lua_pushnumber(L, 0.0);
+    return 2;
+}
+
 void registerSocialLuaAPI(lua_State* L) {
     static const struct { const char* name; lua_CFunction func; } api[] = {
+                {"BNGetNumFriends",     lua_BNGetNumFriends},
                 {"SendChatMessage",   lua_SendChatMessage},
                 {"SendAddonMessage",  lua_SendAddonMessage},
                 {"RegisterAddonMessagePrefix", lua_RegisterAddonMessagePrefix},

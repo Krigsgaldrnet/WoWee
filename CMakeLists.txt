@@ -509,6 +509,7 @@ set(WOWEE_SOURCES
     src/core/input.cpp
     src/core/logger.cpp
     src/core/memory_monitor.cpp
+    src/core/app_clock.cpp
     src/core/config_paths.cpp
 
     # Math
@@ -839,6 +840,7 @@ set(WOWEE_SOURCES
     src/ui/widget_tree.cpp
     src/ui/xml_parser.cpp
     src/ui/framexml_emitter.cpp
+    src/ui/interface_fonts.cpp
     src/ui/widget_renderer.cpp
     src/ui/ui_raid_icons.cpp
     src/ui/auth_screen.cpp

@@ -1,5 +1,15 @@
 #include "addons/lua_engine.hpp"
 #include "ui/widget_tree.hpp"
+#include <chrono>
+#include <cfloat>
+#include <cctype>
+#include <cmath>
+#include <cstring>
+#include <sstream>
+#include <algorithm>
+#include <climits>
+#include <set>
+#include <cstdlib>
 #include "addons/lua_api_helpers.hpp"
 #include "addons/lua_api_registrations.hpp"
 #include "addons/toc_parser.hpp"
@@ -15,6 +25,16 @@ extern "C" {
 }
 
 namespace wowee::addons {
+
+namespace {
+/// Names asked for and not found, while the fallback is on. File-scope because
+/// the recorder is a Lua callback and the report runs at shutdown.
+std::set<std::string>& missingApiNames() {
+    static std::set<std::string> names;
+    return names;
+}
+}
+
 
 static int lua_wow_print(lua_State* L) {
     int nargs = lua_gettop(L);
@@ -227,6 +247,12 @@ int lua_Region_SetPoint(lua_State* L) {
         lua_pop(L, 1);
         ++argi;
     }
+    // Anchoring to itself is not a position, and a name can resolve to the
+    // frame that was just published under it.
+    if (a.relativeTo == id) {
+        const auto* self = tree->get(id);
+        a.relativeTo = self ? self->parent : 0;
+    }
     if (lua_isstring(L, argi) && !lua_isnumber(L, argi)) {
         a.relativePoint = lua_tostring(L, argi);
         ++argi;
@@ -256,10 +282,13 @@ int lua_Region_SetAllPoints(lua_State* L) {
         if (lua_istable(L, -1)) target = widgetIdOf(L, lua_gettop(L));
         lua_pop(L, 1);
     }
-    if (target == 0) {
-        const auto* w = tree->get(id);
-        target = w ? w->parent : 0;
-    }
+    // A frame cannot fill itself. FrameXML's own UIParent is declared
+    // setAllPoints and its parent is named UIParent — but CreateFrame publishes
+    // the new frame under that name first, so by the time this runs the name
+    // means the frame itself. Two identical constraints collapse to no size at
+    // the origin, and everything anchored to it lands there too.
+    const auto* w = tree->get(id);
+    if (target == 0 || target == id) target = w ? w->parent : 0;
     tree->setAllPoints(id, target);
     return 0;
 }
@@ -279,6 +308,52 @@ int lua_Region_SetHeight(lua_State* L) {
     if (auto* w = widgetOf(L, 1)) w->height = static_cast<float>(luaL_optnumber(L, 2, 0));
     return 0;
 }
+/// Width of a string as it would be drawn.
+///
+/// Through the real font where there is one, so a button sized to its label
+/// gets the size the label actually takes. During the FrameXML load there may
+/// not be a frame in flight to ask, and an estimate is far better than nothing:
+/// the alternative was answering nil, and MoneyFrame does
+/// SetWidth(GetTextWidth() + iconWidth) — arithmetic that loses the file.
+float measureTextWidth(const std::string& text, float fontHeight) {
+    if (text.empty()) return 0.0f;
+    const float size = fontHeight > 0.0f ? fontHeight : 12.0f;
+    if (ImGui::GetCurrentContext() != nullptr) {
+        if (ImFont* font = ImGui::GetFont()) {
+            return font->CalcTextSizeA(size, FLT_MAX, 0.0f, text.c_str()).x;
+        }
+    }
+    // Roughly half the height per character, which is about right for the
+    // proportional faces the interface uses.
+    return static_cast<float>(text.size()) * size * 0.5f;
+}
+
+/// The font string a widget measures: itself if it is one, and otherwise the
+/// one a button was given, which is where its text actually lives.
+const wowee::ui::Widget* textWidgetOf(lua_State* L, int index) {
+    const wowee::ui::Widget* w = widgetOf(L, index);
+    if (!w || w->kind == wowee::ui::WidgetKind::FontString) return w;
+    auto* tree = wowee::addons::getWidgetTree(L);
+    if (!tree) return w;
+    lua_getfield(L, index, "__fontString");
+    const wowee::ui::Widget* fs =
+        lua_istable(L, -1) ? tree->get(widgetIdOf(L, lua_gettop(L))) : nullptr;
+    lua_pop(L, 1);
+    return fs ? fs : w;
+}
+
+int lua_Region_GetTextWidth(lua_State* L) {
+    const auto* w = textWidgetOf(L, 1);
+    lua_pushnumber(L, w ? measureTextWidth(w->text, w->fontHeight) : 0.0);
+    return 1;
+}
+
+int lua_Region_GetTextHeight(lua_State* L) {
+    const auto* w = textWidgetOf(L, 1);
+    lua_pushnumber(L, w ? (w->fontHeight > 0.0f ? w->fontHeight : 12.0f) : 0.0);
+    return 1;
+}
+
 int lua_Region_GetWidth(lua_State* L) {
     const auto* w = widgetOf(L, 1);
     lua_pushnumber(L, w ? (w->rectW > 0.0f ? w->rectW : w->width) : 0.0);
@@ -404,6 +479,99 @@ int lua_FontString_SetJustifyH(lua_State* L) {
     return 0;
 }
 
+// ── Fonts ───────────────────────────────────────────────────────────────────
+
+int lua_FontString_SetTextColor(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) {
+        w->color[0] = static_cast<float>(luaL_optnumber(L, 2, 1.0));
+        w->color[1] = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+        w->color[2] = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+        w->color[3] = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    }
+    return 0;
+}
+
+int lua_FontString_SetFont(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) {
+        if (lua_isstring(L, 2)) w->fontFace = lua_tostring(L, 2);
+        // The flags argument, where "OUTLINE" and "THICKOUTLINE" arrive.
+        if (const char* flags = lua_isstring(L, 4) ? lua_tostring(L, 4) : nullptr) {
+            const std::string f(flags);
+            if (f.find("THICK") != std::string::npos)        w->fontOutline = "THICK";
+            else if (f.find("OUTLINE") != std::string::npos) w->fontOutline = "NORMAL";
+            else                                             w->fontOutline.clear();
+        }
+        // (path, height, flags). Only the height is honoured for now; the path
+        // needs a font atlas rebuild, which cannot happen mid-frame.
+        const double h = luaL_optnumber(L, 3, 0.0);
+        if (h > 0.0) w->fontHeight = static_cast<float>(h);
+    }
+    return 0;
+}
+
+/// GetFont() → path, height, flags.
+///
+/// The height is the part anything does arithmetic on: WatchFrame measures a
+/// test line with local _, fontHeight = line.text:GetFont() and divides by it
+/// two lines later, so answering nothing loses the file.
+int lua_FontString_GetFont(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    lua_pushstring(L, "Fonts\\FRIZQT__.TTF");
+    lua_pushnumber(L, w && w->fontHeight > 0.0f ? w->fontHeight : 12.0);
+    lua_pushstring(L, "");
+    return 3;
+}
+
+/// Extra space between wrapped lines. Zero unless set, and a number either
+/// way: WorldMapFrame adds it to a font height on the line after asking.
+int lua_FontString_GetSpacing(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    lua_pushnumber(L, w ? w->lineSpacing : 0.0);
+    return 1;
+}
+
+int lua_FontString_SetSpacing(lua_State* L) {
+    if (auto* w = widgetOf(L, 1))
+        w->lineSpacing = static_cast<float>(luaL_optnumber(L, 2, 0.0));
+    return 0;
+}
+
+/// SetFontObject(obj) where obj is one of the shared font objects, which carry
+/// a height and a colour. FrameXML reaches for these more than three thousand
+/// times, so a FontString that ignores them is the wrong size and colour nearly
+/// everywhere.
+int lua_FontString_SetFontObject(lua_State* L) {
+    auto* w = widgetOf(L, 1);
+    if (!w) return 0;
+    if (lua_isstring(L, 2)) {              // by name
+        lua_getglobal(L, lua_tostring(L, 2));
+    } else {
+        lua_pushvalue(L, 2);
+    }
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, "height");
+        if (lua_isnumber(L, -1)) w->fontHeight = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+        // Which typeface, not only how big. FrameXML sets its headings in
+        // MORPHEUS and its damage numbers in SKURRI, and a font object is
+        // where it says so.
+        lua_getfield(L, -1, "font");
+        if (lua_isstring(L, -1)) w->fontFace = lua_tostring(L, -1);
+        lua_pop(L, 1);
+        lua_getfield(L, -1, "outline");
+        if (lua_isstring(L, -1)) w->fontOutline = lua_tostring(L, -1);
+        lua_pop(L, 1);
+        const char* keys[4] = {"r", "g", "b", "a"};
+        for (int i = 0; i < 4; ++i) {
+            lua_getfield(L, -1, keys[i]);
+            if (lua_isnumber(L, -1)) w->color[i] = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+    return 0;
+}
+
 /// Attach the shared region methods to the table on top of the stack.
 void installRegionMethods(lua_State* L, bool isTexture, bool isFontString) {
     auto set = [&](const char* name, lua_CFunction fn) {
@@ -417,6 +585,10 @@ void installRegionMethods(lua_State* L, bool isTexture, bool isFontString) {
     set("SetWidth", lua_Region_SetWidth);
     set("SetHeight", lua_Region_SetHeight);
     set("GetWidth", lua_Region_GetWidth);
+    set("GetTextWidth", lua_Region_GetTextWidth);
+    set("GetStringWidth", lua_Region_GetTextWidth);
+    set("GetTextHeight", lua_Region_GetTextHeight);
+    set("GetStringHeight", lua_Region_GetTextHeight);
     set("GetHeight", lua_Region_GetHeight);
     set("Show", lua_Region_Show);
     set("Hide", lua_Region_Hide);
@@ -435,18 +607,256 @@ void installRegionMethods(lua_State* L, bool isTexture, bool isFontString) {
         set("SetText", lua_FontString_SetText);
         set("GetText", lua_FontString_GetText);
         set("SetJustifyH", lua_FontString_SetJustifyH);
+        set("SetTextColor", lua_FontString_SetTextColor);
+        set("SetFont", lua_FontString_SetFont);
+        set("GetFont", lua_FontString_GetFont);
+        set("GetSpacing", lua_FontString_GetSpacing);
+        set("SetSpacing", lua_FontString_SetSpacing);
+        set("SetFontObject", lua_FontString_SetFontObject);
     }
     // Anything still unimplemented stays a no-op rather than an error, which is
     // what keeps a large addon running while the surface is filled in.
-    luaL_dostring(L,
-        "return function(t) setmetatable(t, { __index = function(_, k) "
-        "  if type(k)=='string' and string.find(k,'^%u') then return function() end end "
-        "end }) end");
-    lua_pushvalue(L, -2);
-    lua_call(L, 1, 0);
+    // The same enumerated set the frame metatable uses, and for the same
+    // reason: a region carries data fields beside its methods, and answering
+    // both with a no-op makes a field that was never set look present.
+    // Built once and shared. This used to compile a fresh chunk for every
+    // region created, which over a FrameXML load is thousands of compiles of
+    // the same three lines.
+    lua_getfield(L, LUA_REGISTRYINDEX, "wowee_region_mt");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        luaL_dostring(L,
+            "local known = __WoweeWidgetMethods or {} "
+            "return { __index = function(_, k) "
+            "  if type(k)=='string' and known[k] then return function() end end "
+            "end }");
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, "wowee_region_mt");
+    }
+    lua_setmetatable(L, -2);
 }
 
 } // namespace
+
+
+
+// ── Backdrop and StatusBar ──────────────────────────────────────────────────
+
+int lua_Frame_SetBackdrop(lua_State* L) {
+    auto* w = widgetOf(L, 1);
+    if (!w) return 0;
+    if (!lua_istable(L, 2)) {          // SetBackdrop(nil) clears it
+        w->hasBackdrop = false;
+        return 0;
+    }
+    w->hasBackdrop = true;
+    auto str = [&](const char* key, std::string& out) {
+        lua_getfield(L, 2, key);
+        if (lua_isstring(L, -1)) out = lua_tostring(L, -1);
+        lua_pop(L, 1);
+    };
+    auto num = [&](const char* key, float& out) {
+        lua_getfield(L, 2, key);
+        if (lua_isnumber(L, -1)) out = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+    };
+    str("bgFile", w->bgFile);
+    str("edgeFile", w->edgeFile);
+    num("edgeSize", w->edgeSize);
+    // tileSize describes the background's repeat, and edgeSize the border tile.
+    // Where only one is given the other is the sensible stand-in.
+    num("tileSize", w->edgeSize);
+    num("edgeSize", w->edgeSize);
+    lua_getfield(L, 2, "tile");
+    w->tileBackground = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "insets");
+    if (lua_istable(L, -1)) {
+        auto inset = [&](const char* key, float& out) {
+            lua_getfield(L, -1, key);
+            if (lua_isnumber(L, -1)) out = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+        };
+        inset("left", w->insetLeft);
+        inset("right", w->insetRight);
+        inset("top", w->insetTop);
+        inset("bottom", w->insetBottom);
+    }
+    lua_pop(L, 1);
+    return 0;
+}
+
+int lua_Frame_SetBackdropColor(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) {
+        w->backdropColor[0] = static_cast<float>(luaL_optnumber(L, 2, 1.0));
+        w->backdropColor[1] = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+        w->backdropColor[2] = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+        w->backdropColor[3] = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    }
+    return 0;
+}
+
+int lua_Frame_SetBackdropBorderColor(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) {
+        w->borderColor[0] = static_cast<float>(luaL_optnumber(L, 2, 1.0));
+        w->borderColor[1] = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+        w->borderColor[2] = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+        w->borderColor[3] = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    }
+    return 0;
+}
+
+int lua_StatusBar_SetMinMaxValues(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) {
+        w->barMin = static_cast<float>(luaL_optnumber(L, 2, 0.0));
+        w->barMax = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+    }
+    return 0;
+}
+int lua_StatusBar_GetMinMaxValues(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    lua_pushnumber(L, w ? w->barMin : 0.0);
+    lua_pushnumber(L, w ? w->barMax : 1.0);
+    return 2;
+}
+int lua_StatusBar_SetValue(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) w->barValue = static_cast<float>(luaL_optnumber(L, 2, 0.0));
+    return 0;
+}
+/// SetCooldown(start, duration) — both on GetTime's clock. A zero duration is
+/// how FrameXML clears one, and it must read as nothing running rather than as
+/// a sweep that never finishes.
+/// An edit box keeps its own text, so SetText on one is not the font string's.
+/// FrameXML uses the same name for both and the widget decides which it means.
+int lua_EditBox_SetText(lua_State* L) {
+    auto* w = widgetOf(L, 1);
+    if (!w) return 0;
+    w->editText = luaL_optstring(L, 2, "");
+    w->cursorPos = w->editText.size();
+    return 0;
+}
+int lua_EditBox_GetText(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    lua_pushstring(L, w ? w->editText.c_str() : "");
+    return 1;
+}
+int lua_EditBox_GetNumber(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    lua_pushnumber(L, w ? std::atof(w->editText.c_str()) : 0.0);
+    return 1;
+}
+int lua_EditBox_Insert(lua_State* L) {
+    auto* w = widgetOf(L, 1);
+    if (!w) return 0;
+    const std::string add = luaL_optstring(L, 2, "");
+    const size_t at = std::min(w->cursorPos, w->editText.size());
+    w->editText.insert(at, add);
+    w->cursorPos = at + add.size();
+    return 0;
+}
+int lua_EditBox_SetMaxLetters(lua_State* L) {
+    if (auto* w = widgetOf(L, 1))
+        w->editMaxLetters = static_cast<int>(luaL_optnumber(L, 2, 0));
+    return 0;
+}
+int lua_EditBox_SetNumeric(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) w->editNumeric = lua_toboolean(L, 2) != 0;
+    return 0;
+}
+int lua_EditBox_SetMultiLine(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) w->editMultiLine = lua_toboolean(L, 2) != 0;
+    return 0;
+}
+int lua_EditBox_SetCursorPosition(lua_State* L) {
+    auto* w = widgetOf(L, 1);
+    if (!w) return 0;
+    const double at = luaL_optnumber(L, 2, 0.0);
+    w->cursorPos = static_cast<size_t>(std::clamp(
+        at, 0.0, static_cast<double>(w->editText.size())));
+    return 0;
+}
+int lua_EditBox_GetCursorPosition(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    lua_pushnumber(L, w ? static_cast<double>(w->cursorPos) : 0.0);
+    return 1;
+}
+
+int lua_Cooldown_SetCooldown(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) {
+        w->cooldownStart = luaL_optnumber(L, 2, 0.0);
+        w->cooldownDuration = luaL_optnumber(L, 3, 0.0);
+    }
+    return 0;
+}
+int lua_Cooldown_GetCooldownTimes(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    // Milliseconds, which is what this one answers in.
+    lua_pushnumber(L, w ? w->cooldownStart * 1000.0 : 0.0);
+    lua_pushnumber(L, w ? w->cooldownDuration * 1000.0 : 0.0);
+    return 2;
+}
+int lua_Cooldown_Clear(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) { w->cooldownStart = 0.0; w->cooldownDuration = 0.0; }
+    return 0;
+}
+
+int lua_Slider_SetValueStep(lua_State* L) {
+    if (auto* w = widgetOf(L, 1))
+        w->sliderStep = static_cast<float>(luaL_optnumber(L, 2, 0.0));
+    return 0;
+}
+int lua_Slider_GetValueStep(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    lua_pushnumber(L, w ? w->sliderStep : 0.0);
+    return 1;
+}
+/// The draggable part. Given a path rather than a texture here, the same way
+/// the button art setters take one.
+int lua_Slider_SetThumbTexture(lua_State* L) {
+    auto* w = widgetOf(L, 1);
+    if (!w) return 0;
+    if (lua_isstring(L, 2)) {
+        w->thumbTexture = lua_tostring(L, 2);
+    } else if (lua_istable(L, 2)) {
+        auto* tree = wowee::addons::getWidgetTree(L);
+        const auto* t = tree ? tree->get(widgetIdOf(L, 2)) : nullptr;
+        if (t) w->thumbTexture = t->texturePath;
+    }
+    return 0;
+}
+
+int lua_StatusBar_GetValue(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    lua_pushnumber(L, w ? w->barValue : 0.0);
+    return 1;
+}
+int lua_StatusBar_SetStatusBarTexture(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) {
+        // Takes a path or an existing texture object, and addons use both.
+        if (lua_isstring(L, 2)) w->barTexture = lua_tostring(L, 2);
+        else if (lua_istable(L, 2)) {
+            if (auto* tex = widgetOf(L, 2)) w->barTexture = tex->texturePath;
+        }
+    }
+    return 0;
+}
+int lua_StatusBar_SetStatusBarColor(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) {
+        w->barColor[0] = static_cast<float>(luaL_optnumber(L, 2, 1.0));
+        w->barColor[1] = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+        w->barColor[2] = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+        w->barColor[3] = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    }
+    return 0;
+}
+int lua_StatusBar_SetOrientation(lua_State* L) {
+    if (auto* w = widgetOf(L, 1)) {
+        const std::string o = luaL_optstring(L, 2, "HORIZONTAL");
+        w->barVertical = (o == "VERTICAL");
+    }
+    return 0;
+}
 
 // Frame method: frame:CreateTexture(name, layer) → a real region
 static int lua_Frame_CreateTexture(lua_State* L) {
@@ -508,7 +918,13 @@ static int lua_GetCursorPosition(lua_State* L) {
 }
 
 // GetScreenWidth() → width
+/// The screen in interface units, not pixels — which is what FrameXML means
+/// by it. On a 1528-tall window GetScreenHeight() is 768, the same as it would
+/// be on any other, and a frame sized against it comes out the same size.
 static int lua_GetScreenWidth(lua_State* L) {
+    auto* tree = wowee::addons::getWidgetTree(L);
+    const auto* root = tree ? tree->get(tree->rootId()) : nullptr;
+    if (root && root->rectW > 0.0f) { lua_pushnumber(L, root->rectW); return 1; }
     auto* svc = getLuaServices(L);
     auto* window = svc ? svc->window : nullptr;
     lua_pushnumber(L, window ? window->getWidth() : 1920);
@@ -517,6 +933,9 @@ static int lua_GetScreenWidth(lua_State* L) {
 
 // GetScreenHeight() → height
 static int lua_GetScreenHeight(lua_State* L) {
+    auto* tree = wowee::addons::getWidgetTree(L);
+    const auto* root = tree ? tree->get(tree->rootId()) : nullptr;
+    if (root && root->rectH > 0.0f) { lua_pushnumber(L, root->rectH); return 1; }
     auto* svc = getLuaServices(L);
     auto* window = svc ? svc->window : nullptr;
     lua_pushnumber(L, window ? window->getHeight() : 1080);
@@ -623,6 +1042,21 @@ static int lua_Frame_GetParent(lua_State* L) {
     return 1;
 }
 
+
+/// Records a global FrameXML or an addon asked for and did not find. Logged
+/// once per name; the set is reported at shutdown so the gap can be read off a
+/// run rather than guessed at.
+static int lua_RecordMissingApi(lua_State* L) {
+    const char* name = luaL_optstring(L, 1, "");
+    if (name && *name) {
+        // Once per name, so a warning here is a bounded list rather than
+        // a stream, and it is the only trace of a gap as it happens.
+        LOG_WARNING("[Lua] missing API called: ", name);
+        missingApiNames().insert(name);
+    }
+    return 0;
+}
+
 // CreateFrame(frameType, name, parent, template)
 static int lua_CreateFrame(lua_State* L) {
     const char* frameType = luaL_optstring(L, 1, "Frame");
@@ -630,6 +1064,24 @@ static int lua_CreateFrame(lua_State* L) {
 
     // Create the frame table
     lua_newtable(L);
+
+    // Record the parent table, not only the widget id. GetParent() is
+    // everywhere in FrameXML — a nested button's OnLoad opens with
+    // self:GetParent().toggle = self — and it answered nil for every frame
+    // ever created, because only an explicit SetParent recorded one. That
+    // failed the template declaring the button, so the button's owner never
+    // got its size, and the loop sizing a list by its first button's height
+    // divided by zero.
+    if (lua_istable(L, 3)) {
+        lua_pushvalue(L, 3);
+        lua_setfield(L, -2, "__parent");
+    } else {
+        // A name, or nothing at all, which means UIParent.
+        if (lua_isstring(L, 3)) lua_getglobal(L, lua_tostring(L, 3));
+        else lua_getglobal(L, "UIParent");
+        if (lua_istable(L, -1)) lua_setfield(L, -2, "__parent");
+        else lua_pop(L, 1);
+    }
 
     // Back it with a real widget so its geometry is somewhere the renderer can
     // reach. Parent is the third argument when given, and UIParent otherwise,
@@ -650,6 +1102,18 @@ static int lua_CreateFrame(lua_State* L) {
         if (auto* w = tree->get(id)) {
             const std::string ft = frameType ? frameType : "Frame";
             w->mouseEnabled = (ft == "Button" || ft == "CheckButton");
+            w->isStatusBar = (ft == "StatusBar");
+            // A slider takes the mouse by nature: it exists to be dragged.
+            w->isSlider = (ft == "Slider");
+            w->isCooldown = (ft == "Cooldown");
+            // An edit box is clicked into, so it takes the mouse as well.
+            w->isEditBox = (ft == "EditBox");
+            if (w->isEditBox) {
+                w->mouseEnabled = true;
+                lua_pushboolean(L, 1);
+                lua_setfield(L, -2, "__isEditBox");
+            }
+            if (w->isSlider) w->mouseEnabled = true;
         }
         lua_pushinteger(L, static_cast<lua_Integer>(id));
         lua_setfield(L, -2, "__wid");
@@ -682,6 +1146,81 @@ static int lua_CreateFrame(lua_State* L) {
     lua_getglobal(L, "__WoweeFrameMT");
     lua_setmetatable(L, -2);
 
+    // The fourth argument names a template, which FrameXML uses constantly:
+    // CreateFrame("BUTTON", name, self, "OptionsListButtonTemplate"). Ignoring
+    // it was not merely a missing feature. OptionsList_OnLoad makes one button,
+    // divides the list's height by that button's height to decide how many fit,
+    // and loops to that number — so a template that never arrives means no
+    // size, a height of zero, a count of (h-8)/0, and Lua divides by zero
+    // happily. The loop then creates frames under fresh names until memory runs
+    // out, which is exactly what froze the client on VideoOptionsFrame.
+    //
+    // Applied after the metatable, so the template's body can call methods on
+    // what it is given.
+    if (const char* templates = lua_isstring(L, 4) ? lua_tostring(L, 4) : nullptr) {
+        const std::string list(templates);
+        size_t start = 0;
+        while (start <= list.size()) {
+            const size_t comma = list.find(',', start);
+            std::string one = list.substr(
+                start, comma == std::string::npos ? std::string::npos : comma - start);
+            const size_t b = one.find_first_not_of(" \t");
+            const size_t e = one.find_last_not_of(" \t");
+            one = (b == std::string::npos) ? std::string() : one.substr(b, e - b + 1);
+
+            if (!one.empty()) {
+                lua_getglobal(L, "__WoweeTemplates");
+                if (lua_istable(L, -1)) {
+                    lua_getfield(L, -1, one.c_str());
+                    if (lua_isfunction(L, -1)) {
+                        lua_pushvalue(L, -3);            // the frame
+                        if (lua_pcall(L, 1, 0, 0) != 0) {
+                            // Once per template. A template that fails fails
+                            // for every frame using it, and the loop this very
+                            // failure causes then repeats it: one run wrote the
+                            // same line 675,000 times, which cost more than the
+                            // fault it was reporting.
+                            static std::set<std::string> reported;
+                            if (reported.insert(one).second) {
+                                LOG_WARNING("CreateFrame: template '", one, "' failed: ",
+                                            lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
+                            }
+                            lua_pop(L, 1);               // error
+                        }
+                    } else {
+                        lua_pop(L, 1);                   // not a function
+                    }
+                }
+                lua_pop(L, 1);                           // __WoweeTemplates
+            }
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+
+        // Built from a template here, so it is loaded here — which is what
+        // CreateFrame does in the real client. The XML path does not pass a
+        // template to this function; it applies them separately and fires
+        // OnLoad once, after the frame's own body. So this covers exactly the
+        // frames Lua builds, and OptionsList_OnLoad builds a list of them:
+        // their OnLoad is what gives each button the .text it is asked for
+        // moments later.
+        lua_getfield(L, -1, "__scripts");
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "OnLoad");
+            if (lua_isfunction(L, -1)) {
+                lua_pushvalue(L, -3);            // the frame
+                if (lua_pcall(L, 1, 0, 0) != 0) {
+                    LOG_WARNING("CreateFrame: OnLoad failed: ",
+                                lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
+                    lua_pop(L, 1);
+                }
+            } else {
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+    }
+
     return 1;
 }
 
@@ -710,9 +1249,15 @@ bool LuaEngine::initialize() {
     luaopen_string(L_);
     luaopen_math(L_);
 
-    // Remove unsafe globals from base library
+    // Remove unsafe globals from base library.
+    //
+    // newproxy is not among them, despite the name. It returns a userdata with
+    // a fresh metatable and reaches nothing else; what it buys is __index and
+    // __newindex on a value that cannot be tampered with, which is exactly how
+    // Blizzard's own RestrictedFrames builds secure frame handles. Removing it
+    // cost us SecureHandlerTemplates and everything inheriting from it.
     const char* unsafeGlobals[] = {
-        "dofile", "loadfile", "load", "collectgarbage", "newproxy", nullptr
+        "dofile", "loadfile", "load", "collectgarbage", nullptr
     };
     for (const char** g = unsafeGlobals; *g; ++g) {
         lua_pushnil(L_);
@@ -724,14 +1269,24 @@ bool LuaEngine::initialize() {
     lua_pushlightuserdata(L_, &widgets_);
     lua_setfield(L_, LUA_REGISTRYINDEX, "wowee_widget_tree");
 
+    // The engine itself, for the few bindings that need to do more than touch a
+    // widget — taking focus fires handlers on the frame losing it as well as
+    // the one gaining it, and only the engine knows which that was.
+    lua_pushlightuserdata(L_, this);
+    lua_setfield(L_, LUA_REGISTRYINDEX, "wowee_lua_engine");
+
     registerCoreAPI();
     registerEventAPI();
+
+    // Last, so every bootstrap block above reads a _G that answers honestly.
+    installMissingApiFallback();
 
     LOG_INFO("LuaEngine: initialized (Lua 5.1)");
     return true;
 }
 
 void LuaEngine::shutdown() {
+    reportMissingApi();
     if (L_) {
         lua_close(L_);
         L_ = nullptr;
@@ -761,6 +1316,12 @@ void LuaEngine::registerCoreAPI() {
     lua_pushcfunction(L_, lua_wow_print);
     lua_setglobal(L_, "print");
 
+    lua_pushcfunction(L_, [](lua_State* L) -> int {
+        LOG_WARNING("[FrameXML] ", luaL_optstring(L, 1, ""));
+        return 0;
+    });
+    lua_setglobal(L_, "__WoweeLogWarning");
+
     // WoW API stubs
     lua_pushcfunction(L_, lua_wow_message);
     lua_setglobal(L_, "message");
@@ -788,6 +1349,53 @@ void LuaEngine::registerCoreAPI() {
     lua_setglobal(L_, "tremove");
     lua_pop(L_, 1);  // pop table
 
+    // WoW's Lua predates the 5.1 module tables and exposes most of math, string
+    // and table as bare globals as well. FrameXML calls min, ceil and PI
+    // directly at file scope, and one nil there loses the whole file: mainmenubar
+    // and spellbookframe each died on a single arithmetic name.
+    //
+    // Skipped rather than assumed where the vendored Lua lacks one — getn is
+    // compiled out here, and setting a global to nil would be no better than
+    // leaving it absent.
+    struct Alias { const char* lib; const char* field; const char* global; };
+    static constexpr Alias kAliases[] = {
+        {"math", "abs", "abs"},        {"math", "ceil", "ceil"},
+        {"math", "floor", "floor"},    {"math", "max", "max"},
+        {"math", "min", "min"},        {"math", "fmod", "mod"},
+        {"math", "sqrt", "sqrt"},      {"math", "random", "random"},
+        {"string", "gsub", "gsub"},    {"string", "sub", "strsub"},
+        {"string", "len", "strlen"},   {"string", "upper", "strupper"},
+        {"string", "lower", "strlower"}, {"string", "find", "strfind"},
+        {"string", "rep", "strrep"},   {"string", "byte", "strbyte"},
+        {"string", "char", "strchar"}, {"string", "match", "strmatch"},
+        {"string", "gmatch", "gmatch"}, {"table", "sort", "sort"},
+        {"table", "getn", "getn"},     {"table", "concat", "tconcat"},
+    };
+    for (const auto& a : kAliases) {
+        lua_getglobal(L_, a.lib);
+        if (lua_istable(L_, -1)) {
+            lua_getfield(L_, -1, a.field);
+            if (lua_isnil(L_, -1)) lua_pop(L_, 1);
+            else lua_setglobal(L_, a.global);
+        }
+        lua_pop(L_, 1);
+    }
+    // A constant, not a function, so the fallback's rule for SCREAMING_SNAKE
+    // names leaves it nil and gametime.lua does arithmetic on nothing.
+    lua_getglobal(L_, "math");
+    lua_getfield(L_, -1, "pi");
+    lua_setglobal(L_, "PI");
+    lua_pop(L_, 1);
+
+    // WoW-specific and not derivable from a standard library.
+    bootstrap(
+        "function wipe(t) for k in pairs(t) do t[k] = nil end return t end\n"
+        "function strtrim(s, chars)\n"
+        "  chars = chars or ' \\t\\r\\n'\n"
+        "  local p = '[' .. chars:gsub('(%W)', '%%%1') .. ']'\n"
+        "  return (s:gsub('^' .. p .. '*', ''):gsub(p .. '*$', ''))\n"
+        "end\n");
+
     // SlashCmdList table — addons register slash commands here
     lua_newtable(L_);
     lua_setglobal(L_, "SlashCmdList");
@@ -796,6 +1404,12 @@ void LuaEngine::registerCoreAPI() {
     lua_newtable(L_);  // metatable
     lua_pushvalue(L_, -1);
     lua_setfield(L_, -2, "__index"); // metatable.__index = metatable
+
+    // Defined with the other edit-box bindings further down; declared here
+    // because the table below refers to them first.
+    int lua_EditBox_SetFocus(lua_State* L);
+    int lua_EditBox_ClearFocus(lua_State* L);
+    int lua_EditBox_HasFocus(lua_State* L);
 
     static const struct luaL_Reg frameMethods[] = {
         {"RegisterEvent",   lua_Frame_RegisterEvent},
@@ -817,12 +1431,41 @@ void LuaEngine::registerCoreAPI() {
         {"SetWidth",        lua_Region_SetWidth},
         {"SetHeight",       lua_Region_SetHeight},
         {"GetWidth",        lua_Region_GetWidth},
+        {"GetTextWidth",    lua_Region_GetTextWidth},
+        {"GetStringWidth",  lua_Region_GetTextWidth},
+        {"GetTextHeight",   lua_Region_GetTextHeight},
+        {"GetStringHeight", lua_Region_GetTextHeight},
         {"GetHeight",       lua_Region_GetHeight},
         {"GetCenter",       lua_Frame_GetCenter},
         {"SetAlpha",        lua_Region_SetAlpha},
         {"GetAlpha",        lua_Region_GetAlpha},
         {"EnableMouse",     lua_Frame_EnableMouse},
         {"IsMouseEnabled",  lua_Frame_IsMouseEnabled},
+        {"SetBackdrop",           lua_Frame_SetBackdrop},
+        {"SetBackdropColor",      lua_Frame_SetBackdropColor},
+        {"SetBackdropBorderColor",lua_Frame_SetBackdropBorderColor},
+        {"SetMinMaxValues",       lua_StatusBar_SetMinMaxValues},
+        {"GetMinMaxValues",       lua_StatusBar_GetMinMaxValues},
+        {"SetValue",              lua_StatusBar_SetValue},
+        {"GetValue",              lua_StatusBar_GetValue},
+        {"SetStatusBarTexture",   lua_StatusBar_SetStatusBarTexture},
+        {"SetStatusBarColor",     lua_StatusBar_SetStatusBarColor},
+        {"SetOrientation",        lua_StatusBar_SetOrientation},
+        {"SetValueStep",          lua_Slider_SetValueStep},
+        {"GetValueStep",          lua_Slider_GetValueStep},
+        {"SetThumbTexture",       lua_Slider_SetThumbTexture},
+        {"SetCooldown",           lua_Cooldown_SetCooldown},
+        {"GetNumber",             lua_EditBox_GetNumber},
+        {"Insert",                lua_EditBox_Insert},
+        {"SetMaxLetters",         lua_EditBox_SetMaxLetters},
+        {"SetNumeric",            lua_EditBox_SetNumeric},
+        {"SetMultiLine",          lua_EditBox_SetMultiLine},
+        {"SetCursorPosition",     lua_EditBox_SetCursorPosition},
+        {"GetCursorPosition",     lua_EditBox_GetCursorPosition},
+        {"SetFocus",              lua_EditBox_SetFocus},
+        {"ClearFocus",            lua_EditBox_ClearFocus},
+        {"HasFocus",              lua_EditBox_HasFocus},
+        {"GetCooldownTimes",      lua_Cooldown_GetCooldownTimes},
         {"SetFrameStrata",  lua_Frame_SetFrameStrata},
         {"SetFrameLevel",   lua_Frame_SetFrameLevel},
         {"SetParent",       lua_Frame_SetParent},
@@ -831,19 +1474,33 @@ void LuaEngine::registerCoreAPI() {
         {"CreateFontString", lua_Frame_CreateFontString},
         {nullptr, nullptr}
     };
+    auto applyFrameMethods = [&]() {
+        lua_getglobal(L_, "__WoweeFrameMT");
+        for (const luaL_Reg* r = frameMethods; r->name; r++) {
+            lua_pushcfunction(L_, r->func);
+            lua_setfield(L_, -2, r->name);
+        }
+        lua_pop(L_, 1);
+    };
+
     for (const luaL_Reg* r = frameMethods; r->name; r++) {
         lua_pushcfunction(L_, r->func);
         lua_setfield(L_, -2, r->name);
     }
     lua_setglobal(L_, "__WoweeFrameMT");
 
-    // Add commonly called no-op frame methods to prevent addon errors
-    luaL_dostring(L_,
+    // Commonly called frame methods that are no-ops for now, so an addon
+    // calling one gets silence rather than an error.
+    //
+    // Anything bound in C above must not appear here. These run afterwards and
+    // simply overwrite it, turning a working method into a no-op that still
+    // answers — EnableMouse was defined here and so no frame ever took the
+    // mouse, however plainly the call read in the addon.
+    bootstrap(
         "local mt = __WoweeFrameMT\n"
 
         "function mt:GetFrameLevel() return self.__frameLevel or 1 end\n"
         "function mt:GetFrameStrata() return self.__strata or 'MEDIUM' end\n"
-        "function mt:EnableMouse(enable) end\n"
         "function mt:EnableMouseWheel(enable) end\n"
         "function mt:SetMovable(movable) end\n"
         "function mt:SetResizable(resizable) end\n"
@@ -852,7 +1509,6 @@ void LuaEngine::registerCoreAPI() {
         "function mt:SetBackdrop(backdrop) end\n"
         "function mt:SetBackdropColor(...) end\n"
         "function mt:SetBackdropBorderColor(...) end\n"
-        "function mt:ClearAllPoints() end\n"
         "function mt:SetID(id) self.__id = id end\n"
         "function mt:GetID() return self.__id or 0 end\n"
         "function mt:SetScale(scale) self.__scale = scale end\n"
@@ -868,7 +1524,16 @@ void LuaEngine::registerCoreAPI() {
         "function mt:GetNumPoints() return 0 end\n"
         "function mt:GetPoint(n) return 'CENTER', nil, 'CENTER', 0, 0 end\n"
         "function mt:SetHitRectInsets(...) end\n"
-        "function mt:RegisterForClicks(...) end\n"
+        // Recorded, because a frame only receives the clicks it asks for.
+        // FrameXML calls RegisterForClicks("LeftButtonUp", "RightButtonUp") on
+        // the frames that want a context menu, and without this every frame
+        // would answer a right-click whether it wanted one or not.
+        "function mt:RegisterForClicks(...)\n"
+        "    local set = {}\n"
+        "    for i = 1, select('#', ...) do set[select(i, ...)] = true end\n"
+        "    self.__clicks = set\n"
+        "end\n"
+
         "function mt:SetAttribute(name, value) self['attr_'..name] = value end\n"
         "function mt:GetAttribute(name) return self['attr_'..name] end\n"
         "function mt:HookScript(scriptType, fn)\n"
@@ -887,6 +1552,101 @@ void LuaEngine::registerCoreAPI() {
         "function mt:GetObjectType() return 'Frame' end\n"
     );
 
+    // Button art, which XML declares as <NormalTexture>, <HighlightTexture>,
+    // <ButtonText> and so on. The catch-all below would answer these with a
+    // no-op, which is worse than it sounds: the setter would appear to work and
+    // the matching getter would hand back nil, so button:GetNormalTexture()
+    // :SetVertexColor(...) — which FrameXML does constantly to grey out an
+    // unusable action — fails somewhere far from the cause.
+    bootstrap(
+        "local mt = __WoweeFrameMT\n"
+        // A path is as valid an argument as a texture, and FrameXML uses both:
+        // LoadMicroButtonTextures does
+        // self:SetDisabledTexture("Interface\\Buttons\\...-Disabled"), then the
+        // next line asks for it back and calls SetDesaturated on it. Storing
+        // the string verbatim handed a string back, and a string has no widget
+        // methods at all. A path makes or updates the slot's own texture.
+        "for _, slot in ipairs({'NormalTexture', 'PushedTexture', 'HighlightTexture',\n"
+        "                       'DisabledTexture', 'CheckedTexture',\n"
+        "                       'DisabledCheckedTexture'}) do\n"
+        "    local key = '__' .. slot\n"
+        "    local layer = (slot == 'HighlightTexture') and 'HIGHLIGHT' or 'ARTWORK'\n"
+        "    mt['Set' .. slot] = function(self, tex)\n"
+        "        if type(tex) == 'string' then\n"
+        "            local existing = self[key]\n"
+        "            if type(existing) == 'table' then existing:SetTexture(tex) return end\n"
+        "            local made = self:CreateTexture(nil, layer)\n"
+        "            made:SetTexture(tex)\n"
+        "            made:SetAllPoints(self)\n"
+        "            self[key] = made\n"
+        "            return\n"
+        "        end\n"
+        "        self[key] = tex\n"
+        "    end\n"
+        "    mt['Get' .. slot] = function(self) return self[key] end\n"
+        "end\n"
+        // Attributes, and the OnAttributeChanged they fire.
+        //
+        // This is how FrameXML passes state to a handler without a global:
+        // UIDropDownMenu_Initialize does
+        // UIDropDownMenuDelegate:SetAttribute("initmenu", frame), and the
+        // delegate's OnAttributeChanged is what actually sets
+        // UIDROPDOWNMENU_INIT_MENU. No-opping SetAttribute left that nil, so
+        // every menu built afterwards indexed nothing.
+        "function mt:SetAttribute(name, value)\n"
+        "    self.__attributes = self.__attributes or {}\n"
+        "    self.__attributes[name] = value\n"
+        "    local handler = self.__scripts and self.__scripts.OnAttributeChanged\n"
+        "    if handler then handler(self, name, value) end\n"
+        "end\n"
+        "function mt:GetAttribute(a, b, c)\n"
+        "    if not self.__attributes then return nil end\n"
+        // The three-argument form names one attribute in pieces.
+        "    local key = (b ~= nil) and ((a or '') .. b .. (c or '')) or a\n"
+        "    return self.__attributes[key]\n"
+        "end\n"
+        // A scroll frame's content frame.
+        // Nothing to scroll until the tree has been laid out, and zero is the
+        // honest answer then. ScrollFrame_OnScrollRangeChanged compares the
+        // bar value against this the moment a scroll frame is built.
+        "function mt:GetVerticalScrollRange() return 0 end\n"
+        "function mt:GetHorizontalScrollRange() return 0 end\n"
+        "function mt:GetVerticalScroll() return 0 end\n"
+        "function mt:GetHorizontalScroll() return 0 end\n"
+        // Zero when unset, which is what the real client answers and what
+        // FrameXML concatenates into a name without checking.
+        "function mt:SetID(id) self.__id = id end\n"
+        "function mt:GetID() return self.__id or 0 end\n"
+        "function mt:SetScrollChild(child) self.__scrollChild = child end\n"
+        "function mt:GetScrollChild() return self.__scrollChild end\n"
+        "function mt:SetFontString(fs) self.__fontString = fs end\n"
+        // Made on demand when a button is asked for one it has not been
+        // given. Every button has a font string in the real client, and
+        // FrameXML assumes it: FCF_SetTabColor does
+        // minFrame:GetFontString():SetTextColor(...) without checking.
+        "function mt:GetFontString()\n"
+        "    if not self.__fontString then\n"
+        "        self.__fontString = self:CreateFontString(nil, 'OVERLAY')\n"
+        "    end\n"
+        "    return self.__fontString\n"
+        "end\n"
+        // A button's text is its font string's text; keeping them apart means
+        // SetText on the button quietly does nothing, which is how a bar full
+        // of blank buttons happens.
+        // An edit box keeps its own text; a button shows its font string's.
+        // FrameXML calls SetText on both and the widget decides which it means.
+        "function mt:SetText(text)\n"
+        "    if self.__isEditBox then return __WoweeEditSetText(self, text) end\n"
+        "    self.__text = text\n"
+        "    if self.__fontString then self.__fontString:SetText(text) end\n"
+        "end\n"
+        "function mt:GetText()\n"
+        "    if self.__isEditBox then return __WoweeEditGetText(self) end\n"
+        "    if self.__fontString then return self.__fontString:GetText() end\n"
+        "    return self.__text\n"
+        "end\n"
+    );
+
     // Catch-all for unimplemented widget methods. Frames are logic-only stubs (not
     // natively rendered), so UI-heavy addons call many widget methods we don't model
     // (sliders: SetMinMaxValues/SetValue; check buttons: SetChecked; buttons:
@@ -895,19 +1655,146 @@ void LuaEngine::registerCoreAPI() {
     // WoW widget methods are PascalCase, so an unknown key starting with an uppercase
     // letter is treated as an unimplemented method (harmless no-op); anything else
     // falls through to nil so ordinary addon fields keep their normal (falsy) meaning.
-    luaL_dostring(L_,
+    // The widget methods this stands in for, named rather than guessed at.
+    //
+    // Answering every PascalCase key with a no-op was wrong for data. A field
+    // is PascalCase as readily as a method — textStatusBar.TextString is the
+    // one that surfaced it — and a function is truthy, so FrameXML's own
+    // "if (x.Field) then use it" ran the branch against something that was
+    // never there. Methods and data cannot be told apart by shape: of the 307
+    // method names FrameXML calls, eighteen read as nouns (AppendText,
+    // NumLines, PageUp, AtBottom), and of the PascalCase fields it assigns,
+    // several are method names held in a table.
+    //
+    // So the set is enumerated: every method FrameXML calls on a widget, plus
+    // the standard widget API for addons. A name in it answers with a no-op;
+    // anything else is data and answers nil, which is what it would be.
+    bootstrap(
+        "__WoweeWidgetMethods = {\n"
+        "AddDoubleLine=1,AddHistoryLine=1,AddLine=1,AddMessage=1,AddTexture=1,\n"
+        "AddToAutoHide=1,AllowAttributeChanges=1,Animate=1,AppendText=1,AtBottom=1,\n"
+        "CallMethod=1,CanSaveTabardNow=1,ChildUpdate=1,Clear=1,ClearAllPoints=1,\n"
+        "ClearBinding=1,ClearBindings=1,ClearFocus=1,ClearHistory=1,ClearLines=1,\n"
+        "ClearModel=1,Click=1,CreateFontString=1,CreatePlayerArrowFrame=1,\n"
+        "CreateTexture=1,CreateTitleRegion=1,CycleVariation=1,Disable=1,DrawQuestBlob=1,\n"
+        "Dress=1,Enable=1,EnableKeyboard=1,EnableMouse=1,EnableMouseWheel=1,\n"
+        "EnableSubtitles=1,FadeOut=1,Free=1,GetAlpha=1,GetAnchorType=1,GetAttribute=1,\n"
+        "GetBackdrop=1,GetBottom=1,GetButtonState=1,GetCenter=1,GetChecked=1,\n"
+        "GetCheckedTexture=1,GetChildList=1,GetChildren=1,GetColorRGB=1,\n"
+        "GetCurrentValue=1,GetCursorPosition=1,GetDisabledCheckedTexture=1,\n"
+        "GetDisabledTexture=1,GetDrawLayer=1,GetEffectiveAttribute=1,\n"
+        "GetEffectiveScale=1,GetFieldSize=1,GetFileHeight=1,GetFileWidth=1,GetFont=1,\n"
+        "GetFontObject=1,GetFontString=1,GetFrame=1,GetFrameLevel=1,GetFrameRef=1,\n"
+        "GetFrameStrata=1,GetHeight=1,GetHighlightTexture=1,GetHorizontalScroll=1,\n"
+        "GetHorizontalScrollRange=1,GetID=1,GetInputLanguage=1,GetInventorySlot=1,\n"
+        "GetItem=1,GetLeft=1,GetLowerEmblemTexture=1,GetMessageInfo=1,GetMinimumWidth=1,\n"
+        "GetMinMaxValues=1,GetMousePosition=1,GetName=1,GetNormalTexture=1,GetNumber=1,\n"
+        "GetNumChildren=1,GetNumMessages=1,GetNumPoints=1,GetNumTooltips=1,\n"
+        "GetObjectType=1,GetOwner=1,GetParent=1,GetPoint=1,GetPushedTexture=1,GetRect=1,\n"
+        "GetRegionParent=1,GetRegions=1,GetRight=1,GetScale=1,GetScript=1,\n"
+        "GetScrollChild=1,GetSize=1,GetSpacing=1,GetStatusBarTexture=1,\n"
+        "GetStringHeight=1,GetStringWidth=1,GetTexCoord=1,GetText=1,GetTextColor=1,\n"
+        "GetTextHeight=1,GetTexture=1,GetTextWidth=1,GetTooltipIndex=1,GetTop=1,\n"
+        "GetUIPanel=1,GetUpperEmblemTexture=1,GetUTF8CursorPosition=1,GetValue=1,\n"
+        "GetVertexColor=1,GetVerticalScroll=1,GetVerticalScrollRange=1,GetWidth=1,\n"
+        "GetZoom=1,GetZoomLevels=1,HasFocus=1,HasScript=1,Hide=1,HideUIPanel=1,\n"
+        "HighlightText=1,HookScript=1,IgnoreDepth=1,InitializeTabardColors=1,Insert=1,\n"
+        "IsEnabled=1,IsEquippedItem=1,IsEventRegistered=1,IsMouseEnabled=1,\n"
+        "IsMouseOver=1,IsObjectType=1,IsOwned=1,IsProtected=1,IsShown=1,IsUnderMouse=1,\n"
+        "IsUnit=1,IsUserPlaced=1,IsVisible=1,LockHighlight=1,Lower=1,MoveUIPanel=1,\n"
+        "New=1,NumLines=1,OnFinished=1,OnUpdate=1,PageDown=1,PageUp=1,PingLocation=1,\n"
+        "Play=1,Raise=1,RefreshUnit=1,RefreshValue=1,RegisterAutoHide=1,RegisterEvent=1,\n"
+        "RegisterForClicks=1,RegisterForDrag=1,ReleaseFrame=1,\n"
+        "RemoveMessagesByAccessID=1,ReplaceIconTexture=1,Reset=1,Reuse=1,Run=1,\n"
+        "RunAttribute=1,RunFor=1,Save=1,ScrollDown=1,ScrollToBottom=1,ScrollUp=1,\n"
+        "SelectWindow=1,SetAction=1,SetAllPoints=1,SetAlpha=1,SetAlphaGradient=1,\n"
+        "SetAnchorType=1,SetAttribute=1,SetAutoFocus=1,SetBackdrop=1,\n"
+        "SetBackdropBorderColor=1,SetBackdropColor=1,SetBagItem=1,SetBinding=1,\n"
+        "SetBindingClick=1,SetBindingItem=1,SetBindingMacro=1,SetBindingSpell=1,\n"
+        "SetBlendMode=1,SetBorderAlpha=1,SetBorderScalar=1,SetBorderTexture=1,\n"
+        "SetButtonState=1,SetBuybackItem=1,SetCamera=1,SetChecked=1,SetCheckedTexture=1,\n"
+        "SetClampedToScreen=1,SetClampRectInsets=1,SetColorRGB=1,SetCooldown=1,\n"
+        "SetCreature=1,SetCursorPosition=1,SetDesaturated=1,SetDisabledCheckedTexture=1,\n"
+        "SetDisabledFontObject=1,SetDisabledTexture=1,SetDisplayValue=1,SetDrawLayer=1,\n"
+        "SetEquipmentSet=1,SetFacing=1,SetFillAlpha=1,SetFillTexture=1,SetFocus=1,\n"
+        "SetFont=1,SetFontObject=1,SetFontString=1,SetFormattedText=1,SetFrameLevel=1,\n"
+        "SetFrameRate=1,SetFrameStrata=1,SetHeight=1,SetHighlightFontObject=1,\n"
+        "SetHighlightTexture=1,SetHitRectInsets=1,SetHorizontalScroll=1,SetHyperlink=1,\n"
+        "SetHyperlinkCompareItem=1,SetHyperlinksEnabled=1,SetID=1,SetInboxItem=1,\n"
+        "SetInventoryItem=1,SetJustifyH=1,SetJustifyV=1,SetLFGCompletionReward=1,\n"
+        "SetLFGDungeonReward=1,SetLight=1,SetLootItem=1,SetLootRollItem=1,SetMaxBytes=1,\n"
+        "SetMaxLetters=1,SetMaxResize=1,SetMerchantCostItem=1,SetMerchantItem=1,\n"
+        "SetMinimumWidth=1,SetMinMaxValues=1,SetMinResize=1,SetModel=1,SetModelScale=1,\n"
+        "SetMovable=1,SetMultiLine=1,SetNormalFontObject=1,SetNormalTexture=1,\n"
+        "SetNumber=1,SetNumeric=1,SetOwner=1,SetPadding=1,SetParent=1,SetPetAction=1,\n"
+        "SetPlayerTextureHeight=1,SetPlayerTextureWidth=1,SetPoint=1,SetPosition=1,\n"
+        "SetPossession=1,SetPropagateKeyboardInput=1,SetPushedTexture=1,SetQuestItem=1,\n"
+        "SetQuestLogItem=1,SetQuestLogRewardSpell=1,SetQuestLogSpecialItem=1,\n"
+        "SetQuestRewardSpell=1,SetResizable=1,SetRotation=1,SetScale=1,SetScript=1,\n"
+        "SetScrollChild=1,SetSelection=1,SetSendMailItem=1,SetSequence=1,\n"
+        "SetSequenceTime=1,SetShadowOffset=1,SetShapeshift=1,SetShown=1,SetSize=1,\n"
+        "SetSpacing=1,SetSpell=1,SetSpellByID=1,SetStartDelay=1,SetStatusBarColor=1,\n"
+        "SetStatusBarTexture=1,SetTexCoord=1,SetText=1,SetTextColor=1,SetTextHeight=1,\n"
+        "SetTextInsets=1,SetTexture=1,SetToplevel=1,SetTotem=1,SetTracking=1,\n"
+        "SetTradePlayerItem=1,SetTradeTargetItem=1,SetUIPanel=1,SetUnit=1,SetUnitAura=1,\n"
+        "SetUnitBuff=1,SetUnitDebuff=1,SetUserPlaced=1,SetValue=1,SetValueStep=1,\n"
+        "SetVertexColor=1,SetVerticalScroll=1,SetWidth=1,SetZoom=1,Show=1,ShowUIPanel=1,\n"
+        "ShowUIPanelFailed=1,StartMovie=1,StartMoving=1,StartSizing=1,Stop=1,\n"
+        "StopMovie=1,StopMovingOrSizing=1,ToggleInputLanguage=1,TryOn=1,\n"
+        "UIParentManageFramePositions=1,UnlockHighlight=1,UnregisterAllEvents=1,\n"
+        "UnregisterAutoHide=1,UnregisterEvent=1,UpdateColorByID=1,\n"
+        "UpdateMouseOverTooltip=1,UpdateScrollChildRect=1,UpdateTooltip=1,\n"
+        "UpdateUIPanelPositions=1,\n"
+        "}\n"
+    );
+    bootstrap(
         "local mt = __WoweeFrameMT\n"
         "local methods = mt\n"
+        "local known = __WoweeWidgetMethods\n"
         "local noop = function() end\n"
+        "local seen = {}\n"
         "mt.__index = function(tbl, key)\n"
         "    local v = rawget(methods, key)\n"
         "    if v ~= nil then return v end\n"
-        "    if type(key) == 'string' and string.find(key, '^%u') then return noop end\n"
+        "    if type(key) ~= 'string' then return nil end\n"
+        "    if known[key] then return noop end\n"
+        // Recorded once so a method missing from the set is visible rather
+        // than silently answering nil, which is the failure this trades for.
+        // Not On*: those are script handler names, and reading one as a field
+        // is how FrameXML asks whether a handler is set. Nil is the right
+        // answer there, so recording it would be reporting correct behaviour
+        // as a gap.
+        "    if string.find(key, '^%u') and not string.find(key, '^On%u')\n"
+        "       and not seen[key] then\n"
+        "        seen[key] = true\n"
+        "        if __WoweeRecordMissingApi then __WoweeRecordMissingApi('widget:' .. key) end\n"
+        "    end\n"
         "    return nil\n"
         "end\n"
     );
 
+    // The fallback is installed at the very end of initialize(), not here.
+    // Everything below is still bootstrap Lua, and much of it opens with the
+    // "LibStub = LibStub or {}" idiom — which reads nil only while _G answers
+    // honestly. With the fallback already in place those never see nil, and
+    // hang their tables off the fallback object instead of a fresh one.
+
+    // Put the C bindings back over anything the Lua above defined with the same
+    // name. That block exists to give unimplemented methods a harmless no-op,
+    // and it runs later, so any name it shares with a real binding silently
+    // replaces it — a method that answers and does nothing, which is far harder
+    // to spot than one that errors. EnableMouse was lost this way and no frame
+    // took the mouse at all; SetBackdrop and its two colour setters were about
+    // to go the same way. Ordering the two makes the class of mistake
+    // impossible rather than something to keep noticing.
+    applyFrameMethods();
+
     // CreateFrame function
+    lua_pushcfunction(L_, lua_EditBox_SetText);
+    lua_setglobal(L_, "__WoweeEditSetText");
+    lua_pushcfunction(L_, lua_EditBox_GetText);
+    lua_setglobal(L_, "__WoweeEditGetText");
+
     lua_pushcfunction(L_, lua_CreateFrame);
     lua_setglobal(L_, "CreateFrame");
 
@@ -933,8 +1820,23 @@ void LuaEngine::registerCoreAPI() {
     lua_newtable(L_);
     lua_setglobal(L_, "__WoweeFramesByWid");
 
+    // Where XML templates land. A virtual frame compiles to a function that
+    // replays itself onto a real frame, and inherits= calls it; both halves are
+    // emitted by the FrameXML loader and meet here.
+    bootstrap(
+        "__WoweeTemplates = {}\n"
+        "local reported = {}\n"
+        "function __WoweeMissingTemplate(name)\n"
+        "  if reported[name] then return end\n"
+        "  reported[name] = true\n"
+        "  -- Said once per template. A frame inheriting one that never loaded\n"
+        "  -- still gets built, just without whatever the template gave it,\n"
+        "  -- which is a much better outcome than refusing the whole file.\n"
+        "  __WoweeLogWarning('missing XML template: ' .. tostring(name))\n"
+        "end\n");
+
     // C_Timer implementation via Lua (uses OnUpdate internally)
-    luaL_dostring(L_,
+    bootstrap(
         "C_Timer = {}\n"
         "local timers = {}\n"
         "local timerFrame = CreateFrame('Frame', '__WoweeTimerFrame')\n"
@@ -975,7 +1877,7 @@ void LuaEngine::registerCoreAPI() {
     );
 
     // DEFAULT_CHAT_FRAME with AddMessage method (used by many addons)
-    luaL_dostring(L_,
+    bootstrap(
         "DEFAULT_CHAT_FRAME = {}\n"
         "function DEFAULT_CHAT_FRAME:AddMessage(text, r, g, b)\n"
         "    if r and g and b then\n"
@@ -990,7 +1892,7 @@ void LuaEngine::registerCoreAPI() {
     );
 
     // hooksecurefunc — hook a function to run additional code after it
-    luaL_dostring(L_,
+    bootstrap(
         "function hooksecurefunc(tblOrName, nameOrFunc, funcOrNil)\n"
         "    local tbl, name, hook\n"
         "    if type(tblOrName) == 'table' then\n"
@@ -1010,8 +1912,13 @@ void LuaEngine::registerCoreAPI() {
 
     // LibStub — universal library version management used by Ace3 and virtually all addon libs.
     // This is the standard WoW LibStub implementation that addons embed/expect globally.
-    luaL_dostring(L_,
-        "local LibStub = LibStub or {}\n"
+    bootstrap(
+        // rawget, so the missing-API fallback cannot answer this. Read through
+        // the metatable, "LibStub or {}" is never nil — it is the fallback
+        // object — and the shim then hangs its tables off that instead of a
+        // fresh one, so every library registering against it dies indexing a
+        // field that was never really there.
+        "local LibStub = rawget(_G, 'LibStub') or {}\n"
         "LibStub.libs = LibStub.libs or {}\n"
         "LibStub.minors = LibStub.minors or {}\n"
         "function LibStub:NewLibrary(major, minor)\n"
@@ -1036,7 +1943,7 @@ void LuaEngine::registerCoreAPI() {
     );
 
     // CallbackHandler-1.0 — minimal implementation for Ace3-based addons
-    luaL_dostring(L_,
+    bootstrap(
         "if LibStub then\n"
         "  local CBH = LibStub:NewLibrary('CallbackHandler-1.0', 7)\n"
         "  if CBH then\n"
@@ -1069,14 +1976,25 @@ void LuaEngine::registerCoreAPI() {
     );
 
     // Noop stubs for commonly called functions that don't need implementation
-    luaL_dostring(L_,
+    bootstrap(
         "function SetDesaturation() end\n"
         "function SetPortraitTexture() end\n"
         "function StopSound() end\n"
         "function UIParent_OnEvent() end\n"
+        // Filling the screen, not sitting at a point on it. The widget tree's
+        // root is already the screen, and a frame created with no anchors falls
+        // to the centre-on-parent default with no size — so every frame
+        // FrameXML hangs off UIParent inherited a zero-size box in the middle,
+        // including its own UIParent, which fills this one. That is why the
+        // player frame's name was drawn in the centre of the world.
+        //
+        // SetAllPoints with no argument fills the parent, which for these is
+        // the root.
         "UIParent = CreateFrame('Frame', 'UIParent')\n"
+        "UIParent:SetAllPoints()\n"
         "UIPanelWindows = {}\n"
         "WorldFrame = CreateFrame('Frame', 'WorldFrame')\n"
+        "WorldFrame:SetAllPoints()\n"
         // GameTooltip: global tooltip frame used by virtually all addons
         "GameTooltip = CreateFrame('Frame', 'GameTooltip')\n"
         "GameTooltip.__lines = {}\n"
@@ -1339,7 +2257,22 @@ void LuaEngine::registerCoreAPI() {
         "function geterrorhandler() return _errorHandler end\n"
         "function seterrorhandler(fn) if type(fn)=='function' then _errorHandler=fn end end\n"
         "function debugstack(start, count1, count2) return '' end\n"
-        "function securecall(fn, ...) if type(fn)=='function' then return fn(...) end end\n"
+        // A name is as valid as a function here, and FrameXML mostly passes a
+        // name: UIDropDownMenu_Initialize does
+        // securecall("UIDropDownMenu_InitializeHelper", frame), and the helper
+        // is what sets UIDROPDOWNMENU_INIT_MENU and zeroes every list's
+        // numButtons. Accepting only a function meant that call did nothing at
+        // all, silently, and eight files died further on indexing what it
+        // should have set.
+        //
+        // rawget, so a name this client does not have stays nil rather than
+        // becoming the missing-API object, which is not callable as a function.
+        "function securecall(fn, ...)\n"
+        "    if type(fn) == 'string' then fn = rawget(_G, fn) end\n"
+        "    if type(fn) == 'function' then return fn(...) end\n"
+        "end\n"
+        // Iterating a table the secure way, which for our purposes is next.
+        "SecureNext = next\n"
         "function issecurevariable(...) return false end\n"
         "function issecure() return false end\n"
         // GetCVarBool wraps C-side GetCVar (registered in table) for boolean queries
@@ -1447,7 +2380,7 @@ void LuaEngine::registerCoreAPI() {
     );
 
     // UIDropDownMenu framework — minimal compat for addons using dropdown menus
-    luaL_dostring(L_,
+    bootstrap(
         "UIDROPDOWNMENU_MENU_LEVEL = 1\n"
         "UIDROPDOWNMENU_MENU_VALUE = nil\n"
         "UIDROPDOWNMENU_OPEN_MENU = nil\n"
@@ -1477,23 +2410,40 @@ void LuaEngine::registerCoreAPI() {
     );
 
     // UISpecialFrames: frames in this list close on Escape key
-    luaL_dostring(L_,
+    bootstrap(
         "UISpecialFrames = {}\n"
-        // Font object stubs — addons reference these for CreateFontString templates
-        "GameFontNormal = {}\n"
-        "GameFontNormalSmall = {}\n"
-        "GameFontNormalLarge = {}\n"
-        "GameFontHighlight = {}\n"
-        "GameFontHighlightSmall = {}\n"
-        "GameFontHighlightLarge = {}\n"
-        "GameFontDisable = {}\n"
-        "GameFontDisableSmall = {}\n"
-        "GameFontWhite = {}\n"
-        "GameFontRed = {}\n"
-        "GameFontGreen = {}\n"
-        "NumberFontNormal = {}\n"
-        "ChatFontNormal = {}\n"
-        "SystemFont = {}\n"
+        // Shared font objects, carrying the height and colour a FontString takes
+        // from them. They were empty tables, so inheriting one changed nothing
+        // and every label came out the same size in the same colour — and
+        // FrameXML inherits one more than three thousand times.
+        //
+        // The colours are Blizzard's: normal is the familiar gold, highlight is
+        // white, disabled grey, and the quest fonts near-black on parchment.
+        "local function font(h, r, g, b) return { height = h, r = r, g = g, b = b, a = 1 } end\n"
+        "GameFontNormal            = font(12, 1.00, 0.82, 0.00)\n"
+        "GameFontNormalSmall       = font(10, 1.00, 0.82, 0.00)\n"
+        "GameFontNormalLarge       = font(16, 1.00, 0.82, 0.00)\n"
+        "GameFontNormalHuge        = font(20, 1.00, 0.82, 0.00)\n"
+        "GameFontHighlight         = font(12, 1.00, 1.00, 1.00)\n"
+        "GameFontHighlightSmall    = font(10, 1.00, 1.00, 1.00)\n"
+        "GameFontHighlightLarge    = font(16, 1.00, 1.00, 1.00)\n"
+        "GameFontDisable           = font(12, 0.50, 0.50, 0.50)\n"
+        "GameFontDisableSmall      = font(10, 0.50, 0.50, 0.50)\n"
+        "GameFontDisableLarge      = font(16, 0.50, 0.50, 0.50)\n"
+        "GameFontWhite             = font(12, 1.00, 1.00, 1.00)\n"
+        "GameFontRed               = font(12, 1.00, 0.13, 0.13)\n"
+        "GameFontGreen             = font(12, 0.13, 1.00, 0.13)\n"
+        "NumberFontNormal          = font(12, 1.00, 1.00, 1.00)\n"
+        "NumberFontNormalSmall     = font(10, 1.00, 1.00, 1.00)\n"
+        "NumberFontNormalLarge     = font(16, 1.00, 1.00, 1.00)\n"
+        "ChatFontNormal            = font(12, 1.00, 1.00, 1.00)\n"
+        "SystemFont                = font(12, 1.00, 0.82, 0.00)\n"
+        "SystemFontSmall           = font(10, 1.00, 0.82, 0.00)\n"
+        "QuestFont                 = font(13, 0.18, 0.12, 0.06)\n"
+        "QuestFontNormalSmall      = font(11, 0.18, 0.12, 0.06)\n"
+        "QuestTitleFont            = font(15, 0.00, 0.00, 0.00)\n"
+        "Tooltip_Med               = font(12, 1.00, 1.00, 1.00)\n"
+        "Tooltip_Small             = font(10, 1.00, 1.00, 1.00)\n"
         // InterfaceOptionsFrame: addons register settings panels here
         "InterfaceOptionsFrame = CreateFrame('Frame', 'InterfaceOptionsFrame')\n"
         "InterfaceOptionsFramePanelContainer = CreateFrame('Frame', 'InterfaceOptionsFramePanelContainer')\n"
@@ -1515,7 +2465,7 @@ void LuaEngine::registerCoreAPI() {
     );
 
     // Action bar constants and functions used by action bar addons
-    luaL_dostring(L_,
+    bootstrap(
         "NUM_ACTIONBAR_BUTTONS = 12\n"
         "NUM_ACTIONBAR_PAGES = 6\n"
         "ACTION_BUTTON_SHOW_GRID_REASON_CVAR = 1\n"
@@ -1564,7 +2514,7 @@ void LuaEngine::registerCoreAPI() {
     );
 
     // WoW table/string utility functions used by many addons
-    luaL_dostring(L_,
+    bootstrap(
         // Table utilities
         "function tContains(tbl, item)\n"
         "    for _, v in pairs(tbl) do if v == item then return true end end\n"
@@ -1791,6 +2741,12 @@ void LuaEngine::fireEvent(const std::string& eventName,
     lua_pop(L_, 1); // pop __WoweeFrameEvents
 }
 
+namespace {
+/// Defined with the other pcall helpers further down; declared here because
+/// callFrameScript needs it and comes first.
+int luaTracebackHandler(lua_State* L);
+}  // namespace
+
 void LuaEngine::callFrameScript(uint32_t wid, const char* script,
                                 const char* arg) {
     if (!L_ || wid == 0) return;
@@ -1802,24 +2758,319 @@ void LuaEngine::callFrameScript(uint32_t wid, const char* script,
 
     lua_getfield(L_, -1, "__scripts");
     if (!lua_istable(L_, -1)) { lua_pop(L_, 3); return; }
-    lua_getfield(L_, -1, script);
-    if (!lua_isfunction(L_, -1)) { lua_pop(L_, 4); return; }
+    // The traceback handler has to sit below the function it is handling for,
+    // so it goes on before the script is fetched. A handler that fails now says
+    // where it was called from, the same as one that fails during the load.
+    lua_pushcfunction(L_, luaTracebackHandler);
+    const int handlerIdx = lua_gettop(L_);
+    lua_getfield(L_, handlerIdx - 1, script);
+    if (!lua_isfunction(L_, -1)) { lua_pop(L_, 5); return; }
 
-    lua_pushvalue(L_, -3);              // self
+    lua_pushvalue(L_, handlerIdx - 2);  // self
     int nargs = 1;
     if (arg) { lua_pushstring(L_, arg); ++nargs; }
-    if (lua_pcall(L_, nargs, 0, 0) != 0) {
+    if (lua_pcall(L_, nargs, 0, handlerIdx) != 0) {
         const char* err = lua_tostring(L_, -1);
         LOG_ERROR("LuaEngine: ", script, " error: ", err ? err : "?");
         if (luaErrorCallback_) luaErrorCallback_(err ? err : "script error");
         lua_pop(L_, 1);
     }
-    lua_pop(L_, 3);
+    // Four, not three: the traceback handler is still below.
+    lua_pop(L_, 4);
 }
 
-void LuaEngine::dispatchMouse(float x, float y, bool leftDown) {
+
+void LuaEngine::installMissingApiFallback() {
+    // Off unless asked for. With it on, every unknown global answers, so code
+    // that checks whether a function exists before using it — which addons do
+    // constantly — sees everything as present and takes branches meant for a
+    // newer client. That is the right trade for bringing FrameXML up, where the
+    // point is to get past a missing name and find out what actually matters,
+    // and the wrong one for everyday addon loading.
+    auto isSet = [](const char* name) {
+        const char* v = std::getenv(name);
+        return v && *v && std::string(v) != "0";
+    };
+    // Loading FrameXML implies it. FrameXML cannot get through its own load
+    // without the fallback, so two separate switches where one is useless
+    // without the other is only a way to be handed a wall of failures for
+    // setting the obvious one.
+    //
+    // Said explicitly, though, the setting wins either way. The fallback is not
+    // free — it makes every feature check read as present — and now that the
+    // real gaps are closing it is worth being able to ask what it is still
+    // buying, which needs a way to turn it off with FrameXML on.
+    const char* explicitSetting = std::getenv("WOWEE_LUA_API_FALLBACK");
+    const bool enabled = (explicitSetting && *explicitSetting)
+                             ? std::string(explicitSetting) != "0"
+                             : isSet("WOWEE_LOAD_FRAMEXML");
+    if (!enabled) return;
+
+    lua_pushcfunction(L_, lua_RecordMissingApi);
+    lua_setglobal(L_, "__WoweeRecordMissingApi");
+
+    // A name in SCREAMING_SNAKE_CASE is a constant, and handing back a function
+    // where a number or a string was wanted turns a missing value into a
+    // confusing type error further away. Those stay nil. UpperCamelCase is a
+    // function, and gets one that does nothing.
+    bootstrap(
+        // Callable, and every field of it is a method answering nil.
+        //
+        // A bare function was not enough. FrameXML looks frames up by name as
+        // often as it calls functions — local t = _G[name.."PrefixText"] — and
+        // it guards them properly, with if (t) then t:GetText(). A function
+        // passes that guard and then dies on the indexing, so the correct check
+        // was worse than no check at all: eleven files went down on that one
+        // line. Answering nil from every method lets the guarded branch run and
+        // come to nothing, which is what a missing frame should look like.
+        // Methods answer; data fields do not.
+        //
+        // Answering everything made feature checks on a missing frame's own
+        // state read as present: FCFMin_UpdateColors tests
+        // minFrame.selectedColorTable and takes the branch that dereferences
+        // it. The same convention the fallback already uses for names —
+        // PascalCase is a method, anything else is data — applies inside the
+        // object too, so a field is nil and the guard around it works.
+        "local missing = setmetatable({}, {\n"
+        "  __call = function() end,\n"
+        "  __index = function(_, k)\n"
+        "    if type(k) == 'string' and string.find(k, '^%u') then\n"
+        "      return function() return nil end\n"
+        "    end\n"
+        "    return nil\n"
+        "  end,\n"
+        "})\n"
+        "local seen = {}\n"
+        "setmetatable(_G, { __index = function(_, k)\n"
+        "  if type(k) ~= 'string' then return nil end\n"
+        "  if not string.find(k, '^%u') then return nil end\n"
+        "  if string.find(k, '^[A-Z][A-Z0-9_]*$') then return nil end\n"
+        // A digit in the name means an instance, not an API function, and an
+        // instance that does not exist must read as absent. FrameXML looks
+        // frames up by building the name — _G["ChatFrame"..id.."Minimized"] —
+        // and then guards the result properly with if (frame). Answering makes
+        // that guard pass and the branch behind it runs against nothing.
+        //
+        // Measured rather than assumed: of the 4,100 distinct names FrameXML
+        // calls as functions, four contain a digit, and three of those it
+        // defines itself. Being wrong here costs a no-op for one API name,
+        // which is where this started.
+        "  if string.find(k, '%d') then return nil end\n"
+        "  if not seen[k] then seen[k] = true; __WoweeRecordMissingApi(k) end\n"
+        "  return missing\n"
+        "end })\n");
+
+    LOG_WARNING("LuaEngine: missing-API fallback is ON — unknown globals answer "
+                "with a no-op, so feature detection will read as present");
+}
+
+void LuaEngine::reportMissingApi() const {
+    const auto& names = missingApiNames();
+    if (names.empty()) return;
+    // At warning level, because release builds drop INFO and this is the whole
+    // point of recording them: the list is the measured gap, once per session,
+    // and it was being written where nobody could read it.
+    LOG_WARNING("LuaEngine: ", names.size(), " distinct API names were called "
+                "and not found this session");
+    std::string line;
+    for (const auto& n : names) {
+        line += n;
+        line += ' ';
+        if (line.size() > 900) { LOG_WARNING("  missing: ", line); line.clear(); }
+    }
+    if (!line.empty()) LOG_WARNING("  missing: ", line);
+}
+
+/// Whether a frame asked for this button's clicks.
+///
+/// WoW gives a button LeftButtonUp and nothing else unless it says otherwise,
+/// and FrameXML says otherwise exactly where a context menu is wanted. Without
+/// the check every frame would answer a right-click, which is a menu opening
+/// under a cursor that never asked for one.
+bool LuaEngine::frameAcceptsClick(uint32_t wid, const char* button) {
+    lua_getglobal(L_, "__WoweeFramesByWid");
+    if (!lua_istable(L_, -1)) { lua_pop(L_, 1); return false; }
+    lua_pushinteger(L_, static_cast<lua_Integer>(wid));
+    lua_rawget(L_, -2);
+    if (!lua_istable(L_, -1)) { lua_pop(L_, 2); return false; }
+
+    lua_getfield(L_, -1, "__clicks");
+    bool accepts;
+    if (lua_istable(L_, -1)) {
+        // Registered explicitly: either edge counts, since this only models
+        // the release.
+        const std::string up = std::string(button) + "Up";
+        const std::string down = std::string(button) + "Down";
+        lua_getfield(L_, -1, up.c_str());
+        accepts = lua_toboolean(L_, -1) != 0;
+        lua_pop(L_, 1);
+        if (!accepts) {
+            lua_getfield(L_, -1, down.c_str());
+            accepts = lua_toboolean(L_, -1) != 0;
+            lua_pop(L_, 1);
+        }
+    } else {
+        accepts = (std::strcmp(button, "LeftButton") == 0);
+    }
+    lua_pop(L_, 3);
+    return accepts;
+}
+
+namespace {
+LuaEngine* engineFrom(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "wowee_lua_engine");
+    auto* e = static_cast<LuaEngine*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    return e;
+}
+}  // namespace
+
+int lua_EditBox_SetFocus(lua_State* L) {
+    if (auto* e = engineFrom(L)) e->setEditFocus(widgetIdOf(L, 1));
+    return 0;
+}
+int lua_EditBox_ClearFocus(lua_State* L) {
+    if (auto* e = engineFrom(L)) e->setEditFocus(0);
+    return 0;
+}
+int lua_EditBox_HasFocus(lua_State* L) {
+    const auto* w = widgetOf(L, 1);
+    lua_pushboolean(L, w && w->editFocused ? 1 : 0);
+    return 1;
+}
+
+void LuaEngine::setEditFocus(uint32_t wid) {
+    if (focusedWid_ == wid) return;
+    if (focusedWid_ != 0) {
+        if (auto* old = widgets_.get(focusedWid_)) old->editFocused = false;
+        callFrameScript(focusedWid_, "OnEditFocusLost");
+    }
+    focusedWid_ = wid;
+    if (focusedWid_ != 0) {
+        if (auto* w = widgets_.get(focusedWid_)) w->editFocused = true;
+        callFrameScript(focusedWid_, "OnEditFocusGained");
+    }
+}
+
+void LuaEngine::dispatchText(const char* utf8) {
+    if (!L_ || focusedWid_ == 0 || !utf8) return;
+    auto* w = widgets_.get(focusedWid_);
+    if (!w || !w->isEditBox) return;
+
+    std::string add(utf8);
+    if (add.empty()) return;
+    // A numeric box takes digits and nothing else, which is what stops a
+    // quantity field filling with letters.
+    if (w->editNumeric) {
+        add.erase(std::remove_if(add.begin(), add.end(),
+                                 [](unsigned char c) { return std::isdigit(c) == 0; }),
+                  add.end());
+        if (add.empty()) return;
+    }
+    if (w->editMaxLetters > 0 &&
+        static_cast<int>(w->editText.size() + add.size()) > w->editMaxLetters) {
+        const int room = w->editMaxLetters - static_cast<int>(w->editText.size());
+        if (room <= 0) return;
+        add.resize(static_cast<size_t>(room));
+    }
+
+    const size_t at = std::min(w->cursorPos, w->editText.size());
+    w->editText.insert(at, add);
+    w->cursorPos = at + add.size();
+    // The handler that tells a search field to filter, and a chat box to look
+    // for a channel prefix.
+    callFrameScript(focusedWid_, "OnTextChanged");
+}
+
+void LuaEngine::dispatchKey(int sdlKeycode, bool ctrlHeld) {
+    if (!L_ || focusedWid_ == 0) return;
+    auto* w = widgets_.get(focusedWid_);
+    if (!w || !w->isEditBox) return;
+    (void)ctrlHeld;
+
+    // Keycodes are SDL's, which is what the window reports; the caller does not
+    // translate them so this stays the only place that knows.
+    constexpr int kBackspace = '\b';
+    constexpr int kReturn    = '\r';
+    constexpr int kEscape    = 27;
+    constexpr int kDelete    = 0x4000004C;  // SDLK_DELETE
+    constexpr int kLeft      = 0x40000050;
+    constexpr int kRight     = 0x4000004F;
+    constexpr int kHome      = 0x4000004A;
+    constexpr int kEnd       = 0x4000004D;
+
+    const size_t len = w->editText.size();
+    switch (sdlKeycode) {
+        case kBackspace:
+            if (w->cursorPos > 0 && len > 0) {
+                w->editText.erase(w->cursorPos - 1, 1);
+                --w->cursorPos;
+                callFrameScript(focusedWid_, "OnTextChanged");
+            }
+            break;
+        case kDelete:
+            if (w->cursorPos < len) {
+                w->editText.erase(w->cursorPos, 1);
+                callFrameScript(focusedWid_, "OnTextChanged");
+            }
+            break;
+        case kLeft:  if (w->cursorPos > 0) --w->cursorPos; break;
+        case kRight: if (w->cursorPos < len) ++w->cursorPos; break;
+        case kHome:  w->cursorPos = 0; break;
+        case kEnd:   w->cursorPos = len; break;
+        case kReturn:
+            // The handler decides what to do with it, including whether to let
+            // go of focus — a chat box does, a search field does not.
+            callFrameScript(focusedWid_, "OnEnterPressed");
+            break;
+        case kEscape:
+            callFrameScript(focusedWid_, "OnEscapePressed");
+            setEditFocus(0);
+            break;
+        default: break;
+    }
+}
+
+void LuaEngine::dispatchMouse(float x, float y, MouseButtons buttons) {
     if (!L_) return;
+    // The cursor arrives in pixels and the tree is in interface units, so this
+    // is where the two meet. Hit testing against unconverted pixels would miss
+    // every frame by the scale factor.
+    const float s = widgets_.uiScale();
+    if (s > 0.0f) { x /= s; y /= s; }
     const uint32_t hit = widgets_.hitTest(x, y);
+
+    // Throttled, and only while there is something to hit. Whether the mouse
+    // reaches the widget tree at all is otherwise invisible: a frame that never
+    // lights up looks the same whether the dispatch is not running, the
+    // coordinates are wrong, or the frame is not taking the mouse.
+    static double lastReport = 0.0;
+    const double now = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count()) / 1000.0;
+    if (now - lastReport >= 1.0) {
+        size_t mouseFrames = 0;
+        for (uint32_t id = 1; id < widgets_.size(); ++id) {
+            const auto* w = widgets_.get(id);
+            if (w && w->mouseEnabled && w->visible) ++mouseFrames;
+        }
+        // Reported whenever anything is on screen at all, not only when
+        // something is mouse-enabled. Gating on that hid the one case that was
+        // actually happening: no frame took the mouse, so the count was zero,
+        // so nothing was logged, so the silence looked like the dispatch never
+        // running. A diagnostic must not go quiet in the state it exists to
+        // report.
+        size_t visibleFrames = 0;
+        for (uint32_t id = 1; id < widgets_.size(); ++id) {
+            const auto* w = widgets_.get(id);
+            if (w && w->visible) ++visibleFrames;
+        }
+        if (visibleFrames > 0) {
+            lastReport = now;
+            LOG_INFO("WidgetInput: mouse=(", x, ",", y, ") hit=", hit,
+                     " hover=", hoverWid_, " mouseEnabled=", mouseFrames,
+                     " visible=", visibleFrames);
+        }
+    }
 
     // Hover first, so a frame that appears under a stationary cursor still gets
     // its OnEnter rather than waiting for the mouse to move.
@@ -1829,19 +3080,72 @@ void LuaEngine::dispatchMouse(float x, float y, bool leftDown) {
         if (hoverWid_ != 0) callFrameScript(hoverWid_, "OnEnter");
     }
 
-    if (leftDown && !leftDown_) {
-        leftDown_ = true;
-        pressedWid_ = hit;
-        if (pressedWid_ != 0) callFrameScript(pressedWid_, "OnMouseDown", "LeftButton");
-    } else if (!leftDown && leftDown_) {
-        leftDown_ = false;
-        if (pressedWid_ != 0) {
-            callFrameScript(pressedWid_, "OnMouseUp", "LeftButton");
-            // A click is press and release on the same frame, which is what lets
-            // a player slide off a button to change their mind.
-            if (pressedWid_ == hit) callFrameScript(pressedWid_, "OnClick", "LeftButton");
+    // A slider follows the cursor for as long as it is held, which is the only
+    // widget where what happens between press and release is the point. The
+    // frame keeps the grab even when the cursor leaves it, because letting go
+    // of a scroll bar by sliding sideways is not what anyone means.
+    if (buttonDown_[0] && pressedWid_[0] != 0) {
+        if (auto* w = widgets_.get(pressedWid_[0]); w && w->isSlider) {
+            const float span = w->barMax - w->barMin;
+            if (span > 0.0f) {
+                // Vertical sliders run top to bottom, and the tree's y grows
+                // upward, so the fraction is measured from the far edge.
+                const float extent = w->barVertical ? w->rectH : w->rectW;
+                float f = 0.0f;
+                if (extent > 0.0f) {
+                    f = w->barVertical ? (w->bottom + w->rectH - y) / extent
+                                       : (x - w->left) / extent;
+                }
+                f = std::clamp(f, 0.0f, 1.0f);
+                float value = w->barMin + f * span;
+                if (w->sliderStep > 0.0f) {
+                    value = w->barMin +
+                            std::round((value - w->barMin) / w->sliderStep) * w->sliderStep;
+                    value = std::clamp(value, w->barMin, w->barMax);
+                }
+                if (value != w->barValue) {
+                    w->barValue = value;
+                    // OnValueChanged is what a scroll frame listens to; without
+                    // it the thumb would move and nothing would scroll.
+                    callFrameScript(pressedWid_[0], "OnValueChanged");
+                }
+            }
         }
-        pressedWid_ = 0;
+    }
+
+    // The names WoW uses, in the order the state arrays are indexed.
+    struct Button { const char* name; bool down; };
+    const Button pressed[kMouseButtons] = {
+        {"LeftButton",   buttons.left},
+        {"RightButton",  buttons.right},
+        {"MiddleButton", buttons.middle},
+    };
+
+    for (int i = 0; i < kMouseButtons; ++i) {
+        const Button& b = pressed[i];
+        if (b.down && !buttonDown_[i]) {
+            buttonDown_[i] = true;
+            pressedWid_[i] = hit;
+            // Clicking into an edit box takes focus; clicking anywhere else
+            // gives it up, which is what makes a chat box stop eating keys.
+            if (i == 0) {
+                const auto* hw = hit ? widgets_.get(hit) : nullptr;
+                setEditFocus(hw && hw->isEditBox ? hit : 0);
+            }
+            if (pressedWid_[i] != 0)
+                callFrameScript(pressedWid_[i], "OnMouseDown", b.name);
+        } else if (!b.down && buttonDown_[i]) {
+            buttonDown_[i] = false;
+            if (pressedWid_[i] != 0) {
+                callFrameScript(pressedWid_[i], "OnMouseUp", b.name);
+                // A click is press and release on the same frame, which is what
+                // lets a player slide off a button to change their mind.
+                if (pressedWid_[i] == hit &&
+                    frameAcceptsClick(pressedWid_[i], b.name))
+                    callFrameScript(pressedWid_[i], "OnClick", b.name);
+            }
+            pressedWid_[i] = 0;
+        }
     }
 }
 
@@ -1865,20 +3169,59 @@ void LuaEngine::dispatchOnUpdate(float elapsed) {
         // Get OnUpdate script
         lua_getfield(L_, -1, "__scripts");
         if (lua_istable(L_, -1)) {
-            lua_getfield(L_, -1, "OnUpdate");
+            // Below the function, so a handler that fails every frame says
+            // where it was reached from rather than only which line broke.
+            lua_pushcfunction(L_, luaTracebackHandler);
+            const int hIdx = lua_gettop(L_);
+            lua_getfield(L_, hIdx - 1, "OnUpdate");
             if (lua_isfunction(L_, -1)) {
-                lua_pushvalue(L_, -3);  // self (frame)
+                lua_pushvalue(L_, hIdx - 2);  // self (frame)
                 lua_pushnumber(L_, static_cast<double>(elapsed));
-                if (lua_pcall(L_, 2, 0, 0) != 0) {
+                if (lua_pcall(L_, 2, 0, hIdx) != 0) {
                     const char* uerr = lua_tostring(L_, -1);
                     std::string uerrStr = uerr ? uerr : "(unknown)";
-                    LOG_ERROR("LuaEngine: OnUpdate error: ", uerrStr);
-                    if (luaErrorCallback_) luaErrorCallback_(uerrStr);
                     lua_pop(L_, 1);
+
+                    // A handler that fails once will fail every frame, and this
+                    // runs every frame: five broken OnUpdates produced five and
+                    // a half thousand identical errors in one session, which
+                    // costs time and buries everything else in the log.
+                    //
+                    // After a few tries the handler is unhooked and said so
+                    // once. The frame keeps working — it simply stops being
+                    // asked to do the thing it cannot do.
+                    // Indexed from the handler rather than the top: hIdx - 1
+                    // is __scripts, and the traceback handler now sits above
+                    // it, so the old relative offsets pointed at the wrong
+                    // table.
+                    constexpr int kMaxConsecutiveFailures = 5;
+                    const int scriptsIdx = hIdx - 1;
+                    lua_getfield(L_, scriptsIdx, "__onUpdateFailures");
+                    const int failures = static_cast<int>(lua_tointeger(L_, -1)) + 1;
+                    lua_pop(L_, 1);
+                    lua_pushinteger(L_, failures);
+                    lua_setfield(L_, scriptsIdx, "__onUpdateFailures");
+
+                    if (failures >= kMaxConsecutiveFailures) {
+                        lua_pushnil(L_);
+                        lua_setfield(L_, scriptsIdx, "OnUpdate");
+                        LOG_ERROR("LuaEngine: OnUpdate disabled after ", failures,
+                                  " failures: ", uerrStr);
+                        if (luaErrorCallback_) luaErrorCallback_(uerrStr);
+                    } else if (failures == 1) {
+                        LOG_ERROR("LuaEngine: OnUpdate error: ", uerrStr);
+                        if (luaErrorCallback_) luaErrorCallback_(uerrStr);
+                    }
+                } else {
+                    // Consecutive, so a handler that recovers is not punished
+                    // for an early stumble.
+                    lua_pushinteger(L_, 0);
+                    lua_setfield(L_, hIdx - 1, "__onUpdateFailures");
                 }
             } else {
-                lua_pop(L_, 1);
+                lua_pop(L_, 1);   // the OnUpdate field, which was not a function
             }
+            lua_pop(L_, 1);       // the traceback handler
         }
         lua_pop(L_, 2); // pop __scripts + frame
     }
@@ -2072,13 +3415,140 @@ bool LuaEngine::saveSavedVariables(const std::string& path, const std::vector<st
     return true;
 }
 
+namespace {
+
+/// Appends the Lua call stack to an error message.
+///
+/// An error says where it happened; the interesting part is nearly always how
+/// it got there. "dropdownMenu is nil at unitpopup.lua:484" cost several rounds
+/// of reading to trace back to the OnLoad that started it, and the stack was
+/// there the whole time — it just was not being asked for. Installed as the
+/// message handler so it runs before the stack unwinds.
+///
+/// Written by hand rather than through debug.traceback because the debug
+/// library is deliberately not opened.
+int luaTracebackHandler(lua_State* L) {
+    const char* msg = lua_tostring(L, 1);
+    std::string out = msg ? msg : "(error)";
+    for (int level = 1; level < 12; ++level) {
+        lua_Debug ar;
+        if (!lua_getstack(L, level, &ar)) break;
+        if (!lua_getinfo(L, "Sln", &ar)) break;
+        out += "\n      at ";
+        out += (ar.short_src[0] ? ar.short_src : "?");
+        out += ":" + std::to_string(ar.currentline);
+        if (ar.name) { out += " in "; out += ar.name; }
+    }
+    lua_pushstring(L, out.c_str());
+    return 1;
+}
+
+/// Loads and runs a chunk with the traceback handler in place. Returns the
+/// same non-zero-on-error convention as luaL_dostring.
+int runChunk(lua_State* L, const char* chunk, size_t len, const char* name) {
+    const int base = lua_gettop(L);
+    lua_pushcfunction(L, luaTracebackHandler);
+    if (luaL_loadbuffer(L, chunk, len, name) != 0) {
+        // A syntax error has no stack to walk; leave the message where the
+        // caller expects it and drop the handler underneath it.
+        lua_remove(L, base + 1);
+        return 1;
+    }
+    const int rc = lua_pcall(L, 0, 0, base + 1);
+    lua_remove(L, base + 1);
+    return rc;
+}
+
+/// When the running chunk must give up. Wall clock rather than a count of VM
+/// instructions: the runaway this was written for spends nearly all its time
+/// inside one C binding — a table rehash that grows with every call — so it
+/// executes very few Lua instructions per second and a generous instruction
+/// budget never came due while the client sat frozen.
+std::chrono::steady_clock::time_point gChunkDeadline{};
+
+/// Reports where the VM actually is — the Lua source and line — which a C++
+/// backtrace cannot tell you: that only names the binding being called, not
+/// the loop calling it.
+void runawayHook(lua_State* L, lua_Debug*) {
+    if (std::chrono::steady_clock::now() < gChunkDeadline) return;
+
+    std::string where = "unknown";
+    lua_Debug info;
+    if (lua_getstack(L, 0, &info) && lua_getinfo(L, "Sl", &info)) {
+        where = std::string(info.short_src[0] ? info.short_src : "?") + ":" +
+                std::to_string(info.currentline);
+    }
+    // Several levels of it, because the innermost line is often a helper and
+    // the loop that will not end is the caller.
+    for (int level = 1; level < 6; ++level) {
+        lua_Debug up;
+        if (!lua_getstack(L, level, &up) || !lua_getinfo(L, "Sln", &up)) break;
+        LOG_ERROR("LuaEngine:   called from ",
+                  up.short_src[0] ? up.short_src : "?", ":", up.currentline,
+                  up.name ? " in " : "", up.name ? up.name : "");
+    }
+    // Off before unwinding, or it fires again inside the error path.
+    lua_sethook(L, nullptr, 0, 0);
+    LOG_ERROR("LuaEngine: runaway script aborted at ", where);
+    luaL_error(L, "runaway script aborted at %s", where.c_str());
+}
+
+/// Installs the deadline for one chunk and takes it off again however that
+/// chunk leaves — including by error, which is the case that matters.
+struct BudgetGuard {
+    lua_State* L;
+    explicit BudgetGuard(lua_State* state, unsigned long long ms) : L(state) {
+        if (L && ms > 0) {
+            gChunkDeadline = std::chrono::steady_clock::now() +
+                             std::chrono::milliseconds(ms);
+            // Every few hundred instructions. A deadline is only as sharp as
+            // how often it is looked at, and a loop whose every iteration sits
+            // in a slow C call executes very few per second: at 10,000
+            // this overran 5s by 43s and then by 99s before the check came
+            // round. The check is a clock read, which costs nothing beside the
+            // work it is bounding.
+            lua_sethook(L, runawayHook, LUA_MASKCOUNT, 500);
+        }
+    }
+    ~BudgetGuard() { if (L) lua_sethook(L, nullptr, 0, 0); }
+};
+
+} // namespace
+
+void LuaEngine::bootstrap(const char* code) {
+    if (luaL_dostring(L_, code) == 0) return;
+    const char* e = lua_tostring(L_, -1);
+    const std::string head(code, std::min<size_t>(70, std::strlen(code)));
+    LOG_ERROR("LuaEngine: bootstrap chunk failed: ", e ? e : "?",
+              "  [chunk began: ", head, "]");
+    lua_pop(L_, 1);
+}
+
 bool LuaEngine::executeFile(const std::string& path) {
     if (!L_) return false;
 
-    int err = luaL_dofile(L_, path.c_str());
+    BudgetGuard guard(L_, chunkTimeoutMs_);
+    // Read and run rather than luaL_dofile, so the traceback handler is in
+    // place: a file that fails deep inside a handler otherwise reports only
+    // the line that broke, never the OnLoad that reached it.
+    std::string source;
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) {
+            lastError_ = "cannot open " + path;
+            LOG_ERROR("LuaEngine: cannot open '", path, "'");
+            return false;
+        }
+        std::stringstream ss;
+        ss << in.rdbuf();
+        source = ss.str();
+    }
+    const std::string chunkName = "@" + path;
+    int err = runChunk(L_, source.c_str(), source.size(), chunkName.c_str());
     if (err != 0) {
         const char* errMsg = lua_tostring(L_, -1);
         std::string msg = errMsg ? errMsg : "(unknown error)";
+        lastError_ = msg;
         LOG_ERROR("LuaEngine: error loading '", path, "': ", msg);
         if (luaErrorCallback_) luaErrorCallback_(msg);
         if (gameHandler_) {
@@ -2097,10 +3567,12 @@ bool LuaEngine::executeFile(const std::string& path) {
 bool LuaEngine::executeString(const std::string& code) {
     if (!L_) return false;
 
-    int err = luaL_dostring(L_, code.c_str());
+    BudgetGuard guard(L_, chunkTimeoutMs_);
+    int err = runChunk(L_, code.c_str(), code.size(), code.c_str());
     if (err != 0) {
         const char* errMsg = lua_tostring(L_, -1);
         std::string msg = errMsg ? errMsg : "(unknown error)";
+        lastError_ = msg;
         LOG_ERROR("LuaEngine: script error: ", msg);
         if (luaErrorCallback_) luaErrorCallback_(msg);
         if (gameHandler_) {

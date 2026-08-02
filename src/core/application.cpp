@@ -289,6 +289,12 @@ bool Application::initialize() {
         }
     }
 
+    // Now the data root is settled and before any frame is drawn, which is the
+    // only moment the glyph atlas can take another face without being rebuilt.
+    // The base Data path, not the expansion overlay: overlays carry DBCs and
+    // art, not fonts.
+    if (uiManager) uiManager->loadInterfaceFont(dataPath);
+
     LOG_INFO("Attempting to load WoW assets from: ", assetPath);
     if (assetManager->initialize(assetPath)) {
         LOG_INFO("Asset manager initialized successfully");
@@ -354,6 +360,7 @@ bool Application::initialize() {
                                    window ? window->getVkContext() : nullptr);
         if (addonManager_->initialize(gameHandler.get(), luaSvc)) {
             std::string addonsDir = assetPath + "/interface/AddOns";
+            addonManager_->setFrameXmlDir(assetPath + "/interface/FrameXML");
             addonManager_->scanAddons(addonsDir);
             // Wire Lua errors to UI error display
             addonManager_->getLuaEngine()->setLuaErrorCallback([gh = gameHandler.get()](const std::string& err) {
@@ -880,8 +887,29 @@ void Application::run() {
                             addonManager_->fireEvent("DISPLAY_SIZE_CHANGED");
                     }
                 }
+                // Typed text, when an addon's edit box is listening for it.
+                else if (event.type == SDL_TEXTINPUT) {
+                    if (addonManager_ && addonsLoaded_) {
+                        if (auto* engine = addonManager_->getLuaEngine();
+                            engine && engine->editBoxHasFocus()) {
+                            engine->dispatchText(event.text.text);
+                        }
+                    }
+                }
                 // Debug controls
                 else if (event.type == SDL_KEYDOWN) {
+                    // An addon's edit box takes the keystroke before anything
+                    // else looks at it. Otherwise typing into one would also
+                    // walk the character, and backspace would trip a keybind.
+                    if (addonManager_ && addonsLoaded_) {
+                        if (auto* engine = addonManager_->getLuaEngine();
+                            engine && engine->editBoxHasFocus()) {
+                            const bool ctrl =
+                                (event.key.keysym.mod & KMOD_CTRL) != 0;
+                            engine->dispatchKey(event.key.keysym.sym, ctrl);
+                            continue;
+                        }
+                    }
                     // Skip non-function-key input when UI (chat) has keyboard focus
                     bool uiHasKeyboard = ImGui::GetIO().WantCaptureKeyboard;
                     auto sc = event.key.keysym.scancode;
@@ -2830,14 +2858,24 @@ void Application::render() {
             // it used to be.
             widgetRenderer_.render(engine->widgets(), io.DisplaySize.x, io.DisplaySize.y);
 
-            // The client's own interface has first claim on the mouse. Only when
-            // ImGui does not want it does a click belong to an addon frame,
-            // which keeps addon frames from swallowing clicks meant for a window
-            // sitting over them.
-            if (!io.WantCaptureMouse) {
+            // The client's own interface has first claim, but only over the
+            // point the cursor is actually on.
+            //
+            // WantCaptureMouse is the wrong test: it is also true whenever any
+            // ImGui item is active anywhere, and this client keeps a chat input
+            // on screen. A focused input would hold it true for as long as it
+            // held focus, and no addon frame would ever see the mouse no matter
+            // where the cursor was. Asking whether a window is under the cursor
+            // is the question that was meant.
+            const bool overClientUi = ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow);
+            if (!overClientUi) {
+                addons::LuaEngine::MouseButtons buttons;
+                buttons.left   = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+                buttons.right  = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+                buttons.middle = ImGui::IsMouseDown(ImGuiMouseButton_Middle);
                 engine->dispatchMouse(io.MousePos.x,
                                       io.DisplaySize.y - io.MousePos.y,
-                                      ImGui::IsMouseDown(ImGuiMouseButton_Left));
+                                      buttons);
             }
         });
     }

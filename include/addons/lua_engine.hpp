@@ -28,6 +28,11 @@ public:
     bool executeFile(const std::string& path);
     bool executeString(const std::string& code);
 
+    /// Error from the last executeFile/executeString that returned false.
+    /// Lets a caller loading many files report them together rather than
+    /// leaving the reasons scattered through the log.
+    const std::string& lastError() const { return lastError_; }
+
     void setGameHandler(game::GameHandler* handler);
     void setLuaServices(const LuaServices& services);
 
@@ -44,7 +49,26 @@ public:
     /// Feed the mouse to the widget tree: hover changes fire OnEnter/OnLeave,
     /// and a press and release on the same frame is a click. Coordinates are
     /// WoW's, origin bottom-left.
-    void dispatchMouse(float x, float y, bool leftDown);
+    /// Feeds the widget tree the cursor and which buttons are held.
+    ///
+    /// Right-click is not a nicety here: it is how WoW opens nearly every
+    /// context menu, so a tree that only sees the left button can be looked at
+    /// but not used.
+    struct MouseButtons {
+        bool left = false;
+        bool right = false;
+        bool middle = false;
+    };
+    void dispatchMouse(float x, float y, MouseButtons buttons);
+
+    /// Typed text, one UTF-8 chunk as the platform reports it.
+    void dispatchText(const char* utf8);
+    /// A key that is not text: backspace, the arrows, enter, escape.
+    void dispatchKey(int sdlKeycode, bool ctrlHeld);
+    /// Whether an edit box currently has focus, so the client knows not to
+    /// treat the same keystrokes as movement.
+    bool editBoxHasFocus() const { return focusedWid_ != 0; }
+    void setEditFocus(uint32_t wid);
 
     // SavedVariables: load globals from file, save globals to file
     bool loadSavedVariables(const std::string& path);
@@ -60,6 +84,15 @@ public:
     lua_State* getState() { return L_; }
     bool isInitialized() const { return L_ != nullptr; }
 
+    /// Abort a chunk that runs longer than this many milliseconds, naming the
+    /// Lua source and line it was on. Zero disables it.
+    ///
+    /// A runaway script otherwise freezes the client outright — the load runs
+    /// on the main thread, so the window stops responding and the server drops
+    /// the connection for want of a heartbeat. A C++ backtrace only says which
+    /// binding it was inside; this says which line of Lua kept calling it.
+    void setChunkTimeoutMs(unsigned long long ms) { chunkTimeoutMs_ = ms; }
+
     // Optional callback for Lua errors (displayed as UI errors to the player)
     using LuaErrorCallback = std::function<void(const std::string&)>;
     void setLuaErrorCallback(LuaErrorCallback cb) { luaErrorCallback_ = std::move(cb); }
@@ -70,12 +103,36 @@ private:
     game::GameHandler* gameHandler_ = nullptr;
     LuaServices luaServices_;
     LuaErrorCallback luaErrorCallback_;
+    std::string lastError_;
+    unsigned long long chunkTimeoutMs_ = 0;
+
+    /// Runs a bootstrap Lua chunk and says so when it fails.
+    ///
+    /// Seventeen of these ran with their result thrown away, so a syntax error
+    /// in any one silently removed every method that chunk defined — and the
+    /// only symptom was a method quietly answering as though unimplemented.
+    void bootstrap(const char* code);
 
     void callFrameScript(uint32_t wid, const char* script, const char* arg = nullptr);
+    bool frameAcceptsClick(uint32_t wid, const char* button);
 
     uint32_t hoverWid_ = 0;
-    uint32_t pressedWid_ = 0;
-    bool leftDown_ = false;
+    /// The edit box taking keystrokes, or zero. One at a time, which is
+    /// what focus means.
+    uint32_t focusedWid_ = 0;
+    /// Per button, because a press and its release belong together: sliding off
+    /// a button between them is how a player changes their mind, and holding
+    /// one button while clicking another must not confuse the first.
+    static constexpr int kMouseButtons = 3;
+    uint32_t pressedWid_[kMouseButtons] = {0, 0, 0};
+    bool buttonDown_[kMouseButtons] = {false, false, false};
+
+    /// Make unknown globals answer with a no-op instead of erroring, so a large
+    /// body of Lua can be brought up and the names it actually needs collected
+    /// from a run. Opt-in through WOWEE_LUA_API_FALLBACK.
+    void installMissingApiFallback();
+    /// Log the names collected, once, at shutdown.
+    void reportMissingApi() const;
 
     void registerCoreAPI();
     void registerEventAPI();

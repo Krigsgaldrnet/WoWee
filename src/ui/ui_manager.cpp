@@ -1,4 +1,8 @@
 #include "ui/ui_manager.hpp"
+#include "ui/interface_fonts.hpp"
+
+#include <algorithm>
+#include <filesystem>
 #include <chrono>
 #include "core/window.hpp"
 #include "core/application.hpp"
@@ -96,6 +100,60 @@ bool UIManager::initialize(core::Window* win) {
 
     LOG_INFO("UI manager initialized successfully (Vulkan)");
     return true;
+}
+
+void UIManager::loadInterfaceFont(const std::string& dataRoot) {
+    if (!imguiInitialized || dataRoot.empty()) return;
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // Extracted data does not agree with itself about case, and this path is
+    // reached directly rather than through the asset manager's manifest.
+    const char* dirs[] = { "misc/fonts", "Misc/Fonts", "fonts", "Fonts" };
+    fs::path fontDir;
+    for (const char* rel : dirs) {
+        const fs::path p = fs::path(dataRoot) / rel;
+        if (fs::is_directory(p, ec)) { fontDir = p; break; }
+    }
+    if (fontDir.empty()) {
+        LOG_INFO("No interface fonts under ", dataRoot, "; keeping the built-in");
+        return;
+    }
+
+    // Built at a size above what the interface mostly asks for. A font string
+    // carries its own height and is drawn scaled from its face, and scaling
+    // down from a larger atlas reads better than up from a smaller.
+    constexpr float kAtlasSize = 18.0f;
+    ImGuiIO& io = ImGui::GetIO();
+
+    // FRIZQT first, because the first face added is the one anything without an
+    // opinion gets. The rest are the faces FrameXML's font objects name:
+    // headings in MORPHEUS, damage in SKURRI, condensed numbers in ARIALN.
+    const char* faces[] = {
+        "frizqt__.ttf", "morpheus.ttf", "skurri.ttf", "arialn.ttf", "friends.ttf"
+    };
+    int loaded = 0;
+    for (const char* name : faces) {
+        fs::path file = fontDir / name;
+        if (!fs::exists(file, ec)) {
+            // The directory may be cased the other way even where its name was
+            // not; look for the file rather than assuming.
+            for (const auto& entry : fs::directory_iterator(fontDir, ec)) {
+                std::string have = entry.path().filename().string();
+                std::string want = name;
+                std::transform(have.begin(), have.end(), have.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (have == want) { file = entry.path(); break; }
+            }
+        }
+        if (!fs::exists(file, ec)) continue;
+        if (ImFont* f = io.Fonts->AddFontFromFileTTF(file.string().c_str(), kAtlasSize)) {
+            registerInterfaceFace(name, f);
+            ++loaded;
+        }
+    }
+    LOG_INFO("Interface fonts loaded: ", loaded, " from ", fontDir.string());
 }
 
 void UIManager::shutdown() {
