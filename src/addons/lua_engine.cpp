@@ -1457,7 +1457,12 @@ void LuaEngine::registerCoreAPI() {
         {"SetCooldown",           lua_Cooldown_SetCooldown},
         {"GetNumber",             lua_EditBox_GetNumber},
         {"Insert",                lua_EditBox_Insert},
-        {"SetMaxLetters",         lua_EditBox_SetMaxLetters},
+        {"SetMaxLetters",         lua_EditBox_SetMaxLetters},        // The limit here is applied against the text's size in bytes, which is
+        // what SetMaxBytes asks for; SetMaxLetters is the same field because
+        // this counts the same way for both. Reporting it back matters more
+        // than the distinction: an edit box that answers nothing for its limit
+        // is one FrameXML will not stop typing into.
+        {"SetMaxBytes",          lua_EditBox_SetMaxLetters},
         {"SetNumeric",            lua_EditBox_SetNumeric},
         {"SetMultiLine",          lua_EditBox_SetMultiLine},
         {"SetCursorPosition",     lua_EditBox_SetCursorPosition},
@@ -2674,6 +2679,26 @@ void LuaEngine::registerEventAPI() {
 void LuaEngine::fireEvent(const std::string& eventName,
                            const std::vector<std::string>& args) {
     if (!L_) return;
+
+    // An event handler may cause another event, which is ordinary and has to
+    // keep working — but a cycle between two of them recurses through both this
+    // stack and Lua's, inside one frame, until the process dies. Reporting a
+    // script error used to be such a cycle: the report fired an event, the
+    // handler for it errored, and the error was reported the same way.
+    //
+    // Deep enough that no legitimate chain reaches it, and it says which event
+    // it stopped, because the name is the only clue to which cycle it was.
+    constexpr int kMaxEventDepth = 8;
+    struct DepthGuard {
+        int& d;
+        explicit DepthGuard(int& v) : d(v) { ++d; }
+        ~DepthGuard() { --d; }
+    } depthGuard{eventDepth_};
+    if (eventDepth_ > kMaxEventDepth) {
+        LOG_WARNING("Event '", eventName, "' is ", eventDepth_,
+                    " deep and was dropped — handlers are triggering each other");
+        return;
+    }
 
     lua_getglobal(L_, "__WoweeEvents");
     if (lua_isnil(L_, -1)) { lua_pop(L_, 1); return; }

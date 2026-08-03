@@ -1,4 +1,7 @@
 #define VMA_IMPLEMENTATION
+#include <set>
+#include <thread>
+#include <mutex>
 #include "rendering/vk_context.hpp"
 #include "core/logger.hpp"
 #include <VkBootstrap.h>
@@ -824,6 +827,11 @@ bool VkContext::createSyncObjects() {
             LOG_ERROR("Failed to create sync objects for frame ", i);
             return false;
         }
+        // The handle, because validation reports a fence by handle and there is
+        // no way to tell a frame fence from the upload fence in that message.
+        // Two rounds of this went on a fence nobody could identify.
+        LOG_WARNING("frame fence ", i, " = 0x", std::hex,
+                    reinterpret_cast<uint64_t>(frames[i].inFlightFence), std::dec);
     }
 
     // Per-swapchain-image semaphores: avoids reuse while the presentation engine
@@ -849,7 +857,14 @@ bool VkContext::createSyncObjects() {
     // Immediate submit fence (not signaled initially)
     VkFenceCreateInfo immFenceInfo{};
     immFenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    if (vkCreateFence(device, &immFenceInfo, nullptr, &immFence) != VK_SUCCESS) {
+    // Logged for the same reason as the frame fences: validation reports a
+    // fence by handle, and immFence is shared by endSingleTimeCommands and the
+    // upload batches — which submit on different queues.
+    if (vkCreateFence(device, &immFenceInfo, nullptr, &immFence) == VK_SUCCESS) {
+        LOG_WARNING("immediate fence = 0x", std::hex,
+                    reinterpret_cast<uint64_t>(immFence), std::dec);
+    }
+    if (immFence == VK_NULL_HANDLE) {
         LOG_ERROR("Failed to create immediate submit fence");
         return false;
     }
@@ -1519,6 +1534,18 @@ void VkContext::destroyImGuiResources() {
     uiTextures_.clear();
     uiTextureSampler_ = VK_NULL_HANDLE; // Owned by sampler cache
 
+    // This context's own UI texture pool, which the sets above were allocated
+    // from. Freed with them rather than with ImGui's, which is the whole point
+    // of it existing.
+    if (uiTexturePool_) {
+        vkDestroyDescriptorPool(device, uiTexturePool_, nullptr);
+        uiTexturePool_ = VK_NULL_HANDLE;
+    }
+    if (uiTextureLayout_) {
+        vkDestroyDescriptorSetLayout(device, uiTextureLayout_, nullptr);
+        uiTextureLayout_ = VK_NULL_HANDLE;
+    }
+
     if (imguiDescriptorPool) {
         vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
         imguiDescriptorPool = VK_NULL_HANDLE;
@@ -1543,6 +1570,44 @@ static uint32_t findMemType(VkPhysicalDevice physDev, uint32_t typeFilter, VkMem
     }
     LOG_ERROR("VkContext: no suitable memory type found");
     return UINT32_MAX;
+}
+
+bool VkContext::ensureUiTextureDescriptorPool() {
+    if (uiTexturePool_ != VK_NULL_HANDLE) return true;
+
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &binding;
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
+                                    &uiTextureLayout_) != VK_SUCCESS) {
+        LOG_ERROR("Could not create the UI texture descriptor layout");
+        return false;
+    }
+
+    // Sized for the interface with FrameXML loaded, which asks for several
+    // hundred distinct files; the old path shared ImGui's pool and inherited
+    // whatever that was sized for.
+    VkDescriptorPoolSize size{};
+    size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    size.descriptorCount = 4096;
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 4096;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &size;
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &uiTexturePool_) != VK_SUCCESS) {
+        LOG_ERROR("Could not create the UI texture descriptor pool");
+        vkDestroyDescriptorSetLayout(device, uiTextureLayout_, nullptr);
+        uiTextureLayout_ = VK_NULL_HANDLE;
+        return false;
+    }
+    return true;
 }
 
 VkDescriptorSet VkContext::uploadImGuiTexture(const uint8_t* rgba, int width, int height) {
@@ -1694,12 +1759,36 @@ VkDescriptorSet VkContext::uploadImGuiTexture(const uint8_t* rgba, int width, in
         }
     }
 
-    // Register with ImGui (allocates from imguiDescriptorPool)
-    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(uiTextureSampler_, imageView,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    // From this context's own pool rather than ImGui's, so the set survives a
+    // backend restart. ImGui only ever binds what ImTextureID points at, and a
+    // set built to the same layout binds identically.
+    VkDescriptorSet ds = VK_NULL_HANDLE;
+    if (ensureUiTextureDescriptorPool()) {
+        VkDescriptorSetAllocateInfo alloc{};
+        alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        alloc.descriptorPool = uiTexturePool_;
+        alloc.descriptorSetCount = 1;
+        alloc.pSetLayouts = &uiTextureLayout_;
+        if (vkAllocateDescriptorSets(device, &alloc, &ds) != VK_SUCCESS) {
+            ds = VK_NULL_HANDLE;
+        } else {
+            VkDescriptorImageInfo info{};
+            info.sampler = uiTextureSampler_;
+            info.imageView = imageView;
+            info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = ds;
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &info;
+            vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        }
+    }
 
     if (!ds) {
-        LOG_ERROR("ImGui descriptor pool exhausted — cannot upload UI texture");
+        LOG_ERROR("UI descriptor pool exhausted — cannot upload UI texture");
         vkDestroyImageView(device, imageView, nullptr);
         vkDestroyImage(device, image, nullptr);
         vkFreeMemory(device, imageMemory, nullptr);
@@ -2047,6 +2136,42 @@ bool VkContext::recreateSwapchain(int width, int height) {
     return true;
 }
 
+void VkContext::resetFrameSyncState() {
+    if (device == VK_NULL_HANDLE) return;
+    // How many asynchronous upload batches are still outstanding when a
+    // rebuild happens. These are submitted without being waited on, one fence
+    // each, and FrameXML makes hundreds where this client alone makes almost
+    // none — which is the one difference that scales the way the fault does.
+    if (!inFlightBatches_.empty()) {
+        LOG_WARNING("rebuild with ", inFlightBatches_.size(),
+                    " upload batches still in flight (", batchesSubmitted_,
+                    " submitted, ", batchesRetired_, " retired)");
+    }
+    vkDeviceWaitIdle(device);
+
+    // Recreated rather than reset: a fence has to end up signalled, and
+    // vkResetFences only ever unsignals. Destroying and remaking with
+    // VK_FENCE_CREATE_SIGNALED_BIT is the state the first frame expects.
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        if (frames[i].inFlightFence) {
+            vkDestroyFence(device, frames[i].inFlightFence, nullptr);
+            frames[i].inFlightFence = VK_NULL_HANDLE;
+        }
+        if (vkCreateFence(device, &fenceInfo, nullptr, &frames[i].inFlightFence) != VK_SUCCESS) {
+            LOG_ERROR("Could not remake frame fence ", i, " after a rebuild");
+        }
+        if (frames[i].commandBuffer) {
+            vkResetCommandBuffer(frames[i].commandBuffer, 0);
+        }
+    }
+    currentFrame = 0;
+    LOG_WARNING("Frame synchronisation reset after a rebuild: fences signalled, "
+                "command buffers reset, back to slot 0");
+}
+
 VkCommandBuffer VkContext::beginFrame(uint32_t& imageIndex) {
     if (deviceLost_) return VK_NULL_HANDLE;
     if (swapchain == VK_NULL_HANDLE) return VK_NULL_HANDLE;  // Swapchain lost; recreate pending
@@ -2197,6 +2322,19 @@ VkCommandBuffer VkContext::beginSingleTimeCommands() {
     return immCmdBuf_;
 }
 
+void VkContext::noteImmediateSubmitThread(const char* who) {
+    static std::mutex seenMutex;
+    static std::set<std::thread::id> seen;
+    const std::thread::id self = std::this_thread::get_id();
+    std::lock_guard<std::mutex> lock(seenMutex);
+    if (seen.insert(self).second && seen.size() > 1) {
+        LOG_WARNING("immFence is now being used from ", seen.size(),
+                    " threads (latest via ", who, ") — it is shared and "
+                    "unguarded, so two of them can reset a fence the other "
+                    "is waiting on");
+    }
+}
+
 void VkContext::endSingleTimeCommands(VkCommandBuffer cmd) {
     vkEndCommandBuffer(cmd);
 
@@ -2204,6 +2342,13 @@ void VkContext::endSingleTimeCommands(VkCommandBuffer cmd) {
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
+
+    // immFence and the immediate command pool are shared and unguarded. If two
+    // threads reach here at once, one resets a fence the other is waiting on —
+    // which is what validation reports as VUID-vkResetFences-pFences-01123,
+    // and the driver answers by losing the device. Said once per thread so a
+    // log shows whether that is happening.
+    noteImmediateSubmitThread("endSingleTimeCommands");
 
     vkQueueSubmit(graphicsQueue, 1, &submitInfo, immFence);
     vkWaitForFences(device, 1, &immFence, VK_TRUE, UINT64_MAX);
@@ -2281,6 +2426,17 @@ void VkContext::endUploadBatch() {
     VkQueue targetQueue = hasDedicatedTransfer_ ? transferQueue_ : graphicsQueue;
     vkQueueSubmit(targetQueue, 1, &submitInfo, fence);
 
+    // Said once, with the handle, because these are the only fences created
+    // after startup — so a validation message naming a high handle is one of
+    // these rather than a frame fence or the immediate one. FrameXML makes
+    // hundreds of them; without it there are almost none, which is the shape
+    // of the difference between the two branches.
+    if (batchesSubmitted_ == 0) {
+        LOG_WARNING("first async upload batch fence = 0x", std::hex,
+                    reinterpret_cast<uint64_t>(fence), std::dec);
+    }
+    ++batchesSubmitted_;
+
     // Stash everything for later cleanup when fence signals
     InFlightBatch batch;
     batch.fence = fence;
@@ -2320,9 +2476,32 @@ void VkContext::endUploadBatchSync() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &batchCmd_;
 
-    vkQueueSubmit(targetQueue, 1, &submitInfo, immFence);
-    vkWaitForFences(device, 1, &immFence, VK_TRUE, UINT64_MAX);
-    vkResetFences(device, 1, &immFence);
+    // Its own fence, not the shared immediate one.
+    //
+    // immFence is also used by endSingleTimeCommands, which submits on the
+    // graphics queue while this submits on the transfer queue when there is
+    // one. Validation reports that fence — 0x170000000017, named at creation
+    // — being reset while still in use, repeatedly, just before the device is
+    // lost. Two queues signalling one fence is the fragility whatever the
+    // exact interleaving; a fence per submit has no such question about it.
+    //
+    // FrameXML is what makes this reachable: it uploads hundreds of textures
+    // through here, where this client alone uploads a handful.
+    VkFenceCreateInfo batchFenceInfo{};
+    batchFenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    VkFence batchFence = VK_NULL_HANDLE;
+    if (vkCreateFence(device, &batchFenceInfo, nullptr, &batchFence) != VK_SUCCESS) {
+        LOG_ERROR("Could not create an upload fence; falling back to the shared one");
+        batchFence = immFence;
+    }
+
+    vkQueueSubmit(targetQueue, 1, &submitInfo, batchFence);
+    vkWaitForFences(device, 1, &batchFence, VK_TRUE, UINT64_MAX);
+    if (batchFence != immFence) {
+        vkDestroyFence(device, batchFence, nullptr);
+    } else {
+        vkResetFences(device, 1, &immFence);
+    }
 
     vkFreeCommandBuffers(device, pool, 1, &batchCmd_);
     batchCmd_ = VK_NULL_HANDLE;
@@ -2354,6 +2533,7 @@ void VkContext::pollUploadBatches() {
             vkFreeCommandBuffers(device, pool, 1, &it->cmd);
             vkDestroyFence(device, it->fence, nullptr);
             it = inFlightBatches_.erase(it);
+            ++batchesRetired_;
         } else {
             ++it;
         }

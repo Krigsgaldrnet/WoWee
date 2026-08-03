@@ -869,28 +869,23 @@ void Renderer::applyMsaaChange() {
     if (overlaySystem_) overlaySystem_->recreatePipelines();
     if (postProcessPipeline_) postProcessPipeline_->destroyAllResources(); // Will be lazily recreated in beginFrame()
 
-    // Reinitialize ImGui Vulkan backend with new MSAA sample count
-    ImGui_ImplVulkan_Shutdown();
-    ImGui_ImplVulkan_InitInfo initInfo{};
-    initInfo.ApiVersion = VK_API_VERSION_1_1;
-    initInfo.Instance = vkCtx->getInstance();
-    initInfo.PhysicalDevice = vkCtx->getPhysicalDevice();
-    initInfo.Device = vkCtx->getDevice();
-    initInfo.QueueFamily = vkCtx->getGraphicsQueueFamily();
-    initInfo.Queue = vkCtx->getGraphicsQueue();
-    initInfo.DescriptorPool = vkCtx->getImGuiDescriptorPool();
-    initInfo.MinImageCount = 2;
-    initInfo.ImageCount = vkCtx->getSwapchainImageCount();
-    // The UI renders in the overlay pass, which is single-sampled on purpose:
-    // ImGui draws axis-aligned rects and pre-antialiased glyphs, so MSAA buys
-    // almost nothing there and costs fill rate at the sample count the scene uses.
-    initInfo.PipelineInfoMain.RenderPass = vkCtx->getOverlayRenderPass();
-    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    initInfo.CheckVkResultFn = [](VkResult err) {
-        if (err != VK_SUCCESS)
-            LOG_ERROR("ImGui Vulkan error: ", static_cast<int>(err));
-    };
-    ImGui_ImplVulkan_Init(&initInfo);
+    // ImGui is deliberately not restarted here.
+    //
+    // It always initialises at one sample into the overlay pass, which is
+    // itself always single-sampled and depends only on the swapchain format —
+    // so a change of scene anti-aliasing does not change anything ImGui built.
+    // Recreating the swapchain produces a new overlay pass handle, but a
+    // structurally identical one, and Vulkan requires a pipeline's render pass
+    // to be compatible rather than the same object.
+    //
+    // Tearing the backend down destroyed its descriptor pool, and every UI
+    // texture in the client — item and spell icons, raid icons, the talent
+    // background, the world map layers, the widget renderer — holds a
+    // descriptor set allocated from it. Nothing was told, so the next frame
+    // drew with freed descriptors and the GPU was reset: the log shows the
+    // swapchain and pipelines rebuilt, then the fence wait failing with
+    // VK_ERROR_DEVICE_LOST a fraction of a second later. Applying a saved
+    // anti-aliasing setting at startup made that look like a crash on launch.
 
 }
 
@@ -902,7 +897,23 @@ void Renderer::beginFrame() {
     // Apply deferred MSAA change between frames (before any rendering state is used)
     if (msaaChangePending_) {
         applyMsaaChange();
+        // The rebuild destroys and remakes the swapchain, every render pass and
+        // every pipeline. The frame slots are left mid-cycle by it, and the
+        // next frame would reset a fence and re-record a command buffer the
+        // GPU has not finished with — which is what validation reports and the
+        // driver answers by losing the device.
+        if (vkCtx) vkCtx->resetFrameSyncState();
     }
+
+    // Retire finished upload batches every frame.
+    //
+    // This was polled only from the terrain manager, so batches submitted by
+    // anything else retired only while terrain happened to be streaming. A
+    // rebuild reported 1423 submitted against 1241 retired — 182 outstanding,
+    // each holding a fence, a command buffer and its staging buffers. With
+    // FrameXML uploading hundreds of textures the backlog is much larger than
+    // it was, and nothing bounded it.
+    if (vkCtx) vkCtx->pollUploadBatches();
 
     // Post-process resource management (§4.3 — delegates to PostProcessPipeline)
     if (postProcessPipeline_) postProcessPipeline_->manageResources();
