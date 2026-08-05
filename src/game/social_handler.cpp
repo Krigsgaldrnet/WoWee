@@ -1958,7 +1958,14 @@ void SocialHandler::handleGuildRoster(network::Packet& packet) {
     if (!owner_.getPacketParsers()->parseGuildRoster(packet, data)) return;
     guildRoster_ = std::move(data);
     hasGuildRoster_ = true;
-    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GUILD_ROSTER_UPDATE", {});
+    // No argument, which reaches Lua as nil. GUILD_ROSTER_UPDATE's first
+    // argument means "you may request a roster", and an addon answers it with
+    // `if arg1 then GuildRoster() end` — that is what Blizzard's own guild,
+    // guild bank and calendar panels do with it. The roster in hand is the
+    // fresh one, so the answer here is no; sending yes would have each reader
+    // request a roster whose reply fires this again, forever.
+    if (owner_.addonEventCallbackRef())
+        owner_.addonEventCallbackRef()("GUILD_ROSTER_UPDATE", {});
 }
 
 void SocialHandler::handleGuildQueryResponse(network::Packet& packet) {
@@ -2065,6 +2072,21 @@ void SocialHandler::handleGuildEvent(network::Packet& packet) {
         owner_.addLocalChatMessage(chatMsg);
     }
 
+    // Whether this client is about to ask for a fresh roster itself, which is
+    // the switch at the end of this function. The event's argument is the
+    // negation: "nobody has asked, so you may". Working it out once and using
+    // it in both places is the point — a reader that requests when the client
+    // already has costs a second roster for a large guild, and a reader that
+    // does not when the client has not leaves every guild panel drawing from a
+    // copy that no longer says who is online.
+    const bool clientWillRequest = hasGuildRoster_ && (
+        data.eventType == GuildEvent::PROMOTION ||
+        data.eventType == GuildEvent::DEMOTION ||
+        data.eventType == GuildEvent::JOINED ||
+        data.eventType == GuildEvent::LEFT ||
+        data.eventType == GuildEvent::REMOVED ||
+        data.eventType == GuildEvent::LEADER_CHANGED);
+
     if (owner_.addonEventCallbackRef()) {
         switch (data.eventType) {
             case GuildEvent::MOTD:
@@ -2075,20 +2097,23 @@ void SocialHandler::handleGuildEvent(network::Packet& packet) {
             case GuildEvent::JOINED: case GuildEvent::LEFT:
             case GuildEvent::REMOVED: case GuildEvent::LEADER_CHANGED:
             case GuildEvent::DISBANDED:
-                owner_.addonEventCallbackRef()("GUILD_ROSTER_UPDATE", {});
+                // Somebody joined, left, was promoted or signed on, and the
+                // roster this client holds no longer says so. The server sends
+                // the event and not a new roster, so the request has to come
+                // from somewhere. Signing on and off is the case nothing
+                // covered: the switch below does not request for those, so a
+                // member who had just come online stayed grey until something
+                // else asked.
+                if (clientWillRequest)
+                    owner_.addonEventCallbackRef()("GUILD_ROSTER_UPDATE", {});
+                else
+                    owner_.addonEventCallbackRef()("GUILD_ROSTER_UPDATE", {"1"});
                 break;
             default: break;
         }
     }
 
-    switch (data.eventType) {
-        case GuildEvent::PROMOTION: case GuildEvent::DEMOTION:
-        case GuildEvent::JOINED: case GuildEvent::LEFT:
-        case GuildEvent::REMOVED: case GuildEvent::LEADER_CHANGED:
-            if (hasGuildRoster_) requestGuildRoster();
-            break;
-        default: break;
-    }
+    if (clientWillRequest) requestGuildRoster();
 }
 
 void SocialHandler::handleGuildInvite(network::Packet& packet) {
@@ -2956,6 +2981,13 @@ void SocialHandler::handleArenaError(network::Packet& packet) {
 void SocialHandler::handlePvpLogData(network::Packet& packet) {
     auto remaining = [&]() { return packet.getRemainingSize(); };
     if (remaining() < 1) return;
+    // The layout is settled and the dump that asked about it is gone.
+    //
+    // The question it existed to answer — whether there is a team byte after
+    // the guid — is answered by the source rather than by a byte count, and the
+    // answer is "in an arena, yes; in a battleground, no". They are two
+    // different rows written by two different overrides, and the type byte at
+    // the top of this packet says which one follows.
     bgScoreboard_ = BgScoreboardData{};
     bgScoreboard_.isArena = (packet.readUInt8() != 0);
     if (bgScoreboard_.isArena) {
@@ -2967,31 +2999,73 @@ void SocialHandler::handlePvpLogData(network::Packet& packet) {
             bgScoreboard_.arenaTeams[t].teamName = remaining() > 0 ? packet.readString() : "";
         }
     }
+    // Ended, and the winner, BEFORE the player count. This was read after the
+    // players, where there is nothing left to read it from.
+    if (remaining() < 1) return;
+    bgScoreboard_.hasWinner = (packet.readUInt8() != 0);
+    if (bgScoreboard_.hasWinner) {
+        if (remaining() < 1) return;
+        bgScoreboard_.winner = packet.readUInt8();
+    }
+
     if (remaining() < 4) return;
     uint32_t playerCount = packet.readUInt32();
     bgScoreboard_.players.reserve(playerCount);
-    for (uint32_t i = 0; i < playerCount && remaining() >= 13; ++i) {
+    for (uint32_t i = 0; i < playerCount && remaining() >= 12; ++i) {
         BgPlayerScore ps;
-        ps.guid = packet.readUInt64(); ps.team = packet.readUInt8();
-        ps.killingBlows = packet.readUInt32(); ps.honorableKills = packet.readUInt32();
-        ps.deaths = packet.readUInt32(); ps.bonusHonor = packet.readUInt32();
+        ps.guid = packet.readUInt64();
+        // Two different rows, and the type byte at the top says which.
+        //
+        // BattlegroundScore::AppendToPacket — killing blows, honourable kills,
+        // deaths, bonus honour, damage, healing. No team.
+        // ArenaScore::AppendToPacket — killing blows, a team BYTE, damage,
+        // healing. No honourable kills, deaths or honour at all.
+        //
+        // This read one row that was neither: a team byte from the arena
+        // shape followed by the battleground's four counters, then a stat block
+        // with null-terminated names that no core writes. Everything after the
+        // guid was off by a byte, and damage and healing were skipped entirely
+        // — which is why GetBattlefieldScore answered zero for both.
+        ps.killingBlows = packet.readUInt32();
+        if (bgScoreboard_.isArena) {
+            if (remaining() < 1) { bgScoreboard_.players.push_back(std::move(ps)); break; }
+            ps.team = packet.readUInt8();
+            ps.hasTeam = true;
+        } else {
+            if (remaining() < 12) { bgScoreboard_.players.push_back(std::move(ps)); break; }
+            ps.honorableKills = packet.readUInt32();
+            ps.deaths         = packet.readUInt32();
+            ps.bonusHonor     = packet.readUInt32();
+            // No team on the wire for a battleground. The byte that used to
+            // fill this was the low byte of the killing blows, so the faction
+            // tabs were already filtering on nothing; leaving it unset is the
+            // same amount of information, honestly labelled.
+        }
+        if (remaining() < 8) { bgScoreboard_.players.push_back(std::move(ps)); break; }
+        ps.damageDone  = packet.readUInt32();
+        ps.healingDone = packet.readUInt32();
+
         { auto ent = owner_.getEntityManager().getEntity(ps.guid);
           if (ent && (ent->getType() == game::ObjectType::PLAYER || ent->getType() == game::ObjectType::UNIT))
               { auto u = std::static_pointer_cast<game::Unit>(ent); if (!u->getName().empty()) ps.name = u->getName(); } }
-        if (remaining() < 4) { bgScoreboard_.players.push_back(std::move(ps)); break; }
-        uint32_t statCount = packet.readUInt32();
-        for (uint32_t s = 0; s < statCount && remaining() >= 5; ++s) {
-            std::string fieldName;
-            while (remaining() > 0) { char c = static_cast<char>(packet.readUInt8()); if (c == '\0') break; fieldName += c; }
-            uint32_t val = (remaining() >= 4) ? packet.readUInt32() : 0;
-            ps.bgStats.emplace_back(std::move(fieldName), val);
+
+        // BuildObjectivesBlock: a count and that many bare values. The names
+        // this used to read are not on the wire — BattlegroundWS writes
+        // uint32(2) and two numbers — so every value past the first came from
+        // the wrong offset.
+        if (remaining() >= 4) {
+            uint32_t statCount = packet.readUInt32();
+            for (uint32_t st = 0; st < statCount && remaining() >= 4; ++st) {
+                ps.bgStats.emplace_back(std::string(), packet.readUInt32());
+            }
         }
         bgScoreboard_.players.push_back(std::move(ps));
     }
-    if (remaining() >= 1) {
-        bgScoreboard_.hasWinner = (packet.readUInt8() != 0);
-        if (bgScoreboard_.hasWinner && remaining() >= 1) bgScoreboard_.winner = packet.readUInt8();
-    }
+    // The scoreboard is drawn from this and asked for it by name —
+    // RequestBattlefieldScoreData sends the query, UPDATE_BATTLEFIELD_SCORE is
+    // the answer arriving. Every row, every column and the winner were parsed
+    // and stored, and the frame that displays them was never told.
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("UPDATE_BATTLEFIELD_SCORE", {});
 }
 
 void SocialHandler::updateLogoutCountdown(float deltaTime) {
@@ -3188,22 +3262,34 @@ void SocialHandler::handleSummonRequest(network::Packet& packet) {
     owner_.fireAddonEvent("CONFIRM_SUMMON", {});
 }
 
-void SocialHandler::acceptSummon() {
-    if (!owner_.pendingSummonRequestRef() || !owner_.getSocket()) return;
+/// Both answers to a summon: who summoned, then yes or no.
+///
+/// HandleSummonResponseOpcode reads `ObjectGuid summoner_guid` and then a bool,
+/// nine bytes. Both answers were a single byte, so the server had one byte
+/// where it wanted eight, ran off the end of the buffer and dropped the packet
+/// — accepting a summon has never once reached it, and neither has declining
+/// one. The same mistake as the battlefield answers below, made next door.
+///
+/// The guid is the one SMSG_SUMMON_REQUEST arrived with, which is already kept
+/// so the message can name whoever cast it.
+void SocialHandler::sendSummonResponse(bool accept) {
+    if (!owner_.getSocket()) return;
     owner_.pendingSummonRequestRef() = false;
     network::Packet pkt(wireOpcode(Opcode::CMSG_SUMMON_RESPONSE));
-    pkt.writeUInt8(1);  // 1 = accept
+    pkt.writeUInt64(owner_.summonerGuidRef());
+    pkt.writeUInt8(accept ? 1 : 0);
     owner_.getSocket()->send(pkt);
+}
+
+void SocialHandler::acceptSummon() {
+    if (!owner_.pendingSummonRequestRef()) return;
+    sendSummonResponse(true);
     owner_.addSystemChatMessage("Accepting summon...");
     LOG_INFO("Accepted summon from ", owner_.summonerNameRef());
 }
 
 void SocialHandler::declineSummon() {
-    if (!owner_.getSocket()) return;
-    owner_.pendingSummonRequestRef() = false;
-    network::Packet pkt(wireOpcode(Opcode::CMSG_SUMMON_RESPONSE));
-    pkt.writeUInt8(0);  // 0 = decline
-    owner_.getSocket()->send(pkt);
+    sendSummonResponse(false);
     owner_.addSystemChatMessage("Summon declined.");
 }
 

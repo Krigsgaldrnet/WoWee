@@ -168,6 +168,33 @@ target_include_directories(test_chat_types SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_
 target_link_libraries(test_chat_types PRIVATE catch2_main)
 add_test(NAME chat_types COMMAND test_chat_types)
 register_test_target(test_chat_types)
+# ── test_equipment_set_packets ───────────────────────────────
+# Every guid in the equipment-set family is packed and all twenty were read and
+# written as fixed eight-byte values — plus an ignore mask that the server does
+# not send at all. Saving a set could never have worked.
+add_executable(test_equipment_set_packets
+    test_equipment_set_packets.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/packet.cpp
+)
+target_include_directories(test_equipment_set_packets PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_equipment_set_packets SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_equipment_set_packets PRIVATE catch2_main)
+add_test(NAME equipment_set_packets COMMAND test_equipment_set_packets)
+register_test_target(test_equipment_set_packets)
+
+# ── test_achievement_criteria ────────────────────────────────
+# The criteria progress record. Its counter is a packed guid and was read as a
+# fixed uint64, which put every field behind it out of place — and in the login
+# message, where records repeat until a sentinel, took the whole list with it.
+add_executable(test_achievement_criteria
+    test_achievement_criteria.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/packet.cpp
+)
+target_include_directories(test_achievement_criteria PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_achievement_criteria SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_achievement_criteria PRIVATE catch2_main)
+add_test(NAME achievement_criteria COMMAND test_achievement_criteria)
+register_test_target(test_achievement_criteria)
 
 # ── test_taxi_packets ────────────────────────────────────────
 # The multi-hop flight request. A field the server does not read was being

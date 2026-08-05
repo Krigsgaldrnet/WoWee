@@ -668,18 +668,25 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
     table[Opcode::SMSG_AUCTION_COMMAND_RESULT] = [this](network::Packet& packet) { handleAuctionCommandResult(packet); };
 
     table[Opcode::SMSG_AUCTION_OWNER_NOTIFICATION] = [this](network::Packet& packet) {
-        // WotLK format: auctionId(4) + bid(4) + unk(4) + unk2(4) + unk3(4) +
-        // item_template(4) + item_count(4) = 28 bytes. This packet is only sent when
-        // an owned auction SELLS — expiry and outbids arrive via their own opcodes
-        // (SMSG_AUCTION_REMOVED_NOTIFICATION / SMSG_AUCTION_BIDDER_NOTIFICATION).
-        // The item entry lives at offset 20, not 12; reading field 3 (a zero unk)
-        // made every "sold" line say "Item #0".
+        // SendAuctionOwnerNotification writes:
+        //   auctionId(4) bid(4) unk(4) unkGuid(8) item_template(4) unk(4)
+        //   unkTime(float 4) = 32 bytes.
+        // Sent only when an owned auction SELLS — expiry and outbids arrive on
+        // their own opcodes (SMSG_AUCTION_REMOVED_NOTIFICATION /
+        // SMSG_AUCTION_BIDDER_NOTIFICATION).
+        //
+        // The item entry is at offset 20 and reading field 3 made every "sold"
+        // line say "Item #0". That was fixed by counting six uint32s to reach
+        // twenty, which lands in the right place and describes the packet
+        // wrongly: the twelve bytes in the middle are one eight-byte guid and
+        // one word, not three words. Written out properly here so the next
+        // person to add a field does not count from a layout that is not the
+        // one on the wire.
         if (packet.hasRemaining(24)) {
             /*uint32_t auctionId =*/ packet.readUInt32();
             /*uint32_t bid       =*/ packet.readUInt32();
             /*uint32_t unk       =*/ packet.readUInt32();
-            /*uint32_t unk2      =*/ packet.readUInt32();
-            /*uint32_t unk3      =*/ packet.readUInt32();
+            /*uint64_t unkGuid   =*/ packet.readUInt64();
             uint32_t itemEntry = packet.readUInt32();
             owner_.ensureItemInfo(itemEntry);
             auto* info = owner_.getItemInfo(itemEntry);
@@ -2835,7 +2842,12 @@ void InventoryHandler::saveEquipmentSet(const std::string& name, const std::stri
         }
     }
     network::Packet pkt(wire);
-    pkt.writeUInt64(existingGuid);
+    // Packed, like everything guid-shaped in this family.
+    // HandleEquipmentSetSave opens with readPackGUID, so a fixed eight bytes
+    // here left seven behind: the server read the index out of the padding,
+    // the name out of what was left of it, and the nineteen item guids from
+    // wherever it had got to. Saving a set has never worked.
+    pkt.writePackedGuid(existingGuid);
     pkt.writeUInt32(setIndex);
     pkt.writeString(name);
     pkt.writeString(iconName);
@@ -2850,7 +2862,8 @@ void InventoryHandler::deleteEquipmentSet(uint64_t setGuid) {
     uint16_t wire = wireOpcode(Opcode::CMSG_DELETEEQUIPMENT_SET);
     if (wire == 0xFFFF) { owner_.addUIError("Equipment sets not supported."); return; }
     network::Packet pkt(wire);
-    pkt.writeUInt64(setGuid);
+    // HandleEquipmentSetDelete reads this packed too.
+    pkt.writePackedGuid(setGuid);
     owner_.getSocket()->send(pkt);
     equipmentSets_.erase(
         std::remove_if(equipmentSets_.begin(), equipmentSets_.end(),
@@ -2873,16 +2886,34 @@ void InventoryHandler::handleEquipmentSetList(network::Packet& packet) {
     equipmentSets_.clear();
     equipmentSets_.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
-        if (!packet.hasRemaining(16)) break;
+        // Every guid in this message is packed — a mask byte and then only the
+        // non-zero bytes — and all twenty were read as fixed eight-byte values.
+        // A set guid of one is two bytes on the wire, so the first read ate the
+        // set id and the front of the name, and with more than one set the loop
+        // lost its place entirely. SendEquipmentSetList writes each of these
+        // with appendPackGUID.
+        if (!packet.hasRemaining(2)) break;
         EquipmentSet es;
-        es.setGuid        = packet.readUInt64();
-        es.setId          = packet.readUInt32();
-        es.name           = packet.readString();
-        es.iconName       = packet.readString();
-        es.ignoreSlotMask = packet.readUInt32();
+        es.setGuid  = packet.readPackedGuid();
+        if (!packet.hasRemaining(4)) break;
+        es.setId    = packet.readUInt32();
+        es.name     = packet.readString();
+        es.iconName = packet.readString();
+        // No ignore mask on the wire. A uint32 was being read for one here and
+        // the server never sends it: an ignored slot is written as an item guid
+        // of literal one, which is the mask. Reading a word that is not there
+        // took the first four bytes of the slot list every time.
+        es.ignoreSlotMask = 0;
         for (int slot = 0; slot < 19; ++slot) {
-            if (!packet.hasRemaining(8)) break;
-            es.itemGuids[slot] = packet.readUInt64();
+            if (!packet.hasRemaining(1)) break;
+            const uint64_t itemGuid = packet.readPackedGuid();
+            if (itemGuid == 1) {
+                // "Ignore this slot" — the set leaves whatever is worn there.
+                es.ignoreSlotMask |= (1u << slot);
+                es.itemGuids[slot] = 0;
+            } else {
+                es.itemGuids[slot] = itemGuid;
+            }
         }
         equipmentSets_.push_back(std::move(es));
     }
