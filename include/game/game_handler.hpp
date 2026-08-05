@@ -1086,7 +1086,12 @@ public:
     bool hasPlayerExploredZoneMasks() const { return hasPlayerExploredZones_; }
     static uint32_t killXp(uint32_t playerLevel, uint32_t victimLevel);
 
-    // Server time (for deterministic moon phases, etc.)
+    // Server game time, in HOURS since midnight (0.0-24.0).
+    //
+    // The unit is stated because four things disagreed about it: the wire
+    // format is a packed bitfield, the sky divided by 86400 as though it were
+    // seconds, GetGameTime split it as hours, and SMSG_SERVERTIME wrote a unix
+    // timestamp into the same field.
     float getGameTime() const { return gameTime_; }
     float getTimeSpeed() const { return timeSpeed_; }
 
@@ -1725,6 +1730,19 @@ public:
             if (wholeMs == 0) continue;
             t.pendingMs -= static_cast<float>(wholeMs);
             t.value = std::clamp(t.value + t.scale * wholeMs, 0, t.maxValue);
+            // Refilled, so it is over. The server does not say so at this
+            // point: on surfacing it sends one update with a positive scale
+            // and then nothing until its own counter reaches full, which is
+            // several seconds later. Without this the bar climbs to full and
+            // sits there at a hundred percent in the meantime, which is what
+            // "the breath meter will not go away" looks like.
+            //
+            // Only when refilling. A drowning bar reaching zero is not over —
+            // that is when the damage starts, and the server keeps it up.
+            if (t.scale > 0 && t.value >= t.maxValue) {
+                t.active = false;
+                t.pendingMs = 0.0f;
+            }
         }
     }
 

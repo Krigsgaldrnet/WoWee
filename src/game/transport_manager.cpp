@@ -134,7 +134,8 @@ void TransportManager::registerTransport(uint64_t guid,
                                          const glm::vec3& spawnWorldPos,
                                          uint32_t entry,
                                          uint32_t displayId,
-                                         bool isM2) {
+                                         bool isM2,
+                                         float spawnOrientation) {
     auto* pathEntry = pathRepo_.findPath(pathId);
     if (!pathEntry) {
         LOG_ERROR("TransportManager: Path ", pathId, " not found for transport ", guid);
@@ -183,7 +184,18 @@ void TransportManager::registerTransport(uint64_t guid,
         }
     }
 
-    transport.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);  // Identity quaternion
+    // The authored yaw, carrying the same offset the spawner applies for this
+    // model kind: an M2's default facing is +renderX and every M2 game object
+    // is turned 90° for it (renderYawM2go), while a WMO is placed unturned.
+    // The transform below is rebuilt from scratch every frame, so a rotation
+    // that skips the offset puts the model at right angles to where it was
+    // placed. Only route-less transports read this — a tangent-derived heading
+    // carries its own convention and is left alone.
+    transport.spawnYaw = spawnOrientation +
+        (isM2 ? glm::half_pi<float>() : 0.0f);
+    // Identity discarded the authored placement, so every transport started
+    // life facing the same way whatever the server said.
+    transport.rotation = glm::angleAxis(transport.spawnYaw, glm::vec3(0.0f, 0.0f, 1.0f));
     transport.playerOnBoard = false;
     transport.playerLocalOffset = glm::vec3(0.0f);
     transport.hasDeckBounds = false;
@@ -275,15 +287,17 @@ void TransportManager::resolveAndRegisterSpawn(uint64_t guid,
                                                const glm::vec3& canonicalSpawnPos,
                                                uint32_t wmoInstanceId,
                                                bool isM2,
-                                               bool preferServerData) {
+                                               bool preferServerData,
+                                               float spawnOrientation) {
     // TransportAnimation.dbc is indexed by GameObject entry.
     uint32_t pathId = entry;
 
     // Check if we have a real usable path, otherwise remap/infer/fall back to stationary.
-    const bool shipOrZeppelinDisplay =
-        (displayId == 3015 || displayId == 3031 || displayId == 7546 ||
-         displayId == 7446 || displayId == 1587 || displayId == 2454 ||
-         displayId == 807 || displayId == 808);
+    // Elevators used to be in this list — 807, 808, 2454 and 1587 are lifts,
+    // not airships — and the stricter "must travel 25 units" check below then
+    // rejected their short vertical path, dropping them into the inference
+    // that borrows a nearby route.
+    const bool shipOrZeppelinDisplay = isVehicleTransportDisplay(displayId);
     bool hasUsablePath = hasPathForEntry(entry);
     if (shipOrZeppelinDisplay) {
         hasUsablePath = hasUsableMovingPathForEntry(entry, 25.0f);
@@ -309,9 +323,7 @@ void TransportManager::resolveAndRegisterSpawn(uint64_t guid,
         // and circle in place until — or unless — its taxi path arrives. The ship
         // guard in pickFallbackMovingPath already returns 0 for these displays; skip
         // inference too so the same guard actually holds, leaving the ship docked.
-        const bool looksLikeShip =
-            (displayId == 3015u || displayId == 2454u || displayId == 7446u ||
-             displayId == 7087u);
+        const bool looksLikeShip = isOceanGoingTransportDisplay(displayId);
         uint32_t inferredPath =
             looksLikeShip ? 0u : inferDbcPathForSpawn(canonicalSpawnPos, 1200.0f, allowZOnly);
         if (inferredPath != 0) {
@@ -338,7 +350,8 @@ void TransportManager::resolveAndRegisterSpawn(uint64_t guid,
                  " displayId=", displayId, " wmoInstance=", wmoInstanceId);
     }
 
-    registerTransport(guid, wmoInstanceId, pathId, canonicalSpawnPos, entry, displayId, isM2);
+    registerTransport(guid, wmoInstanceId, pathId, canonicalSpawnPos, entry, displayId,
+                      isM2, spawnOrientation);
 
     if (displayId == 3831u) {
         if (auto* tr = getTransport(guid)) {
@@ -567,6 +580,7 @@ void TransportManager::updateTransformMatrices(ActiveTransport& transport) {
     glm::quat basisRotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     glm::quat basisInverse = glm::conjugate(basisRotation);
     glm::quat renderRot = basisRotation * transport.rotation * basisInverse;
+
 
     // Build transform matrix: translate * rotate * scale
     glm::mat4 translation = glm::translate(glm::mat4(1.0f), renderPos);
