@@ -1188,6 +1188,53 @@ void CameraController::update(float deltaTime) {
                         wmoH = std::nullopt;
                         centerWmoH = std::nullopt;
                     }
+                    // An M2 doodad's collision sitting well below a valid WMO
+                    // floor is BENEATH that floor — a decoration or structural
+                    // base under the walkway, not a surface to stand on. Letting
+                    // it win drops the player through the WMO floor: in Undercity
+                    // the pick took an m2 floor ~6m below the wmo one (feet -48.8,
+                    // wmo -48.15, m2 -54.23) and fell. When a WMO floor is present
+                    // here, reject an m2 floor more than 1.5m below it. (If the
+                    // player were standing ON the m2 platform, the higher WMO
+                    // floor would be above the probe and not returned, so this
+                    // cannot strand them off a legitimate lower deck.)
+                    if (m2H && wmoH && *m2H < *wmoH - 1.5f) {
+                        m2H = std::nullopt;
+                    }
+
+                    // A terrain hole is the artist saying there is no ground
+                    // here — it is how cave mouths and sunken entrances get
+                    // opened up, and the mesh builder already skips those
+                    // quads, so nothing is drawn over them. getHeightAt does
+                    // not ask: it interpolates straight across the gap and
+                    // reports a surface right at the player's feet, which then
+                    // wins the floor selection against the real floor below.
+                    // At Gadgetzan's auction house that put the player out over
+                    // the stairwell on ground that is not there, unable to walk
+                    // down the steps and looking into a hole they were standing
+                    // on. Every seam guard below is downstream of this and none
+                    // of them could see it, because to them the terrain sample
+                    // was real.
+                    //
+                    // Only ever hand the floor to the building underneath — a
+                    // hole with nothing below it keeps the heightfield it has
+                    // always had, so this cannot open a pit anywhere new.
+                    if (terrainH && wmoH && terrainManager &&
+                        terrainManager->isHoleAt(targetPos.x, targetPos.y)) {
+                        terrainH = std::nullopt;
+                    }
+
+                    // Inside an interior WMO group — Undercity's halls, a
+                    // building's rooms — the outdoor heightfield is the roof far
+                    // overhead, never the floor. Veto it so that when the WMO
+                    // floor query briefly finds nothing at a spot, the pick does
+                    // not fall back to terrain and kick the player up to the
+                    // surface. Interior containment is false at entrances/seams,
+                    // which the atTunnelSeam path below handles.
+                    if (cachedInsideInteriorWMO) {
+                        terrainH = std::nullopt;
+                    }
+
                     centerTerrainH = terrainH;
                     centerWmoH = wmoH;
                     centerM2H = m2H;
@@ -1911,8 +1958,19 @@ void CameraController::update(float deltaTime) {
         // WoW fades between ~1.0m and ~0.5m, hides fully below 0.5m
         // For now, just hide below first-person threshold
         if (characterRenderer && playerInstanceId > 0) {
-            // Honor first-person intent even if anti-clipping pushes camera back slightly.
-            bool shouldHidePlayer = isFirstPersonView() || (actualDist < MIN_DISTANCE + 0.1f);
+            // Hide only on first-person *intent* (the user's zoom), not on a
+            // collision-squeezed distance. The `actualDist < MIN_DISTANCE + 0.1`
+            // term fired whenever geometry pushed the camera close in third
+            // person — under Undercity's overhangs, or backing into a wall —
+            // but the renderer's visibility hardening forces the player visible
+            // again in third person on the very same frame. So the two wrote
+            // opposite values every frame, toggling the instance and its weapon
+            // attachments on and off (visible in the log as a rapid
+            // setInstanceVisible flip) while what actually drew never changed.
+            // isFirstPersonView already covers the anti-clip-pushback case the
+            // extra term was meant for, since it reads the target distance, not
+            // the squeezed one.
+            bool shouldHidePlayer = isFirstPersonView();
             characterRenderer->setInstanceVisible(playerInstanceId, !shouldHidePlayer);
 
             // Note: the Renderer's CharAnimState machine drives player character animations
