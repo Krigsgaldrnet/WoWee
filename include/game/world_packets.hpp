@@ -2547,7 +2547,55 @@ public:
 /** CMSG_LEARN_TALENT packet builder */
 class LearnTalentPacket {
 public:
+    /// requestedRank counts from ONE — rank 1 is a talent's first rank, which is
+    /// how the rest of the client counts them and what SMSG_TALENTS_INFO is
+    /// stored as. The wire counts from zero; the builder converts.
     static network::Packet build(uint32_t talentId, uint32_t requestedRank);
+};
+
+/** One queue slot's worth of SMSG_BATTLEFIELD_STATUS. */
+struct BattlefieldStatusData {
+    uint32_t queueSlot = 0;
+    uint8_t  arenaType = 0;
+    uint32_t bgTypeId = 0;
+    uint8_t  minLevel = 0;
+    uint8_t  maxLevel = 0;
+    uint32_t instanceId = 0;
+    bool     isRated = false;
+    /// 0 none, 1 queued, 2 invited, 3 in progress, 4 waiting to leave.
+    uint32_t statusId = 0;
+    // Whichever of these the status carries; the rest stay zero.
+    uint32_t avgWaitMs = 0;        ///< status 1
+    uint32_t timeInQueueMs = 0;    ///< status 1
+    uint32_t mapId = 0;            ///< status 2 and 3
+    uint32_t inviteTimeoutMs = 0;  ///< status 2 — how long the invitation lasts
+};
+
+/**
+ * SMSG_BATTLEFIELD_STATUS parser.
+ *
+ * The header is a fixed run of fields whose widths do not divide evenly, which
+ * is why it is worth a parser of its own: minLevel and maxLevel are single
+ * bytes between the instance id and the type, and reading them as anything else
+ * moves every field after them without changing the packet's length.
+ */
+class BattlefieldStatusPacket {
+public:
+    /// classicFormat selects the pre-TBC shape, which has no arena fields.
+    static bool parse(network::Packet& packet, BattlefieldStatusData& data,
+                      bool classicFormat = false, bool wotlkFormat = true);
+};
+
+/** CMSG_LFG_JOIN packet builder */
+class LfgJoinPacket {
+public:
+    /// Roles is a uint32 on the wire, and the three "needs" bytes after the
+    /// slot list are not optional — the server reads Comment after them, so
+    /// leaving them out moves every field. Slots carries every dungeon the
+    /// player picked; the server queues for all of them in one join.
+    static network::Packet build(const std::vector<uint32_t>& dungeonIds,
+                                 uint32_t roles,
+                                 const std::string& comment = "");
 };
 
 /** MSG_TALENT_WIPE_CONFIRM packet builder */

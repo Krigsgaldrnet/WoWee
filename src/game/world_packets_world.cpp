@@ -1556,7 +1556,105 @@ bool TalentsInfoParser::parse(network::Packet& packet, TalentsInfoData& data) {
 network::Packet LearnTalentPacket::build(uint32_t talentId, uint32_t requestedRank) {
     network::Packet packet(wireOpcode(Opcode::CMSG_LEARN_TALENT));
     packet.writeUInt32(talentId);
-    packet.writeUInt32(requestedRank);
+    // Counted from zero on the wire, from one everywhere above it. The field is
+    // the index into TalentEntry::RankID, and the server reads it straight out
+    // of the packet: Player::LearnTalent spends
+    // `talentRank - currentTalentRank + 1` points, so the first rank of an
+    // untrained talent has to arrive as 0.
+    //
+    // Sent as 1 it reads as the SECOND rank — two points for a player holding
+    // one, and a rank whose predecessor is missing — so the handler returned
+    // without a word and answered the unchanged talents. That is exactly what
+    // learning a talent looked like: a confirmation, the staged point handed
+    // straight back, and nothing learned.
+    packet.writeUInt32(requestedRank > 0 ? requestedRank - 1 : 0);
+    return packet;
+}
+
+bool BattlefieldStatusPacket::parse(network::Packet& packet, BattlefieldStatusData& data,
+                                    bool classicFormat, bool wotlkFormat) {
+    if (!packet.hasRemaining(4)) return false;
+    data.queueSlot = packet.readUInt32();
+
+    // The server writes the next stretch as one uint64 and says so in a comment,
+    // which is what makes it easy to read as fewer, wider fields than it holds:
+    //
+    //     uint8 arenaType, uint8 isArena, uint32 bgTypeId, uint16 0x1F90,
+    //     uint8 minLevel, uint8 maxLevel, uint32 instanceId, uint8 isRated
+    //
+    // Read as `uint32 instanceId, uint8 isRated` — four bytes and one where the
+    // server sends seven — every field after it lands two bytes early, and the
+    // status arrives as the top half of the instance id joined to the bottom
+    // half of the status. The packet is the same length either way, so nothing
+    // runs short and nothing reports anything; the status is simply never one
+    // of the values it is compared against, and a queue that exists reads as no
+    // queue at all.
+    if (!classicFormat) {
+        if (!packet.hasRemaining(2)) return false;
+        data.arenaType = packet.readUInt8();
+        packet.readUInt8();                  // 0xE for an arena, 0 otherwise
+    }
+    if (!packet.hasRemaining(6)) return false;
+    data.bgTypeId = packet.readUInt32();
+    packet.readUInt16();                     // always 0x1F90
+    if (!packet.hasRemaining(7)) return false;
+    data.minLevel = packet.readUInt8();
+    data.maxLevel = packet.readUInt8();
+    data.instanceId = packet.readUInt32();
+    data.isRated = packet.readUInt8() != 0;
+    if (!packet.hasRemaining(4)) return false;
+    data.statusId = packet.readUInt32();
+
+    // What follows depends on the status. Each field is guarded on its own, so
+    // a status whose tail is shorter than expected leaves the rest zero rather
+    // than reading past the end.
+    switch (data.statusId) {
+        case 1:  // queued
+            if (packet.hasRemaining(4)) data.avgWaitMs = packet.readUInt32();
+            if (packet.hasRemaining(4)) data.timeInQueueMs = packet.readUInt32();
+            break;
+        case 2:  // invited
+        case 3:  // in progress
+            if (packet.hasRemaining(4)) data.mapId = packet.readUInt32();
+            // Eight bytes 3.3.5 added and does not use. The server's own
+            // comment marks them as its own version's, so they are not read
+            // before Wrath.
+            if (wotlkFormat && packet.hasRemaining(8)) {
+                packet.readUInt32();
+                packet.readUInt32();
+            }
+            // For an invitation this is how long it lasts, which is the
+            // countdown on the accept dialog. Read from the first field after
+            // the type before this, which is the map id — so the dialog counted
+            // down from a map number.
+            if (packet.hasRemaining(4)) data.inviteTimeoutMs = packet.readUInt32();
+            break;
+        default:
+            break;
+    }
+    return true;
+}
+
+network::Packet LfgJoinPacket::build(const std::vector<uint32_t>& dungeonIds,
+                                    uint32_t roles,
+                                    const std::string& comment) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_LFG_JOIN));
+    // The order and the widths the server reads, which this had wrong in every
+    // field: roles went out as one byte rather than four, and the three needs
+    // between the slots and the comment were missing entirely. The four bytes
+    // taken for Roles therefore swallowed the roles, both flags and the slot
+    // count, the slot list came out empty, and HandleLfgJoinOpcode returns
+    // without a word when it is — so the queue was discarded in silence.
+    packet.writeUInt32(roles);
+    packet.writeUInt8(0);                    // NoPartialClear
+    packet.writeUInt8(0);                    // Achievements
+    packet.writeUInt8(static_cast<uint8_t>(dungeonIds.size()));
+    for (uint32_t id : dungeonIds) packet.writeUInt32(id);
+    packet.writeUInt8(3);                    // Needs count, always three
+    packet.writeUInt8(0);
+    packet.writeUInt8(0);
+    packet.writeUInt8(0);
+    packet.writeString(comment);
     return packet;
 }
 

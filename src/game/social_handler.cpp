@@ -2499,28 +2499,15 @@ void SocialHandler::handleLogoutComplete(network::Packet& /*packet*/) {
 // ============================================================
 
 void SocialHandler::handleBattlefieldStatus(network::Packet& packet) {
-    if (!packet.hasRemaining(4)) return;
-    uint32_t queueSlot = packet.readUInt32();
-    const bool classicFormat = isClassicLikeExpansion();
-    uint8_t arenaType = 0;
-    if (!classicFormat) {
-        if (!packet.hasRemaining(1)) return;
-        arenaType = packet.readUInt8();
-        if (!packet.hasRemaining(1)) return;
-        packet.readUInt8();
-    } else {
-        if (!packet.hasRemaining(4)) return;
+    BattlefieldStatusData status;
+    if (!BattlefieldStatusPacket::parse(packet, status, isClassicLikeExpansion(),
+                                        !isPreWotlk())) {
+        return;
     }
-    if (!packet.hasRemaining(4)) return;
-    uint32_t bgTypeId = packet.readUInt32();
-    if (!packet.hasRemaining(2)) return;
-    packet.readUInt16();
-    if (!packet.hasRemaining(4)) return;
-    packet.readUInt32(); // instanceId
-    if (!packet.hasRemaining(1)) return;
-    packet.readUInt8(); // isRated
-    if (!packet.hasRemaining(4)) return;
-    uint32_t statusId = packet.readUInt32();
+    const uint32_t queueSlot = status.queueSlot;
+    const uint8_t arenaType = status.arenaType;
+    const uint32_t bgTypeId = status.bgTypeId;
+    const uint32_t statusId = status.statusId;
 
     static const std::pair<uint32_t, const char*> kBgNames[] = {
         {1,"Alterac Valley"},{2,"Warsong Gulch"},{3,"Arathi Basin"},
@@ -2536,15 +2523,12 @@ void SocialHandler::handleBattlefieldStatus(network::Packet& packet) {
         for (const auto& kv : kBgNames) { if (kv.first == bgTypeId) { bgName += " (" + std::string(kv.second) + ")"; break; } }
     }
 
-    uint32_t inviteTimeout = 80, avgWaitSec = 0, timeInQueueSec = 0;
-    if (statusId == 1 && packet.hasRemaining(8)) {
-        avgWaitSec = packet.readUInt32() / 1000; timeInQueueSec = packet.readUInt32() / 1000;
-    } else if (statusId == 2) {
-        if (packet.hasRemaining(4)) inviteTimeout = packet.readUInt32();
-        if (packet.hasRemaining(4)) packet.readUInt32();
-    } else if (statusId == 3 && packet.hasRemaining(8)) {
-        packet.readUInt32(); packet.readUInt32();
-    }
+    // An invitation with no timeout in it still has to count down from
+    // something, and eighty seconds is what the server gives one.
+    const uint32_t inviteTimeout =
+        status.inviteTimeoutMs ? status.inviteTimeoutMs / 1000 : 80;
+    const uint32_t avgWaitSec = status.avgWaitMs / 1000;
+    const uint32_t timeInQueueSec = status.timeInQueueMs / 1000;
 
     // Server pushes SMSG_BATTLEFIELD_STATUS periodically (~30s ticks while queued)
     // and also for each queue slot at zone change / login. Only emit a chat line
@@ -2560,6 +2544,10 @@ void SocialHandler::handleBattlefieldStatus(network::Packet& packet) {
         bgQueues_[queueSlot].arenaType = arenaType;
         bgQueues_[queueSlot].statusId = statusId;
         bgQueues_[queueSlot].bgName = bgName;
+        bgQueues_[queueSlot].minLevel = status.minLevel;
+        bgQueues_[queueSlot].maxLevel = status.maxLevel;
+        bgQueues_[queueSlot].instanceId = status.instanceId;
+        bgQueues_[queueSlot].isRated = status.isRated;
         if (statusId == 1) { bgQueues_[queueSlot].avgWaitTimeSec = avgWaitSec; bgQueues_[queueSlot].timeInQueueSec = timeInQueueSec; }
         if (statusId == 2 && !wasInvite) { bgQueues_[queueSlot].inviteTimeout = inviteTimeout; bgQueues_[queueSlot].inviteReceivedTime = std::chrono::steady_clock::now(); }
     } else {
@@ -2842,20 +2830,25 @@ void SocialHandler::handleLfgTeleportDenied(network::Packet& packet) {
 // LFG Outgoing Packets
 // ============================================================
 
-void SocialHandler::lfgJoin(uint32_t dungeonId, uint8_t roles) {
+void SocialHandler::lfgJoin(const std::vector<uint32_t>& dungeonIds, uint8_t roles) {
     if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
-    network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_JOIN));
-    pkt.writeUInt8(roles); pkt.writeUInt8(0); pkt.writeUInt8(0);
-    pkt.writeUInt8(1); pkt.writeUInt32(dungeonId); pkt.writeString("");
-    owner_.getSocket()->send(pkt);
+    if (dungeonIds.empty()) return;   // the server drops a join with no slots
+    // The dungeon finder is Wrath's. Classic and TBC have no CMSG_LFG_JOIN at
+    // all — TBC's 0x35C is CMSG_LFG_SET_AUTOJOIN, an unrelated packet — so the
+    // logical opcode is unmapped there and wireOpcode answers 0xFFFF. Sending
+    // that would put a packet the server has no handler for on the wire.
+    if (wireOpcode(Opcode::CMSG_LFG_JOIN) == 0xFFFF) return;
+    owner_.getSocket()->send(LfgJoinPacket::build(dungeonIds, roles));
 }
 
 void SocialHandler::lfgLeave() {
     if (!owner_.getSocket()) return;
-    network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_LEAVE));
+    lfgState_ = LfgState::None;
+    const uint16_t wire = wireOpcode(Opcode::CMSG_LFG_LEAVE);
+    if (wire == 0xFFFF) return;   // no dungeon finder before Wrath
+    network::Packet pkt(wire);
     pkt.writeUInt32(0); pkt.writeUInt32(0); pkt.writeUInt32(0);
     owner_.getSocket()->send(pkt);
-    lfgState_ = LfgState::None;
 }
 
 void SocialHandler::lfgSetRoles(uint8_t roles) {
@@ -2869,14 +2862,18 @@ void SocialHandler::lfgSetRoles(uint8_t roles) {
 
 void SocialHandler::lfgAcceptProposal(uint32_t proposalId, bool accept) {
     if (!owner_.getSocket()) return;
-    network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_PROPOSAL_RESULT));
+    const uint16_t wire = wireOpcode(Opcode::CMSG_LFG_PROPOSAL_RESULT);
+    if (wire == 0xFFFF) return;   // no dungeon finder before Wrath
+    network::Packet pkt(wire);
     pkt.writeUInt32(proposalId); pkt.writeUInt8(accept ? 1 : 0);
     owner_.getSocket()->send(pkt);
 }
 
 void SocialHandler::lfgTeleport(bool toLfgDungeon) {
     if (!owner_.getSocket()) return;
-    network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_TELEPORT));
+    const uint16_t wire = wireOpcode(Opcode::CMSG_LFG_TELEPORT);
+    if (wire == 0xFFFF) return;   // no dungeon finder before Wrath
+    network::Packet pkt(wire);
     pkt.writeUInt8(toLfgDungeon ? 0 : 1);
     owner_.getSocket()->send(pkt);
 }
